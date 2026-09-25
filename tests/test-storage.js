@@ -1688,3 +1688,87 @@ describe('vision : déclaration du serveur, puis flag manuel (lot AF)', function
     expect(modelThinkingDeclared(srv, 'inconnu')).toBe(null);
   });
 });
+
+describe('état « stockage plein » (lot AG) — pose, levée, fronts, diffusion', function() {
+  // syncPost réel est muet sans BroadcastChannel : on l'observe, puis on le rend.
+  var realSyncPost = syncPost;
+  var posted;
+  function withPosts(fn) {
+    posted = [];
+    syncPost = function(type, payload) { posted.push([type, payload]); };
+    try { fn(); } finally { syncPost = realSyncPost; setStorageFull(false, false); }
+  }
+  var realConsoleError = console.error;
+  function quiet(fn) { console.error = function() {}; try { fn(); } finally { console.error = realConsoleError; } }
+
+  it('un échec de quota pose l\'état et le diffuse une fois, au front', function() {
+    withPosts(function() {
+      quiet(function() {
+        noteStorageWriteFailure('ressource', 'r1', { name: 'QuotaExceededError' });
+        noteStorageWriteFailure('conversation', 'c1', { name: 'QuotaExceededError' });
+      });
+      expect(isStorageFull()).toBe(true);
+      expect(posted).toEqual([['storage-state', { full: true }]]);
+    });
+  });
+  it('les autres échecs ne posent rien et ne diffusent rien', function() {
+    withPosts(function() {
+      quiet(function() {
+        noteStorageWriteFailure('conversation', 'c1', { name: 'InvalidStateError' });
+        noteStorageWriteFailure('conversation', 'c1', { name: 'DataCloneError' });
+        noteStorageWriteFailure('conversation', 'c1', null);
+      });
+      expect(isStorageFull()).toBe(false);
+      expect(posted).toEqual([]);
+    });
+  });
+  it('setStorageFull rend le front, null sans changement', function() {
+    withPosts(function() {
+      expect(setStorageFull(true, false)).toBe('set');
+      expect(setStorageFull(true, false)).toBe(null);
+      expect(setStorageFull(false, false)).toBe('cleared');
+      expect(setStorageFull(false, false)).toBe(null);
+      expect(posted).toEqual([]);   // broadcast faux : le pair qui applique ne rediffuse pas
+    });
+  });
+  it('une suppression lève l\'état et diffuse la levée', function() {
+    withPosts(function() {
+      setStorageFull(true, false);
+      expect(noteStorageSpaceFreed()).toBe('cleared');
+      expect(isStorageFull()).toBe(false);
+      expect(posted).toEqual([['storage-state', { full: false }]]);
+    });
+  });
+  it('la levée est diffusée même si CET onglet n\'était pas plein (un pair peut l\'être)', function() {
+    withPosts(function() {
+      expect(noteStorageSpaceFreed()).toBe(null);
+      expect(posted).toEqual([['storage-state', { full: false }]]);
+    });
+  });
+});
+
+describe('writeLocalStorage (lot AG, S2) — le quota ne remonte plus au handler', function() {
+  var realSetItem = localStorage.setItem;
+  var realConsoleError = console.error;
+  it('écrit et rend true', function() {
+    localStorage.clear();
+    expect(writeLocalStorage('k-ag', 'v')).toBe(true);
+    expect(localStorage.getItem('k-ag')).toBe('v');
+  });
+  it('un setItem qui lève rend false sans lever, et laisse le handler finir', function() {
+    var logged = 0;
+    localStorage.setItem = function() { var e = new Error('plein'); e.name = 'QuotaExceededError'; throw e; };
+    console.error = function() { logged++; };
+    try {
+      localStorage.clear();
+      expect(writeLocalStorage('k-ag', 'v')).toBe(false);
+      // Un vrai appelant : saveSettings ne doit plus s'interrompre en route.
+      saveSettings({ theme: 'light' });   // lèverait avant AG
+    } finally {
+      localStorage.setItem = realSetItem;
+      console.error = realConsoleError;
+    }
+    expect(logged >= 2).toBe(true);
+    expect(isStorageFull()).toBe(false);   // quota localStorage ≠ quota IDB (S2)
+  });
+});

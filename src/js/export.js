@@ -1085,7 +1085,9 @@ async function exportConvHtml() {
     const styleCss = serializeThemeTokens() + EXPORT_CSS + prismThemeCssForExport();
     const bodyHtml = await runBackgroundTask('export HTML…',
       () => renderExportBody(currentThread, currentConvId));
-    if (bodyHtml == null) return;
+    // `null` = le rendu a échoué (runBackgroundTask l'a tracé en console).
+    // Sans le toast, le clic sur le bouton d'export ne produisait RIEN.
+    if (bodyHtml == null) { toastExportFailed(currentConvId); return; }
     // Script optionnel (progressive enhancement, zéro-JS révisé). Échappement défensif
     // de </ pour ne pas clore prématurément le <script> porteur (même parade que
     // build.py sur __MIAOU_CONFIG__), même si EXPORT_SCRIPT n'en contient pas.
@@ -1101,6 +1103,9 @@ async function exportConvHtml() {
       if (!confirm('Fichier volumineux (~' + mb + ' Mo), continuer ?')) return;
     }
     downloadFile(exportConvFilename(title, now, 'html'), html, 'text/html');
+  } catch (e) {
+    console.error('[miaou] export HTML échoué :', e);
+    toastExportFailed(currentConvId);
   } finally {
     _exportingHtml = false;
   }

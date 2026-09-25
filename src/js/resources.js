@@ -966,7 +966,15 @@ function putResource(record) {
         });
       };
       tx.onerror = function(e) { reject(e.target.error); };
-      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
+      // Le point unique d'échec (storage.js) est appelé ICI, pas chez les
+      // appelants : un échec au commit — le quota — survient après le
+      // `resolve()` de `req.onsuccess`, et ce `reject` n'atteint alors plus
+      // personne. Sans cet appel, le store le plus lourd était le seul dont le
+      // quota restait muet, console comprise.
+      tx.onabort = function() {
+        noteStorageWriteFailure('ressource', record.id, tx.error);
+        reject(tx.error || new Error('transaction avortée'));
+      };
     });
   });
 }
@@ -1017,9 +1025,12 @@ function deleteResource(id) {
       // Évincer le cache seulement APRÈS le commit durable : sinon un delete
       // qui échoue après un onsuccess prématuré laisserait le record en base
       // mais absent du cache (incohérence).
-      tx.oncomplete = function() { _uncacheRecord(id); syncPost('resources-updated', { ids: [id], convId: null }); resolve(); };
+      tx.oncomplete = function() { _uncacheRecord(id); syncPost('resources-updated', { ids: [id], convId: null }); noteStorageSpaceFreed(); resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
-      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
+      tx.onabort = function() {
+        noteStorageWriteFailure('ressource', id, tx.error);
+        reject(tx.error || new Error('transaction avortée'));
+      };
     });
   });
 }
@@ -1038,10 +1049,16 @@ function deleteResourcesByConversation(convId) {
       tx.oncomplete = function() {
         resolve();
         // Post-commit (piège 24) : n'émettre que si des records ont bougé.
-        if (removed.length) syncPost('resources-updated', { ids: removed, convId: convId });
+        if (removed.length) {
+          syncPost('resources-updated', { ids: removed, convId: convId });
+          noteStorageSpaceFreed();
+        }
       };
       tx.onerror = function(e) { reject(e.target.error); };
-      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
+      tx.onabort = function() {
+        noteStorageWriteFailure('ressources de', convId, tx.error);
+        reject(tx.error || new Error('transaction avortée'));
+      };
     });
   });
 }
@@ -1079,7 +1096,10 @@ function clearIdbStore(storeName) {
       const req = tx.objectStore(storeName).clear();
       req.onsuccess = function() { resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
-      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
+      tx.onabort = function() {
+        noteStorageWriteFailure('vidage', storeName, tx.error);
+        reject(tx.error || new Error('transaction avortée'));
+      };
     });
   });
 }

@@ -3638,35 +3638,51 @@ describe('shouldProbeBackend — que sonde-t-on au retour ?', function() {
   });
 });
 
-describe('resolveWorriedLogo — quand le chat fronce les sourcils', function() {
+describe('resolveLogoExpression — l\'expression du chat (froncement, stockage plein)', function() {
 
   it('tout va bien : chat normal', function() {
-    expect(resolveWorriedLogo('ok', '')).toBe(false);
+    expect(resolveLogoExpression('ok', '', false)).toBe('ok');
   });
   it('backend injoignable : soucieux', function() {
-    expect(resolveWorriedLogo('down', '')).toBe(true);
+    expect(resolveLogoExpression('down', '', false)).toBe('worried');
   });
   it('un MCP injoignable, backend sain : soucieux quand meme', function() {
     // Perimetre decide avec Julien : serveur actif KO OU tout MCP KO.
-    expect(resolveWorriedLogo('ok', 'error')).toBe(true);
+    expect(resolveLogoExpression('ok', 'error', false)).toBe('worried');
   });
   it('backend non configure : chat NORMAL, pas soucieux', function() {
     // Une install neuve n'est pas cassee, elle est vide. Le distinguo compte :
     // c'est le tout premier ecran que voit un nouvel utilisateur.
-    expect(resolveWorriedLogo('unconfigured', '')).toBe(false);
+    expect(resolveLogoExpression('unconfigured', '', false)).toBe('ok');
   });
   it('non configure ET un MCP KO : soucieux, par le MCP seul', function() {
     // Le 'unconfigured' n'annule rien — il ne declenche simplement pas.
-    expect(resolveWorriedLogo('unconfigured', 'error')).toBe(true);
+    expect(resolveLogoExpression('unconfigured', 'error', false)).toBe('worried');
   });
   it('attente d\'autorisation MCP : pas soucieux', function() {
     // 'pending' est une action a faire, pas une panne ; sa pastille jaune la
     // porte deja. Si le chat s'en emouvait, il doublerait un signal moins
     // urgent et cesserait d'etre lu.
-    expect(resolveWorriedLogo('ok', 'pending')).toBe(false);
+    expect(resolveLogoExpression('ok', 'pending', false)).toBe('ok');
   });
   it('attente MCP + backend down : soucieux, par le backend', function() {
-    expect(resolveWorriedLogo('down', 'pending')).toBe(true);
+    expect(resolveLogoExpression('down', 'pending', false)).toBe('worried');
+  });
+  it('stockage plein, services sains : sourcils horizontaux', function() {
+    expect(resolveLogoExpression('ok', '', true)).toBe('storage');
+  });
+  it('stockage plein PRIME sur toute panne de service (perte irreversible)', function() {
+    var got = [
+      resolveLogoExpression('down', '', true),
+      resolveLogoExpression('ok', 'error', true),
+      resolveLogoExpression('down', 'error', true),
+      resolveLogoExpression('unconfigured', 'pending', true),
+    ];
+    expect(got).toEqual(['storage', 'storage', 'storage', 'storage']);
+  });
+  it('seul true pose le stockage (valeur absente = pas plein)', function() {
+    expect(resolveLogoExpression('ok', '', undefined)).toBe('ok');
+    expect(resolveLogoExpression('down', '', 'true')).toBe('worried');
   });
 });
 
@@ -4725,5 +4741,162 @@ describe('Evacuation comme geste autonome (AE-5 annule, 2026-09-22)', function()
 
   it('true reste lu comme une generation', function() {
     expect(compactionRefusal(true, null, true)).toBe(compactionRefusal('generating', null, true));
+  });
+});
+
+describe('classifyStorageError — nature d\'un échec d\'écriture (lot AG)', function() {
+  it('les noms reconnus, chacun dans sa classe', function() {
+    var got = {};
+    ['QuotaExceededError', 'NS_ERROR_DOM_QUOTA_REACHED', 'InvalidStateError', 'DataCloneError', 'UnknownError']
+      .forEach(function(n) { got[n] = classifyStorageError({ name: n }); });
+    expect(got).toEqual({
+      QuotaExceededError: 'quota',
+      NS_ERROR_DOM_QUOTA_REACHED: 'quota',
+      InvalidStateError: 'closed',
+      DataCloneError: 'clone',
+      UnknownError: 'other',
+    });
+  });
+  it('err nul ou sans name : other, sans lever (tx.error nul sur un abort sans cause)', function() {
+    expect(classifyStorageError(null)).toBe('other');
+    expect(classifyStorageError(undefined)).toBe('other');
+    expect(classifyStorageError({})).toBe('other');
+    expect(classifyStorageError(new Error('quota exceeded'))).toBe('other');
+  });
+  it('le message est ignoré, seul le name compte (message localisé)', function() {
+    expect(classifyStorageError({ name: 'Error', message: 'QuotaExceededError' })).toBe('other');
+    expect(classifyStorageError({ name: 'QuotaExceededError', message: 'Quota dépassé' })).toBe('quota');
+  });
+});
+
+describe('toastQueueUpsert / toastQueueRemove — file de toasts (lot AG)', function() {
+  function keys(l) { return l.map(function(t) { return t.key; }); }
+  function T(k, lvl) { return { key: k, level: lvl || 'warn' }; }
+  it('insère en bas (le plus récent contre l\'ancre), sans muter l\'entrée', function() {
+    var a = [T('a'), T('b')];
+    var r = toastQueueUpsert(a, T('c'), 4);
+    expect(keys(r.list)).toEqual(['a', 'b', 'c']);
+    expect(keys(a)).toEqual(['a', 'b']);
+    expect(r.removed).toEqual([]);
+  });
+  it('même clé : remplacé ET redescendu en bas (option B), sans doublon', function() {
+    var r = toastQueueUpsert([T('a'), T('b'), T('c')], { key: 'a', level: 'info' }, 4);
+    expect(keys(r.list)).toEqual(['b', 'c', 'a']);
+    expect(r.list[2].level).toBe('info');
+    expect(r.removed).toEqual([]);
+  });
+  it('au-delà du plafond, le plus ancien NON-erreur sort (S6)', function() {
+    var r = toastQueueUpsert([T('e1', 'error'), T('w1'), T('i1', 'info'), T('e2', 'error')], T('w2'), 4);
+    expect(keys(r.list)).toEqual(['e1', 'i1', 'e2', 'w2']);
+    expect(r.removed).toEqual(['w1']);
+  });
+  it('que des erreurs : la plus ancienne sort pour une nouvelle erreur', function() {
+    var r = toastQueueUpsert([T('e1', 'error'), T('e2', 'error'), T('e3', 'error'), T('e4', 'error')], T('e5', 'error'), 4);
+    expect(keys(r.list)).toEqual(['e2', 'e3', 'e4', 'e5']);
+    expect(r.removed).toEqual(['e1']);
+  });
+  it('quatre erreurs et un arrivant non-erreur : c\'est lui qui ne trouve pas place', function() {
+    var r = toastQueueUpsert([T('e1', 'error'), T('e2', 'error'), T('e3', 'error'), T('e4', 'error')], T('i', 'info'), 4);
+    expect(keys(r.list)).toEqual(['e1', 'e2', 'e3', 'e4']);
+    expect(r.removed).toEqual(['i']);
+  });
+  it('plafond par défaut : TOAST_MAX_VISIBLE', function() {
+    var l = [];
+    ['a', 'b', 'c', 'd', 'e', 'f'].forEach(function(k) { l = toastQueueUpsert(l, T(k)).list; });
+    expect(l.length).toBe(TOAST_MAX_VISIBLE);
+    expect(keys(l)).toEqual(['c', 'd', 'e', 'f']);
+  });
+  it('retrait par clé, clé absente sans effet', function() {
+    expect(keys(toastQueueRemove([T('a'), T('b')], 'a'))).toEqual(['b']);
+    expect(keys(toastQueueRemove([T('a')], 'zz'))).toEqual(['a']);
+  });
+});
+
+describe('toastDurationMs — durées par niveau (D9)', function() {
+  it('info 5 s, avertissement et erreur de service 8 s, P1 jamais', function() {
+    expect({
+      info: toastDurationMs('info'),
+      warn: toastDurationMs('warn'),
+      error: toastDurationMs('error'),
+      p1: toastDurationMs('error', true),
+    }).toEqual({ info: 5000, warn: 8000, error: 8000, p1: null });
+  });
+});
+
+describe('toastPlacement — D7 et S7', function() {
+  var base = { vw: 1700, vh: 900, inputRight: 1300, inputBottom: 860, composerTop: 760, drawerW: 0, toastW: 300, inset: 16 };
+  function m(o) { return Object.assign({}, base, o || {}); }
+  it('place suffisante : collé au bord droit, bas aligné sur le champ', function() {
+    expect(toastPlacement(m())).toEqual({ mode: 'composer', right: 16, bottom: 40 });
+  });
+  it('limite exacte (300 + 2 × 16 = 332) : encore à droite du composer', function() {
+    expect(toastPlacement(m({ inputRight: 1700 - 332 })).mode).toBe('composer');
+    expect(toastPlacement(m({ inputRight: 1700 - 331 })).mode).toBe('edge');
+  });
+  it('place insuffisante : bord droit, au-dessus du composer', function() {
+    expect(toastPlacement(m({ inputRight: 1500 }))).toEqual({ mode: 'edge', right: 16, bottom: 900 - 760 + 4 });
+  });
+  it('pas de composer mesurable : bord droit, en bas', function() {
+    expect(toastPlacement(m({ inputRight: null, inputBottom: null, composerTop: null }))).toEqual({ mode: 'edge', right: 16, bottom: 16 });
+  });
+  it('drawer ouvert avec la place à sa gauche : à gauche du drawer, MÊME hauteur que sans', function() {
+    expect(toastPlacement(m({ drawerW: 500 }))).toEqual({ mode: 'beside-drawer', right: 516, bottom: toastPlacement(m()).bottom });
+    expect(toastPlacement(m({ drawerW: 500, inputRight: 1500 })).bottom).toBe(toastPlacement(m({ inputRight: 1500 })).bottom);
+  });
+  it('drawer ouvert sans la place (limite 332) : par-dessus, au bord droit, même hauteur', function() {
+    expect(toastPlacement(m({ vw: 952, drawerW: 620 })).mode).toBe('beside-drawer');
+    expect(toastPlacement(m({ vw: 951, drawerW: 620, inputRight: 800 })))
+      .toEqual({ mode: 'over-drawer', right: 16, bottom: toastPlacement(m({ vw: 951, inputRight: 800 })).bottom });
+  });
+});
+
+describe('healthFronts — fronts de santé des services (lot AG)', function() {
+  function B(id, health) { return { id: id, name: 'Srv ' + id, health: health }; }
+  function snap(b, mcp) { return { backend: b, mcp: mcp || {} }; }
+  function ops(r) { return r.events.map(function(e) { return e.op + ':' + e.key + (e.level ? ':' + e.level : ''); }); }
+  it('démarrage : backend déjà mort = front d\'erreur ; sain = rien', function() {
+    expect(ops(healthFronts(null, snap(B('a', 'down'))))).toEqual(['show:backend:a:error']);
+    expect(ops(healthFronts(null, snap(B('a', 'ok'))))).toEqual([]);
+  });
+  it('ok → down : erreur ; down → ok : rétabli (info), même clé', function() {
+    expect(ops(healthFronts(snap(B('a', 'ok')), snap(B('a', 'down'))))).toEqual(['show:backend:a:error']);
+    expect(ops(healthFronts(snap(B('a', 'down')), snap(B('a', 'ok'))))).toEqual(['show:backend:a:info']);
+  });
+  it('état inchangé : rien', function() {
+    expect(ops(healthFronts(snap(B('a', 'down')), snap(B('a', 'down'))))).toEqual([]);
+    expect(ops(healthFronts(snap(B('a', 'ok')), snap(B('a', 'ok'))))).toEqual([]);
+  });
+  it('unconfigured : jamais de toast ; down → unconfigured retire sans rétablir', function() {
+    expect(ops(healthFronts(snap(B('a', 'unconfigured')), snap(B('a', 'down'))))).toEqual([]);
+    expect(ops(healthFronts(snap(B('a', 'ok')), snap(B('a', 'unconfigured'))))).toEqual([]);
+    expect(ops(healthFronts(snap(B('a', 'down')), snap(B('a', 'unconfigured'))))).toEqual(['dismiss:backend:a']);
+  });
+  it('bascule de serveur actif : changement de clé, pas un front', function() {
+    expect(ops(healthFronts(snap(B('a', 'down')), snap(B('b', 'ok'))))).toEqual(['dismiss:backend:a']);
+    expect(ops(healthFronts(snap(B('a', 'down')), snap(B('b', 'down'))))).toEqual(['dismiss:backend:a']);
+    expect(ops(healthFronts(snap(B('a', 'ok')), snap(B('b', 'down'))))).toEqual([]);
+  });
+  it('MCP : absent ou sain → erreur ; erreur → ok : rétabli', function() {
+    expect(ops(healthFronts(snap(null, {}), snap(null, { f: 'error' })))).toEqual(['show:mcp:f:error']);
+    expect(ops(healthFronts(snap(null, { f: 'ok' }), snap(null, { f: 'error' })))).toEqual(['show:mcp:f:error']);
+    expect(ops(healthFronts(snap(null, { f: 'error' }), snap(null, { f: 'ok' })))).toEqual(['show:mcp:f:info']);
+  });
+  it('MCP en reconnexion : garde son dernier état établi, le rétabli vient au bout', function() {
+    var r1 = healthFronts(snap(null, { f: 'error' }), snap(null, { f: 'connecting' }));
+    expect(ops(r1)).toEqual([]);
+    expect(r1.snapshot.mcp.f).toBe('error');
+    expect(ops(healthFronts(r1.snapshot, snap(null, { f: 'ok' })))).toEqual(['show:mcp:f:info']);
+  });
+  it('MCP connecting au démarrage puis erreur : front', function() {
+    var r1 = healthFronts(null, snap(null, { f: 'connecting' }));
+    expect(ops(healthFronts(r1.snapshot, snap(null, { f: 'error' })))).toEqual(['show:mcp:f:error']);
+  });
+  it('MCP : attente d\'autorisation jamais annoncée ; erreur → attente retire sans rétablir', function() {
+    expect(ops(healthFronts(snap(null, { f: 'ok' }), snap(null, { f: 'pending' })))).toEqual([]);
+    expect(ops(healthFronts(snap(null, { f: 'error' }), snap(null, { f: 'pending' })))).toEqual(['dismiss:mcp:f']);
+  });
+  it('MCP supprimé ou désactivé en erreur : retiré, sans rétabli ; sain retiré : rien', function() {
+    expect(ops(healthFronts(snap(null, { f: 'error' }), snap(null, {})))).toEqual(['dismiss:mcp:f']);
+    expect(ops(healthFronts(snap(null, { f: 'ok' }), snap(null, {})))).toEqual([]);
   });
 });

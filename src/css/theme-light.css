@@ -75,6 +75,10 @@ html[data-theme="light"] {
   --code-head-bg:          hsl(var(--hue) 37% 84.5%);
   --code-inline-color:     hsl(var(--code-hue) 84.9% 41.6%);
   --brand:                 #e05f1c;   /* identité de marque, hors palette (cf. base.css) */
+  --float-shadow:          0 8px 24px rgba(0,0,0,.18);   /* ombre des flottants (toasts), allégée comme .model-menu */
+  /* Avertissement de toast : plus saturé que --pending clair (#96690b), jugé
+     terne sur maquette ; contraste ≥ 3:1 gardé pour filet et glyphe. */
+  --toast-warn:            #a86a00;
   /* Surlignage de recherche : la marque doit être plus SOMBRE que le fond ici,
      là où le thème sombre la veut plus claire (cf. base.css). Réglée proche du
      fond pour la même raison — assez pour situer, pas assez pour crier. */

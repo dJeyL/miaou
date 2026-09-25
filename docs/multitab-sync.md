@@ -109,6 +109,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `conv-closed` | `{ convId, tabId }` | `soft-unlock` (du tabId émetteur) |
 | `conv-generation-started` | `{ convId, tabId }` | affichée → `readonly-on` ; sinon `ignore` |
 | `conv-generation-ended` | `{ convId, tabId }` | affichée → `readonly-off` ; sinon `ignore` |
+| `storage-state` | `{ full }` | `storage-state` — indépendant de la conv et du Space ; tout `full` autre que `true` vaut levée |
 
 ### Émetteurs (livrés)
 
@@ -131,6 +132,8 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `putSkill` (skills.js) | IndexedDB | `skills-updated` | `{}` (sur `tx.oncomplete`) |
 | `deleteSkillDb` (skills.js) | IndexedDB | `skills-updated` | `{}` (sur `tx.oncomplete`) |
 | `applyImportedData` (main.js) | les deux | `full-reload` | `{}` (une fois, avant `location.reload()`) |
+| `setStorageFull` (storage.js), via `noteStorageWriteFailure` | IDB `tx.onabort` | `storage-state` | `{ full: true }` — au FRONT seulement : un onglet déjà plein ne rediffuse pas à chaque échec |
+| `setStorageFull` (storage.js), via `noteStorageSpaceFreed` | IDB `tx.oncomplete` d'une suppression (`removeConversationRecord`, `deleteResource`, `deleteResourcesByConversation` si non vide, `deleteSkillDb`) | `storage-state` | `{ full: false }` — à CHAQUE suppression, même si cet onglet n'était pas plein : un pair peut l'être sans que cet onglet, ouvert après la pose, le sache |
 
 **Ne diffusent PAS** (décidés, pas des oublis) :
 - `miaou-active-space` (`setActiveSpaceId`) — état **par onglet** ; deux onglets
@@ -193,6 +196,7 @@ inoffensif, les pairs rechargent de toute façon.
 | `invalidate-resources` | `invalidateResourceCache(ids)` ; si conv affichée concernée et `!sending` → `loadConversationResources` + `renderThread`. Si `spaceId` non nul → `refreshVisibleSpaceLibrary(spaceId, ids)` : re-render de la bibliothèque, scroll à l'arrivant seulement si un des `ids` n'a pas encore de carte (sinon position de lecture restaurée — renommage, description aboutie ; cf. `docs/spaces.md`), sous les gardes du helper (Space actif, onglet « Fichiers » visible). Une **suppression** diffusée ne porte pas de `spaceId` (`deleteResource` n'a que l'id) : elle ne repeint donc rien chez le pair, limite assumée — l'onglet qui supprime re-rend le sien. |
 | `reload-skills` | `loadSkillsCache()` ; `renderSkills()` si drawer ouvert (`isSkillsDrawerOpen`), sinon `syncSkillHintUI`. |
 | `full-reload` | `location.reload()`. |
+| `storage-state` | `setStorageFull(full, false)` : applique l'état « stockage plein » (lot AG) sans rediffuser ; au front local, le chat change d'expression et le toast de quota s'affiche ou se retire, comme dans l'onglet émetteur (décision S3 — le quota concerne tous les onglets). L'état est de session, jamais persisté : un onglet ouvert après la pose ne le connaît qu'à sa première écriture en échec, ou au prochain message. Cf. `docs/storage.md`. |
 | `soft-lock` | pair affiche la même conv → l'ajouter à `_peersOnConv`, afficher le bandeau, **re-signaler** si pair nouveau (handshake borné). Soft-lock. |
 | `soft-unlock` | pair a fermé/quitté → retirer de `_peersOnConv`/`_peersGenerating` ; bandeau masqué si plus aucun pair. Soft-lock. |
 | `readonly-on` / `readonly-off` | Relais readonly (no-op tant que seul le soft-lock est branché). |

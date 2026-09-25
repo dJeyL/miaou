@@ -48,7 +48,9 @@ Figtree/Fira Code).
 - **Santé des services en un coup d'œil** : une pastille dit si le backend
   répond et distingue « pas configuré » de « injoignable » ; le logo du chat
   fronce les sourcils dès qu'un service est en panne, et se déride tout seul
-  quand il revient — cf. [docs/backend-health.md](docs/backend-health.md).
+  quand il revient ; des sourcils horizontaux signalent un stockage plein, et
+  des notifications en annoncent les changements (panne, retour, échec d'une
+  action) — cf. [docs/toasts.md](docs/toasts.md) — cf. [docs/backend-health.md](docs/backend-health.md).
 - Affichage du raisonnement des modèles thinking-capable, dans un bloc dépliable
   alimenté en direct.
 - Rendu Markdown, coloration syntaxique, tables, blocs de code avec « copier » et

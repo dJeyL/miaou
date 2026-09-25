@@ -45,6 +45,7 @@ const SYNC_MESSAGE_TYPES = [
   'conv-closed',              // { convId, tabId } — fin de soft-lock / release
   'conv-generation-started',  // { convId, tabId } — readonly relay + heartbeat
   'conv-generation-ended',    // { convId, tabId } — fin de readonly relay
+  'storage-state',            // { full } — quota IndexedDB atteint (pose) ou place libérée (levée), lot AG
 ];
 
 // Construit une enveloppe bien formée. `rand` injecté (déterminisme) n'est PAS
@@ -98,6 +99,7 @@ function validateEnvelope(obj) {
 //     'soft-unlock'    — release soft-lock du tabId émetteur.
 //     'readonly-on'    — génération démarrée ailleurs sur la conv affichée.
 //     'readonly-off'   — génération terminée ailleurs.
+//     'storage-state'  — le stockage est plein (`full`) ou ne l'est plus.
 //
 // Le contexte porte aussi, pour les décisions liées à la conv, de quoi trancher
 // « affichée ? » (convId === ctx.currentConvId) — l'herméticité de Space
@@ -192,6 +194,11 @@ function routeMessage(env, ctx) {
       return isDisplayed
         ? { action: 'readonly-off', convId: p.convId, tabId: env.tabId }
         : { action: 'ignore' };
+    case 'storage-state':
+      // Indépendant de la conv et du Space : le quota est celui de l'origine.
+      // Tout ce qui n'est pas exactement `true` vaut levée — un payload abîmé
+      // ne doit pas poser un état qui ne se lève que par une suppression.
+      return { action: 'storage-state', full: p.full === true };
     default:
       return { action: 'ignore' };
   }

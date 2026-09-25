@@ -108,9 +108,13 @@ Safari, cesserait de s'appliquer. C'est la même contrainte qui justifiait
 historiquement le doublon SVG inline / base64, lequel disparaît ici sans rien
 perdre puisque les deux sorties viennent désormais du même fichier.
 
-**Prédicat unique, `resolveWorriedLogo(backendHealth, mcpSeverity)`** (pur,
-utils.js), qui compose les deux versants sans en ouvrir un troisième. Deux
-décisions y sont portées :
+**Prédicat unique, `resolveLogoExpression(backendHealth, mcpSeverity,
+storageFull)`** (pur, utils.js), qui rend `'ok'`, `'worried'` ou `'storage'`
+(troisième expression, cf. plus bas). Il compose les versants sans en ouvrir
+un nouveau. Trois décisions y sont portées :
+
+- Le stockage plein PRIME sur le froncement quand les deux coexistent : une
+  perte de données est irréversible, un service revient.
 
 - `unconfigured` ne fronce PAS. Le soucieux dit « quelque chose est cassé » ;
   une install neuve n'est pas cassée, elle est vide — accueillir le premier
@@ -119,13 +123,15 @@ décisions y sont portées :
   d'autorisation est une action à faire, pas une panne : sa pastille jaune la
   porte déjà, et le chat doublerait un signal qui n'a pas la même urgence.
 
-**Écrivain DOM unique, `syncWorriedLogo()`** (ui.js) : une classe sur `<body>`,
-`miaou-worried`, pilote les trois surfaces à la fois. Elle s'accroche aux deux
-synchros déjà obligatoires — `syncConnDot` pour le backend,
-`syncAuthorizationPending` pour le MCP — et à aucun autre signal : tout point
-qui change la santé d'un service passe déjà par l'une des deux. Le retrait
-emprunte le même chemin que la pose, la classe étant recalculée en entier à
-chaque appel.
+**Écrivain DOM unique, `syncWorriedLogo()`** (ui.js) : une classe par
+expression sur `<body>`, `miaou-worried` ou `miaou-storage`, qui s'excluent et
+pilotent les trois surfaces à la fois. Il s'accroche aux deux synchros déjà
+obligatoires — `syncConnDot` pour le backend, `syncAuthorizationPending` pour
+le MCP — et au front de l'état de stockage (`setStorageFull`, storage.js), à
+aucun autre signal : tout point qui change la santé d'un service passe déjà par
+l'une des deux synchros, et l'état de stockage n'a que cet écrivain. Le retrait
+emprunte le même chemin que la pose, les deux classes étant recalculées en
+entier à chaque appel.
 
 **Un appel d'outil MCP qui échoue au transport retombe sur le statut du
 serveur** (`noteMcpCallFailure`, mcp.js), avec sa réciproque sur appel réussi
@@ -140,7 +146,8 @@ soucieux pour un appel malformé.
 
 **Au boot, le plancher d'affichage est allongé quand le chat est soucieux**
 (`BOOT_MIN_WORRIED_MS`, 3s contre 1.8s) : une expression qui apparaît en fin de
-course ne serait pas vue.
+course ne serait pas vue. Il l'est pour les deux expressions, froncement et
+stockage plein.
 
 Deux précautions vont avec, et les deux ont été payées. La classe est relue **à
 l'échéance**, jamais au moment d'armer le timer : `finishBoot` est appelée en
@@ -164,6 +171,38 @@ de développement, donc dans la fenêtre où même le code défectueux affichait
 fronçage — alors que la latence d'un refus dépend entièrement de
 l'environnement. Le banc doit produire la fenêtre qu'il veut tester plutôt que
 d'espérer la rencontrer.
+
+## Fronts annoncés en toast (lot AG)
+
+L'état reste porté par le chat et les pastilles ; ses FRONTS sont annoncés par
+un toast — panne (`ok → down`, erreur de service, 8 s, clic vers le drawer des
+serveurs) et retour (« rétabli », 5 s, affiché même si l'erreur a été fermée).
+Détection par diff d'instantanés aux deux mêmes synchros que le chat
+(`syncHealthToasts`, pur `healthFronts`) : cf. `docs/toasts.md`.
+
+## Troisième expression : sourcils horizontaux (stockage plein, lot AG)
+
+Quand une écriture IndexedDB échoue sur le quota, le chat prend des sourcils
+horizontaux, plus larges et symétriques : il dit « les données ne sont plus
+enregistrées » là où le froncement dit « un service ne répond pas ». L'état vient
+de `isStorageFull()` (cf. `docs/storage.md`) : diffusé à tous les onglets, levé
+par une suppression, jamais persisté.
+
+**L'écart porte sur les sourcils seuls.** La bouche est celle du froncement,
+déjà quasi plate : une autre bouche ne se verrait qu'en taille boot, et
+l'expression vise sidebar et topbar.
+
+**CSS seul, sur les tracés existants** (`body.miaou-storage`, base.css) — pas de
+géométrie ajoutée à `cat.svg`, donc rien à suffixer ni à recompter. Chaque
+sourcil du SVG est incliné d'environ 13,13° : la rotation inverse le remet à
+plat, `scaleX(1.25)` l'allonge, et un `translate` le recale. Deux pièges payés
+sur maquette : allongés depuis leur centre, les deux traits refermaient leur
+écart de 4 unités et se rejoignaient en un monosourcil ; et commuter
+l'origine de transformation vers l'extrémité intérieure, qui corrigeait ça,
+aurait fait SAUTER le sourcil au lieu de le faire glisser (une origine ne
+s'anime pas). L'origine reste donc au centre, et le `translate` compense
+(±0.98 horizontalement, +0.52 verticalement : une demi-unité sous le centre du
+tracé, hauteur calée avec Julien aux trois tailles).
 
 **L'état doit être lisible sans animation.** Le kill-switch reduced-motion
 coupe transitions et clin : l'information est donc dans la POSITION des

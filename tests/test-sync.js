@@ -219,3 +219,22 @@ describe('storageEventDecision (relecture sur événement storage)', function() 
     expect(storageEventDecision(null, null, null)).toBe(null);
   });
 });
+
+describe('storage-state (lot AG) — quota partagé entre onglets', function() {
+  var CTX = { tabId: 'me', currentConvId: 'c1', activeSpaceId: 's1' };
+  it('fait partie de la liste fermée des types', function() {
+    expect(!!validateEnvelope({ v: 1, type: 'storage-state', tabId: 'tab_a', payload: { full: true } })).toBe(true);
+  });
+  it('pose et levée routées quelle que soit la conv affichée', function() {
+    expect(routeMessage(makeEnvelope('storage-state', 'other', { full: true }), CTX))
+      .toEqual({ action: 'storage-state', full: true });
+    expect(routeMessage(makeEnvelope('storage-state', 'other', { full: false }), CTX))
+      .toEqual({ action: 'storage-state', full: false });
+    expect(routeMessage(makeEnvelope('storage-state', 'other', { full: true }), {}))
+      .toEqual({ action: 'storage-state', full: true });
+  });
+  it('un payload qui ne dit pas exactement true vaut levée', function() {
+    expect(routeMessage(makeEnvelope('storage-state', 'other', { full: 'true' }), CTX).full).toBe(false);
+    expect(routeMessage(makeEnvelope('storage-state', 'other', {}), CTX).full).toBe(false);
+  });
+});

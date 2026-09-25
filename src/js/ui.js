@@ -2267,7 +2267,7 @@ function decoratePre(scope) {
         btn.innerHTML = svgCheck;
         btn.classList.add('code-copy--checked');
         setTimeout(() => { btn.innerHTML = svgCopy; btn.classList.remove('code-copy--checked'); }, 1400);
-      });
+      }).catch(toastCopyFailed);
     };
     head.querySelector('.code-dl').onclick = () => {
       const rawName = code ? code.getAttribute('data-filename') : '';
@@ -2393,7 +2393,7 @@ function copyMsg(btn) {
     btn.innerHTML = svgCheck;
     btn.classList.add('msg-copy--checked');
     setTimeout(() => { btn.innerHTML = svgCopy; btn.classList.remove('msg-copy--checked'); }, 1400);
-  });
+  }).catch(toastCopyFailed);
 }
 
 // Ouvre le fil de l'agent dont ce message porte le compte rendu (bouton posé par
@@ -4292,6 +4292,7 @@ function syncConnDot() {
     dot.title = 'Backend injoignable';
   }
   syncWorriedLogo();
+  syncHealthToasts();
 }
 
 // Compat : les points d'échange (main.js) posent leur verdict par cet ancien
@@ -4310,11 +4311,18 @@ function setConnDot(state) {
 // en câbler d'autres laisserait diverger ce que la pastille et le chat disent
 // du même incident. Le RETRAIT emprunte le même chemin que la pose : la classe
 // est recalculée en entier à chaque appel, jamais posée sans être reprise.
+// Écrivain UNIQUE des classes d'expression du chat, une par expression, qui
+// s'excluent : les deux sont recalculées en entier à chaque appel, de sorte que
+// le retrait emprunte le même chemin que la pose. Appelée par les deux synchros
+// de santé des services et par le changement d'état du stockage
+// (`setStorageFull`, storage.js).
 function syncWorriedLogo() {
-  const worried = resolveWorriedLogo(
+  const expr = resolveLogoExpression(
     resolveBackendHealth(activeApiConfig(), REQUIRE_API_KEY, _backendProbe),
-    resolveAuthorizationPending(mcpStatusSnapshot()).severity);
-  document.body.classList.toggle('miaou-worried', worried);
+    resolveAuthorizationPending(mcpStatusSnapshot()).severity,
+    isStorageFull());
+  document.body.classList.toggle('miaou-worried', expr === 'worried');
+  document.body.classList.toggle('miaou-storage', expr === 'storage');
 }
 
 // Active ou désactive l'état « confirmation en attente ». Le composer reste
@@ -4446,7 +4454,7 @@ function buildInterjectionChip(item) {
     navigator.clipboard.writeText(item.literal).then(() => {
       btn.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
       setTimeout(() => { btn.innerHTML = svgCopy; }, 1400);
-    });
+    }).catch(toastCopyFailed);
   });
   el.querySelector('.ij-x').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -6015,6 +6023,17 @@ function syncSettingsReasoningLabel() {
 // les namespaces du drawer outils. `.settled` (overflow visible, nécessaire aux
 // .model-menu absolus) est posée par le transitionend câblé dans init() — jamais
 // ici, pour que le clip tienne pendant toute la transition d'ouverture.
+// Ouvre les réglages sur une catégorie désignée par sa clé (`data-cat` de son
+// en-tête, index.html), la déplie et la fait défiler en vue. Cible du clic des
+// toasts de quota (« Données »).
+function openSettingsCategory(key) {
+  openSettings();
+  const head = document.querySelector('#drawer .set-cat-head[data-cat="' + key + '"]');
+  if (!head) return;
+  if (!head.classList.contains('open')) toggleSettingsCat(head);
+  setTimeout(function() { head.scrollIntoView({ block: 'start', behavior: motionReduced() ? 'auto' : 'smooth' }); }, 240);
+}
+
 function toggleSettingsCat(head) {
   const body = head.nextElementSibling;
   const opening = !head.classList.contains('open');
@@ -8061,6 +8080,7 @@ function syncAuthorizationPending() {
   const label = $('auth-pending-label');
   if (label) label.textContent = pending.label;
   syncWorriedLogo();
+  syncHealthToasts();
 }
 
 function renderMcpServersIfOpen() {
@@ -9537,6 +9557,9 @@ function wireLibraryNameEditing(el, fileId, spaceId) {
     // nom d'avant plutôt que de laisser à l'écran un renommage qui n'a pas eu
     // lieu — l'affordance ne doit jamais mentir sur l'état du store.
     el.textContent = applied != null ? applied : before;
+    // Le nom revient à l'ancien : le toast dit pourquoi, là où le retour seul
+    // se lisait comme une saisie perdue.
+    if (applied == null) toastRenameFailed(before);
     el._libNameBefore = el.textContent;
     flushDeferredLibraryRefresh();
     // Le libellé du bouton de suppression du drawer Space porte des comptes,

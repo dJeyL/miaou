@@ -500,12 +500,16 @@ function shouldProbeBackend(health, lastProbe, now, minIntervalMs) {
   return (now - lastProbe) >= minIntervalMs;
 }
 
-// Le chat a-t-il l'air soucieux ? Prédicat unique des trois surfaces de logo
-// (boot, sidebar, topbar), qui COMPOSE les deux versants de santé sans en
-// rouvrir un troisième : `backendHealth` vient de `resolveBackendHealth`,
-// `mcpSeverity` de `resolveAuthorizationPending().severity`.
+// Expression du chat : prédicat unique des trois surfaces de logo (boot,
+// sidebar, topbar). Rend `'ok'`, `'worried'` (froncement : un service ne répond
+// pas) ou `'storage'` (sourcils horizontaux : le stockage est plein, lot AG).
+// Il COMPOSE les versants sans en rouvrir un : `backendHealth` vient de
+// `resolveBackendHealth`, `mcpSeverity` de `resolveAuthorizationPending().severity`,
+// `storageFull` de `isStorageFull()`.
 //
-// Deux décisions portées ici, et pas ailleurs :
+// Décisions portées ici, et pas ailleurs :
+//   - Le stockage PRIME sur le froncement quand les deux coexistent : une perte
+//     de données est irréversible, un service revient.
 //   - `unconfigured` ne rend PAS le chat soucieux. Le soucieux dit « quelque
 //     chose est cassé » ; une install neuve n'est pas cassée, elle est vide.
 //     Accueillir le premier lancement par une grimace ferait lire un état
@@ -515,8 +519,31 @@ function shouldProbeBackend(health, lastProbe, now, minIntervalMs) {
 //     panne : sa pastille jaune la porte déjà, et le chat doublerait un signal
 //     qui n'a pas la même urgence.
 // Pure, testable en QuickJS.
-function resolveWorriedLogo(backendHealth, mcpSeverity) {
-  return backendHealth === 'down' || mcpSeverity === 'error';
+function resolveLogoExpression(backendHealth, mcpSeverity, storageFull) {
+  if (storageFull === true) return 'storage';
+  if (backendHealth === 'down' || mcpSeverity === 'error') return 'worried';
+  return 'ok';
+}
+
+// Nature d'un échec d'écriture (IndexedDB ou localStorage), lue sur `err.name`
+// et JAMAIS sur le message, localisé selon le navigateur. Seul `'quota'` pose
+// un état (le stockage est plein, commun à tous les onglets de l'origine) ; les
+// autres ne sont pas le même fait :
+//   - `'closed'` (`InvalidStateError`) : connexion fermée après `versionchange`,
+//     locale à l'onglet et déjà dite par le bandeau « version plus récente » ;
+//   - `'clone'` (`DataCloneError`) : un enregistrement non sérialisable, bug de
+//     programmation qui ne concerne que lui ;
+//   - `'other'` : tout le reste (`UnknownError` d'I/O, base corrompue…).
+// `NS_ERROR_DOM_QUOTA_REACHED` est le NOM que donnaient les Firefox anciens au
+// dépassement du quota localStorage : même fait, même classe.
+// `err` nul est toléré : `tx.error` l'est sur un abort sans cause.
+// Pure, testable en QuickJS.
+function classifyStorageError(err) {
+  const name = err && typeof err.name === 'string' ? err.name : '';
+  if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED') return 'quota';
+  if (name === 'InvalidStateError') return 'closed';
+  if (name === 'DataCloneError') return 'clone';
+  return 'other';
 }
 
 // État de la pastille MCP de topbar : prédicat d'APPARITION, sévérité et
@@ -4958,4 +4985,151 @@ function sniffBackupFormat(u8) {
   if (!u8 || typeof u8.length !== 'number' || u8.length < 4) return 'json';
   if (u8[0] === 0x50 && u8[1] === 0x4B && u8[2] === 0x03 && u8[3] === 0x04) return 'zip';
   return 'json';
+}
+
+// ── Toasts : file, durées, placement (lot AG) ────────────────────────────────
+// Le composant (toasts.js) ne décide de rien : il applique ce que rendent ces
+// trois purs. Un toast annonce un FRONT (pose d'un état, retour d'un service),
+// jamais un état durable — l'état reste sur sa surface passive (décision D1).
+
+// Plafond de toasts visibles. Constante et non clef de config (décision S6).
+const TOAST_MAX_VISIBLE = 4;
+
+// File de toasts, du plus ancien (en haut de la pile) au plus récent (en bas,
+// contre l'ancre). Un toast de même clé REMPLACE l'ancien et revient en bas,
+// comme un toast neuf : le plus récent est toujours contre l'ancre (option B
+// d'AG-0, Julien). La position vaut donc fraîcheur, et l'éviction n'a pas
+// besoin d'autre champ : au-delà du plafond, le plus ancien NON-erreur sort
+// d'abord (S6) ; si tous sont des erreurs, le plus ancien sort. Cas limite
+// assumé : quatre erreurs affichées et un arrivant qui n'en est pas une — c'est
+// lui, seul non-erreur, qui sort. Les erreurs sont protégées, et une erreur de
+// perte de données ne s'efface pas devant une info.
+// Rend { list, removed } — `removed` liste les clés sorties par éviction, y
+// compris celle de l'arrivant s'il n'a pas trouvé place (le remplacé n'y figure
+// pas : il est toujours là, sous sa forme nouvelle).
+// Pure : ne mute pas `list`.
+function toastQueueUpsert(list, item, max) {
+  const cap = max == null ? TOAST_MAX_VISIBLE : max;
+  const next = (list || []).filter(function(t) { return t.key !== item.key; });
+  next.push(item);
+  const removed = [];
+  while (next.length > cap) {
+    let i = next.findIndex(function(t) { return t.level !== 'error'; });
+    if (i === -1) i = 0;
+    removed.push(next[i].key);
+    next.splice(i, 1);
+  }
+  return { list: next, removed: removed };
+}
+
+function toastQueueRemove(list, key) {
+  return (list || []).filter(function(t) { return t.key !== key; });
+}
+
+// Durée d'affichage en ms, `null` = pas d'auto-fermeture (décision D9) :
+// info 5 s, avertissement 8 s, erreur de service 8 s, erreur P1 (perte de
+// données, `persistent`) jamais. La croix reste toujours présente.
+function toastDurationMs(level, persistent) {
+  if (persistent === true) return null;
+  if (level === 'info') return 5000;
+  return 8000;
+}
+
+// Placement de la pile (D7, S7). Toutes les grandeurs sont MESURÉES par
+// l'appelant, en px du viewport — jamais déduites d'un breakpoint : la place à
+// droite du composer dépend de la sidebar et de --col.
+//   m = { vw, vh, inputRight, inputBottom, composerTop, drawerW, toastW, inset }
+//   - `inputRight`/`inputBottom` : bord droit et bas du champ de saisie ;
+//     `composerTop` : haut de la zone composer. Absents (null) si pas de composer.
+//   - `drawerW` : largeur du drawer ouvert, 0 sinon.
+// Rend { mode, right, bottom }. Hors drawer, la pile est TOUJOURS collée au
+// bord droit de l'écran (précision de Julien : « à droite du composer » ne
+// voulait pas dire collée à lui) ; seule sa hauteur dépend de la place :
+//   'composer'     — la place à droite du champ suffit : bas aligné sur le sien ;
+//   'edge'         — elle ne suffit pas : au-dessus du composer, en bas du fil ;
+//   'beside-drawer'— à gauche du drawer ouvert ;
+//   'over-drawer'  — la place manque à gauche du drawer : par-dessus, au bord
+//                    droit (décision Julien, AG-0).
+// La HAUTEUR ne dépend jamais du drawer : elle suit la même règle avec ou sans
+// lui, pour que la pile ne saute pas verticalement quand un drawer s'ouvre ou
+// se ferme (retour de Julien) — le drawer ne décide que du décalage horizontal.
+// Pure, testable en QuickJS.
+function toastPlacement(m) {
+  const need = m.toastW + 2 * m.inset;
+  let mode, bottom;
+  if (m.inputRight == null) { mode = 'edge'; bottom = m.inset; }
+  else if (m.vw - m.inputRight >= need) { mode = 'composer'; bottom = Math.max(m.inset, m.vh - m.inputBottom); }
+  else { mode = 'edge'; bottom = Math.max(m.inset, m.vh - m.composerTop + 4); }
+  if (m.drawerW > 0) {
+    if (m.vw - m.drawerW >= need) return { mode: 'beside-drawer', right: m.drawerW + m.inset, bottom: bottom };
+    return { mode: 'over-drawer', right: m.inset, bottom: bottom };
+  }
+  return { mode: mode, right: m.inset, bottom: bottom };
+}
+
+// Fronts de santé des services (lot AG), par diff de deux instantanés pris aux
+// deux synchros de santé (syncConnDot, syncAuthorizationPending) — jamais chez
+// les écrivains, trop nombreux.
+//   snapshot = { backend: { id, name, health } | null,
+//                mcp: { [name]: 'ok' | 'pending' | 'error' } }
+// `health` vient de `resolveBackendHealth` ; l'état MCP d'un serveur est tiré
+// de `_remoteStatus` par l'appelant ('pending' = connecté mais un upstream
+// attend une autorisation ; 'connecting' est rendu tel quel et traité ici).
+//
+// Rend { events, snapshot } — `snapshot` est celui à garder pour le prochain
+// appel : un serveur MCP en cours de (re)connexion y garde son dernier état
+// ÉTABLI, sans quoi `error → connecting → ok` ne verrait jamais de front et le
+// « rétabli » ne viendrait pas.
+// Événements : { op: 'show', key, kind: 'backend'|'mcp', name, level:
+// 'error'|'info' } ou { op: 'dismiss', key }.
+//
+// Règles (brief AG §3.5) :
+//   - backend : ok → down = erreur ; down → ok = « rétabli » (D5, même si le
+//     toast d'erreur a été fermé) ; `unconfigured` ne produit rien, dans aucun
+//     sens (down → unconfigured retire le toast, sans « rétabli ») ;
+//   - bascule de serveur actif = changement de CLÉ, pas un front : l'ancien toast
+//     est retiré, rien n'est annoncé pour le nouveau à l'instant de la bascule ;
+//   - démarrage (prev nul) : l'état antérieur vaut `ok`, un premier échec est un
+//     front (voulu) ;
+//   - MCP : tout état établi autre que 'error' (absent compris) → 'error' =
+//     erreur ; 'error' → 'ok' = « rétabli » ; 'error' → 'pending' ou retiré
+//     (supprimé, désactivé) = toast retiré, sans « rétabli » — une attente
+//     d'autorisation n'annonce jamais rien (AB-5).
+// Pure, testable en QuickJS.
+function healthFronts(prev, next) {
+  const events = [];
+  const nb = next && next.backend;
+  let pb = prev && prev.backend;
+  if (!prev && nb) pb = { id: nb.id, name: nb.name, health: 'ok' };
+  if (pb && (!nb || pb.id !== nb.id)) {
+    if (pb.health === 'down') events.push({ op: 'dismiss', key: 'backend:' + pb.id });
+  } else if (pb && nb) {
+    if (pb.health === 'ok' && nb.health === 'down') {
+      events.push({ op: 'show', key: 'backend:' + nb.id, kind: 'backend', name: nb.name, level: 'error' });
+    } else if (pb.health === 'down' && nb.health === 'ok') {
+      events.push({ op: 'show', key: 'backend:' + nb.id, kind: 'backend', name: nb.name, level: 'info' });
+    } else if (pb.health === 'down' && nb.health === 'unconfigured') {
+      events.push({ op: 'dismiss', key: 'backend:' + nb.id });
+    }
+  }
+  const pm = (prev && prev.mcp) || {};
+  const nmRaw = (next && next.mcp) || {};
+  const nm = {};
+  Object.keys(nmRaw).forEach(function(name) {
+    nm[name] = nmRaw[name] === 'connecting' ? (pm[name] || 'connecting') : nmRaw[name];
+  });
+  Object.keys(nm).forEach(function(name) {
+    const was = pm[name], now = nm[name];
+    if (now === 'error' && was !== 'error') {
+      events.push({ op: 'show', key: 'mcp:' + name, kind: 'mcp', name: name, level: 'error' });
+    } else if (was === 'error' && now === 'ok') {
+      events.push({ op: 'show', key: 'mcp:' + name, kind: 'mcp', name: name, level: 'info' });
+    } else if (was === 'error' && now === 'pending') {
+      events.push({ op: 'dismiss', key: 'mcp:' + name });
+    }
+  });
+  Object.keys(pm).forEach(function(name) {
+    if (!(name in nm) && pm[name] === 'error') events.push({ op: 'dismiss', key: 'mcp:' + name });
+  });
+  return { events: events, snapshot: { backend: nb ? { id: nb.id, name: nb.name, health: nb.health } : null, mcp: nm } };
 }

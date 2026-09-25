@@ -255,6 +255,12 @@ function applySyncDecision(d) {
       location.reload();
       return;
 
+    case 'storage-state':
+      // Un pair a constaté le quota, ou libéré de la place. Appliqué sans
+      // rediffuser (`broadcast` faux) : l'émetteur a déjà prévenu tout le monde.
+      setStorageFull(d.full, false);
+      return;
+
     case 'soft-lock': {
       // Un pair (d.tabId) affiche la même conv que nous. L'ajouter au set. Si
       // c'est un pair INCONNU, se re-signaler une fois (handshake) pour que le

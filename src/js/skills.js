@@ -400,7 +400,10 @@ function putSkill(record) {
       tx.objectStore('skills').put(rec);
       tx.oncomplete = function() { upsertSkillCache(rec); syncPost('skills-updated', {}); resolve(rec.slug); };
       tx.onerror = function(e) { reject(e.target.error); };
-      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
+      tx.onabort = function() {
+        noteStorageWriteFailure('skill', rec.slug, tx.error);
+        reject(tx.error || new Error('transaction avortée'));
+      };
     });
   });
 }
@@ -412,9 +415,12 @@ function deleteSkillDb(slug) {
     return new Promise(function(resolve, reject) {
       const tx = db.transaction('skills', 'readwrite');
       tx.objectStore('skills').delete(slug);
-      tx.oncomplete = function() { removeSkillCache(slug); syncPost('skills-updated', {}); resolve(); };
+      tx.oncomplete = function() { removeSkillCache(slug); syncPost('skills-updated', {}); noteStorageSpaceFreed(); resolve(); };
       tx.onerror = function(e) { reject(e.target.error); };
-      tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
+      tx.onabort = function() {
+        noteStorageWriteFailure('skill', slug, tx.error);
+        reject(tx.error || new Error('transaction avortée'));
+      };
     });
   });
 }

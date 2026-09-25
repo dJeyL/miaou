@@ -374,8 +374,9 @@ geste ; le développement est dans la doc pointée.
     convs)` (storage.js, pure) est LA source de vérité pour « cette conversation
     appartient-elle au Space actif ? » — jamais un filtre `c.spaceId === x`
     réécrit localement. Un id hors-Space répond comme **inexistant** (pas
-    d'oracle). Deux exceptions sanctionnées seulement (palette de commandes,
-    badges d'activité), toutes deux décidées explicitement.
+    d'oracle). Exceptions sanctionnées seulement, chacune décidée explicitement :
+    palette de commandes, badges d'activité, et toasts menant à une
+    conversation (lot AG).
     Cf. `docs/pitfalls-detail.md` et `docs/spaces.md`.
 19. **Recall d'image : ré-injection via message user synthétique, jamais dans
     `role:'tool'`.** Le handler renvoie un tool result annonciateur ; l'image
@@ -542,7 +543,13 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   distinguer « vide » de « pas chargée ») ; et la fermeture de chaque connexion
   IDB sur `versionchange` (`releaseSupersededDb`) — sans elle, un onglet resté
   sur l'ancien bundle bloque le démarrage du nouveau au prochain bump de
-  `MIAOU_DB_VERSION`.
+  `MIAOU_DB_VERSION` ; porte enfin le point unique d'échec d'écriture
+  (`noteStorageWriteFailure`, appelé DANS chaque `tx.onabort` — `putResource`
+  résout avant le commit, son rejet de quota n'atteignait personne), la
+  classification pure `classifyStorageError` (sur `err.name`), l'état de
+  session « stockage plein » (`setStorageFull`, levé par une suppression
+  commitée et jamais par une écriture réussie) et l'écriture localStorage
+  protégée `writeLocalStorage` (lot AG).
 - **`docs/backend-health.md`** — santé des services et ce qu'on en montre :
   pastille de connexion de la pilule modèle, prédicat pur `resolveBackendHealth`
   et ses TROIS états (`unconfigured` distinct de `down` — deux rouges, deux
@@ -554,9 +561,11 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   retour comme son homologue MCP ; porte aussi le **chat soucieux** — source SVG
   unique `src/svg/cat.svg` injectée inline aux trois surfaces (ids suffixés par
   instance, compte d'instances vérifié au build) avec `LOGO_SRC` dérivé du même
-  fichier pour favicon/glyphe/export, prédicat pur `resolveWorriedLogo`
-  (`unconfigured` ne fronce pas, `pending` MCP non plus), écrivain unique
-  `syncWorriedLogo` accroché aux deux synchros existantes, report d'un échec
+  fichier pour favicon/glyphe/export, prédicat pur `resolveLogoExpression`
+  (normal, froncement, et sourcils horizontaux du stockage plein, prioritaires
+  — lot AG, CSS seul sur les tracés existants ; `unconfigured` ne fronce pas,
+  `pending` MCP non plus), écrivain unique `syncWorriedLogo` accroché aux deux
+  synchros existantes et au front de l'état de stockage, report d'un échec
   d'appel MCP sur le statut du serveur (`noteMcpCallFailure` et sa réciproque,
   ligne de partage transport/applicatif), et la règle « lisible sans
   animation ». Le versant MCP reste dans `docs/mcp.md`.
@@ -721,7 +730,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   d'attente pendant génération, soft-lock, readonly/heartbeat/TTL, doctrine
   broadcast post-commit + relecture post-await (piège 24), et la relecture sur
   événement `storage` (`storageEventDecision`) pour les types adossés à
-  localStorage, dont le message peut précéder la visibilité de l'écriture.
+  localStorage, dont le message peut précéder la visibilité de l'écriture ;
+  plus `storage-state` (lot AG), pose au front et levée à chaque suppression.
 - **`docs/interjections.md`** — interjections mid-génération (lot Q) : file
   locale de messages tapés pendant une génération, clefée PAR CONVERSATION
   (X-1e) et drainée à la frontière de tour (réaiguillage mid-boucle) ou en fin
@@ -850,6 +860,16 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   inspecteur restent figés sur la photo du dernier envoi ; et l'arbitrage des
   **deux surfaces d'annonce** (`syncCompactionActivitySurface` /
   `setBgActivitySuppressed`), chacune parlant là où l'autre se tait.
+- **`docs/toasts.md`** — toasts (lot AG) : critère « l'état sur la surface
+  passive, le front en toast », API `showToast`/`dismissToast` (clé de cause,
+  niveau, thème, texte en `textContent`, action, `persistent`), table fermée
+  thème → glyphe `TOAST_GLYPHS` (glyphes repris, aucun dessiné), purs
+  `toastQueueUpsert` (le plus récent en bas, remplacé redescendu, plafond
+  `TOAST_MAX_VISIBLE`, non-erreurs évincés d'abord), `toastDurationMs` et
+  `toastPlacement` (collé au bord droit, à hauteur du champ si la place à sa
+  droite suffit, au-dessus sinon ; à côté d'un drawer ou par-dessus ; mesuré), a11y (rôle par niveau,
+  jamais de vol de focus, pause au survol/focus, hors pile d'Échap) et jetons à
+  deux étages `--float-*` / `--toast-*`.
 - **`docs/generations.md`** — générations en vol / multitâche (lot T) : objet
   génération et registre `_activeGenerations` (clé `convId`), deux chemins de
   persistance (`persistCurrent` écran vs `persistGeneration`), projection pure

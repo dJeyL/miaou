@@ -100,6 +100,16 @@ hors de ces deux fonctions. Cliquer une ligne d'Espace **bascule** dessus
 (`pickSpace`, comportement inchangé) : aller directement au fil concerné depuis
 un autre Space reste hors périmètre. Cf. `docs/badges.md` et piège n°18.
 
+**Exception cross-Space assumée n°3 (lot AG, toasts).** Les toasts qui mènent à
+une conversation — réveil de parent échoué (`wake:<parentId>`), et le nom cité
+par une troncature refusée (`truncate:<convId>`) — sont affichés quel que soit
+le Space de la conversation : l'événement survient là où l'utilisateur ne
+regarde pas, et le taire parce qu'il est ailleurs serait le défaut même que le
+toast corrige. Le clic emprunte le geste déjà sanctionné de l'inventaire des
+agents (`gotoAgentInventoryRow` : `followSpace` puis `selectConv`), donc ne
+montre jamais un fil hors du Space actif. Décision Julien, S5 du lot AG — cf.
+`docs/toasts.md`.
+
 ## UI
 
 - **Sélecteur de Space** (`#space-select`, tête de sidebar, au-dessus de la

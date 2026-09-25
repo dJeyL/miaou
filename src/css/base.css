@@ -156,6 +156,38 @@
      Il suit en revanche le thème clair/sombre, sinon l'orange sombre devient
      illisible sur fond clair. Ne PAS le brancher sur --accent. */
   --brand:                 #ff7a45;
+
+  /* ─── Éléments flottants et toasts (lot AG) ───────────────────────────
+     Deux étages. --float-* : la matière d'un élément FLOTTANT (surface,
+     bordure, rayon, ombre, typo), que partageront toasts et futurs tooltips —
+     c'est le point d'harmonie. --toast-* : ce qui n'appartient qu'au toast
+     (géométrie, filet de niveau, glyphe), que le tooltip ne reprendra pas —
+     c'est le point de dissemblance. L'ombre est celle du .model-menu.
+     Niveaux : jetons PROPRES et non réemplois (--pending est scopé à l'attente
+     d'autorisation) ; info = --ok, les seuls toasts de ce niveau étant les
+     « rétabli » (D5). */
+  --float-bg:     var(--surface-2);
+  --float-bd:     var(--border-2);
+  --float-r:      var(--r);
+  --float-font:   var(--sans);
+  --float-text:   var(--text);
+  --float-shadow: 0 8px 28px rgba(0,0,0,.5);
+  --toast-w:      300px;
+  --toast-gap:    8px;
+  --toast-inset:  16px;
+  --toast-pad:    10px 4px 10px 12px;
+  --toast-bar:    3px;
+  --toast-glyph:  16px;
+  --toast-bg:     var(--float-bg);
+  --toast-bd:     var(--float-bd);
+  --toast-r:      var(--float-r);
+  --toast-shadow: var(--float-shadow);
+  --toast-text:   var(--float-text);
+  --toast-text-2: var(--text-2);
+  --toast-hover:  var(--surface-3);
+  --toast-info:   var(--ok);
+  --toast-warn:   #d9a441;
+  --toast-err:    var(--err);
 }
 
 /* ═══ Palettes (axe orthogonal au thème clair/sombre) ═══ */
@@ -405,6 +437,34 @@ body.miaou-worried .brow-r { transform: translateY(-3.3px) rotate(-5deg); }
 .mouth, .mouth-worried { transition: opacity 260ms ease-out; }
 body.miaou-worried .mouth-ok { opacity: 0; }
 body.miaou-worried .mouth-worried { opacity: 1; }
+
+/* ═══ Stockage plein : sourcils horizontaux (lot AG) ═══
+   Troisième expression, posée par `body.miaou-storage` (même écrivain unique,
+   syncWorriedLogo ; les deux classes s'excluent). Elle dit « les données ne
+   sont plus enregistrées » là où le froncement dit « un service ne répond
+   pas ». L'écart porte sur les sourcils SEULS : la bouche est celle du
+   froncement, déjà quasi plate — une autre bouche ne se verrait qu'en taille
+   boot, et l'expression vise sidebar et topbar.
+
+   Faite sur les tracés existants, sans géométrie de plus. Chaque sourcil du
+   SVG est incliné de atan(2.1/9) ≈ 13.13° : la rotation inverse le remet à
+   plat, et la symétrie vient de ce que les deux tracés sont déjà en miroir.
+   scaleX l'allonge de 25 %, APRÈS la rotation (à gauche dans la liste), pour
+   étirer un trait déjà horizontal sans l'épaissir.
+
+   L'allongement doit partir de l'extrémité INTÉRIEURE : depuis le centre, les
+   deux traits refermaient leur écart et se rejoignaient en un monosourcil. On
+   garde pourtant l'origine au centre (celle de .brow), pour que la transition
+   depuis le repos ou le froncement reste continue — une origine commutée ne
+   s'anime pas, elle saute. Le translate compense : il ramène vers l'extérieur
+   de ce qu'un allongement centré a pris à l'intérieur (±0.98), et pose le
+   trait une demi-unité sous le centre du tracé (0.52), hauteur calée sur
+   maquette avec Julien. */
+body.miaou-storage .brow { opacity: 1; }
+body.miaou-storage .brow-l { transform: translate(-0.98px, 0.52px) scaleX(1.25) rotate(-13.13deg); }
+body.miaou-storage .brow-r { transform: translate(0.98px, 0.52px) scaleX(1.25) rotate(13.13deg); }
+body.miaou-storage .mouth-ok { opacity: 0; }
+body.miaou-storage .mouth-worried { opacity: 1; }
 
 /* ═══ Reduced-motion : kill-switch global ═══
    Le réglage Animations (storage.js `motion`, appliqué par applyMotion, ui.js)

@@ -971,6 +971,28 @@ Quelques repères pour te déplacer dans MIAOU :
   Il redevient normal tout seul dès que le service répond de nouveau. Une
   installation neuve, pas encore configurée, ne le fait pas froncer : il n'y a
   rien de cassé, juste rien de réglé.
+- **Notifications** (en bas à droite, contre le bord de la fenêtre — au niveau
+  de la zone de saisie quand la place le permet, juste au-dessus sinon ; à
+  gauche d'un panneau ouvert) :
+  elles annoncent ce qui arrive pendant que tu regardes ailleurs — un serveur
+  qui ne répond plus puis qui revient, un stockage plein, un export, une copie
+  ou un résumé automatique qui a échoué, le résultat d'un agent qui n'a pas pu
+  être remis. Rouge pour une erreur, ambre pour un avertissement, vert pour un
+  service rétabli. Une notification cliquable mène où agir ; la croix la
+  ferme. Les erreurs qui touchent tes données restent jusqu'à ce que tu les
+  fermes, les autres partent seules après quelques secondes (le survol les
+  retient). Elles ne prennent jamais le focus : tu peux continuer à écrire.
+  L'état durable reste affiché ailleurs (le chat, les pastilles) : fermer une
+  notification ne cache pas le problème.
+- **Le chat prend des sourcils horizontaux** quand le stockage du navigateur est
+  plein : les dernières modifications (messages, fichiers joints…) ne sont plus
+  enregistrées. Cette expression passe avant le froncement si les deux
+  surviennent ensemble, et elle apparaît dans tous les onglets de MIAOU ouverts.
+  Pour faire de la place, supprime des conversations ou des fichiers dont tu
+  n'as plus besoin (une sauvegarde depuis Paramètres → Données avant, si besoin) :
+  la première suppression rend au chat son air normal, dans tous les onglets.
+  S'il reste à court de place, l'expression reviendra à la prochaine écriture
+  qui échoue.
 - **Sélecteur serveur/modèle** (optionnel, à activer dans les Paramètres) :
   change le modèle de la conversation courante sans toucher à ton défaut. Si
   plusieurs serveurs API sont configurés, il liste les modèles de chacun,
@@ -1208,8 +1230,9 @@ selon la taille de ce qu'il range :
 - **Le stockage local** (`localStorage`), petit mais simple, garde ce qui est de
   taille stable : tes réglages, ta clef d'API, tes serveurs API et compagnons,
   la liste de tes Espaces et tes souvenirs.
-- **La base de données du navigateur** (`IndexedDB`, base `miaou`), sans limite
-  pratique, garde ce qui grossit avec l'usage : **tes conversations** et leurs
+- **La base de données du navigateur** (`IndexedDB`, base `miaou`), bien plus
+  vaste — sa limite est la place que le navigateur accorde sur le disque —,
+  garde ce qui grossit avec l'usage : **tes conversations** et leurs
   résumés, tes skills, et les fichiers de tes bibliothèques d'Espaces ainsi que
   les pièces jointes de tes messages.
 
@@ -1225,6 +1248,18 @@ MIAOU en pesant ses propres données ; l'occupation réelle de l'origine est
 légèrement supérieure, le navigateur ajoutant ses index et sa propre surcharge.
 Pour aller voir dans le menu du navigateur : outils de développement, onglet
 « Application » (Chrome) ou « Stockage » (Firefox).
+
+**Quand le stockage est plein.** Si le navigateur refuse une écriture faute de
+place, MIAOU le dit de deux façons : une notification rouge qui reste affichée
+jusqu'à ce que tu la fermes (un clic mène à Réglages › Données), et le chat du
+logo qui prend des sourcils horizontaux tant que la situation dure — dans tous
+les onglets de MIAOU ouverts. Les dernières modifications ne sont alors pas
+enregistrées. Supprimer des conversations ou des fichiers dont tu n'as plus
+besoin libère de la place, et la première suppression rend au chat son air
+normal ; si ce n'était pas assez, il reprendra ses sourcils à la prochaine
+écriture refusée. Le stockage local des réglages a sa propre capacité, plus
+petite et distincte : s'il sature, une notification le dit, sans changer le
+chat — supprimer une conversation ne le soulage pas.
 
 **Sauvegarder et restaurer tout MIAOU.** Réglages › Données propose « Exporter
 les données » : un fichier `.zip` qui contient absolument tout — conversations,

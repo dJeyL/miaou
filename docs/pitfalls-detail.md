@@ -693,8 +693,11 @@ HTML, ou à la synchro multi-onglets.
     posé), la dégradation est faite PROACTIVEMENT avant même le premier appel
     réseau, pour ne pas reproduire le même rejet à chaque tour.
 
-    **Deux exceptions sanctionnées à l'herméticité**, toutes deux décidées
-    explicitement — aucune autre ne doit s'ajouter sans décision équivalente :
+    **Exceptions sanctionnées à l'herméticité** (palette de commandes, badges
+    d'activité, toasts menant à une conversation), toutes décidées
+    explicitement — aucune autre ne doit s'ajouter sans décision équivalente.
+    Les deux premières sont développées ci-dessous, la troisième (lot AG) dans
+    `docs/spaces.md` :
 
     - **Lot F, palette de commandes.** Le submode « recherche de conversation »
       (`cmdkConvItems`, ui.js) est **volontairement cross-Space** : il itère

@@ -67,7 +67,10 @@ function finishBoot() {
   // pour un backend mort, mais pas pour un serveur MCP mort.
   const decide = () => {
     const elapsed = Date.now() - _bootReadyAt;
-    const floor = document.body.classList.contains('miaou-worried')
+    // Même plancher allongé pour les deux expressions (froncement, stockage
+    // plein) : c'est le temps qu'il faut pour qu'une expression soit vue.
+    const bodyCls = document.body.classList;
+    const floor = (bodyCls.contains('miaou-worried') || bodyCls.contains('miaou-storage'))
       ? BOOT_MIN_WORRIED_MS : BOOT_MIN_AFTER_READY_MS;
     const left = Math.max(0, floor - elapsed);
     if (left > 0) { setTimeout(decide, Math.min(left, 120)); return; }
@@ -1005,6 +1008,7 @@ function persistGeneration(gen) {
     console.error('[miaou] persistGeneration refusé : le thread de la génération (' +
       projected.length + ' messages) est plus court que la conversation ' + gen.convId +
       ' en base (' + conversationMessageCount(gen.convId) + '). Écriture abandonnée pour ne pas détruire l\'historique.');
+    toastTruncateRefused(gen.convId);
     return;
   }
   conv.messages = projected;
@@ -4519,9 +4523,7 @@ async function dispatchSend(matches, continuation) {
       // Fire-and-forget, mais JAMAIS nu : la fonction est async depuis le
       // correctif de réchauffage, et une promesse rejetée sans catch remonterait
       // en unhandledrejection sans que personne ne la lise.
-      wakeParentWithPendingAgentResults(gen.convId).catch(function(e) {
-        console.warn('[miaou] réveil du parent échoué :', (e && e.message) || e);
-      });
+      wakeParentWithPendingAgentResults(gen.convId).catch(function(e) { toastWakeFailed(gen.convId, e); });
     }
   }
 }
@@ -4758,7 +4760,7 @@ async function summarizeIfNeeded(id) {
   // timer perpétuel sur une conversation inerte. Pas de compteur ni de backoff
   // non plus — le cycle est déjà d'une minute, et la garde `messageCount` rend
   // la tentative suivante gratuite dès qu'une a réussi.
-  if (!s) { armIdleSummaryTimer(); return; }
+  if (!s) { toastSummaryFailed(id); armIdleSummaryTimer(); return; }
   if (!loadConversation(id)) return;   // supprimée pendant la génération (async) : ne pas ressusciter l'entrée
   saveSummary(id, {
     title: conv.title,

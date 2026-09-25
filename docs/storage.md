@@ -177,10 +177,49 @@ Un échec au COMMIT d'une transaction (quota dépassé, typiquement) l'avorte sa
 résumé, que `refreshSummariesFromDB` attend, et de `putSkill`/`deleteResource`
 et voisines. Chaque transaction qui rejette sur `onerror` porte donc aussi
 `tx.onabort` (2026-09-25), et les écritures fire-and-forget de conversation
-tracent sur `abort`, qui couvre les deux cas (`reportStorageWriteError`).
+tracent sur `abort`, qui couvre les deux cas (`noteStorageWriteFailure`).
 Vérifié à la lecture de la spécification et non par exécution : un
 `tx.abort()` explicite déclenche aussi `error` sur les requêtes en cours, il ne
 simule donc pas fidèlement un quota au commit.
+
+### Échec d'écriture : un point unique, et l'état « stockage plein » (lot AG)
+
+Toute écriture IDB en échec aboutit à `noteStorageWriteFailure(kind, id, err)`
+(storage.js) — conversations, résumés, ressources, skills, migration U-2, import
+et vidage de store compris. Il trace en console et, si
+`classifyStorageError(err)` (utils.js, pur : lit `err.name`, jamais le message
+localisé) rend `'quota'`, pose l'état de session `_storageFull`. Les trois
+autres classes (`'closed'` après `versionchange`, `'clone'`, `'other'`) gardent
+la seule trace console.
+
+Les sites à promesse l'appellent **dans `tx.onabort` lui-même**, indépendamment
+de leur `reject`. C'est décisif pour `putResource`, qui résout sur
+`req.onsuccess` (sémantique inchangée pour ses appelants) : un échec au commit —
+le quota — survient après ce `resolve`, son `reject` n'atteint plus personne, et
+le store le plus lourd était le seul dont le quota restait totalement muet.
+
+L'état n'a qu'un écrivain, `setStorageFull(full, broadcast)`, qui rend le front
+(`'set'`, `'cleared'`, ou `null`) ; au front, il appelle `syncWorriedLogo`
+(sourcils horizontaux, cf. `docs/backend-health.md`) et `toastStorageFront`
+(toast d'erreur persistant, retiré à la levée, cf. `docs/toasts.md`). Il est
+**levé par une suppression commitée**
+(`noteStorageSpaceFreed`, sur le `tx.oncomplete` de `removeConversationRecord`,
+`deleteResource`, `deleteResourcesByConversation` et `deleteSkillDb` ; un Espace
+supprimé en hérite par sa cascade), **jamais par une écriture réussie** : au bord
+du quota, une petite écriture de méta passe juste avant qu'un gros message
+échoue, et l'état alternerait à chaque tour. Pose et levée sont diffusées par
+`storage-state` (cf. `docs/multitab-sync.md`). L'état n'est pas persisté : un
+quota relevé par de la place libérée ailleurs sur le disque le laisse posé
+jusqu'à la prochaine suppression ou au rechargement.
+
+**localStorage** : son quota (~5 Mo) est distinct de celui d'IndexedDB, et
+supprimer une conversation ne le soulage pas — il ne pose donc pas
+`_storageFull`. Toute écriture passe par `writeLocalStorage(key, value)`, qui
+attrape l'exception synchrone de `setItem` : sans lui, un `QuotaExceededError`
+remontait jusqu'au handler, interrompu en route (broadcast post-commit jamais
+émis). Sur un quota, il affiche le toast `local-quota`, sans état. Seul l'import (`applyImportedData`) écrit en direct : il a sa propre
+surface d'erreur et doit s'interrompre plutôt que recharger sur un import à
+moitié fait.
 
 ### Montée de version par un autre onglet
 

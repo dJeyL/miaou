@@ -259,7 +259,7 @@ function loadSettings() {
 
 function saveSettings(obj) {
   const next = Object.assign({}, loadSettingsRaw(), obj || {});
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+  writeLocalStorage(SETTINGS_KEY, JSON.stringify(next));
   // Broadcast post-commit (piège 24 ; setItem synchrone donc déjà durable) : les
   // pairs relisent+ré-appliquent les clés modifiées (thème, modèle, sélecteurs…).
   syncPost('settings-updated', { keys: Object.keys(obj || {}) });
@@ -342,11 +342,11 @@ function migrateApiServersIfNeeded() {
   if (!s.url) { saveApiServersRaw([]); return; }
   const server = normalizeApiServer({ name: 'Par défaut', url: s.url, key: s.key, model: s.model });
   saveApiServersRaw([server]);
-  localStorage.setItem(ACTIVE_API_SERVER_KEY, server.id);
+  writeLocalStorage(ACTIVE_API_SERVER_KEY, server.id);
 }
 
 function saveApiServersRaw(arr) {
-  localStorage.setItem(API_SERVERS_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+  writeLocalStorage(API_SERVERS_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
   syncPost('settings-updated', { keys: ['api-servers'] });   // post-commit (piège 24)
   return arr;
 }
@@ -512,7 +512,7 @@ function getActiveApiServerId() {
 }
 
 function setActiveApiServerId(id) {
-  localStorage.setItem(ACTIVE_API_SERVER_KEY, id || '');
+  writeLocalStorage(ACTIVE_API_SERVER_KEY, id || '');
   syncPost('settings-updated', { keys: ['active-api-server'] });   // post-commit (piège 24)
 }
 
@@ -563,7 +563,7 @@ function loadModelProps() {
 }
 
 function saveModelProps(map) {
-  localStorage.setItem(MODEL_PROPS_KEY, JSON.stringify(map || {}));
+  writeLocalStorage(MODEL_PROPS_KEY, JSON.stringify(map || {}));
 }
 
 function _modelPropsUrl(url) { return String(url || '').trim(); }
@@ -690,7 +690,7 @@ function seedBuildMcpServersIfNeeded() {
   // Posée même sans candidat retenu : une config non vide dont tous les
   // serveurs ont un équivalent existant EST traitée — ne pas re-tester à
   // chaque démarrage, sinon supprimer la carte la ferait revenir.
-  localStorage.setItem(MCP_SEEDED_KEY, '1');
+  writeLocalStorage(MCP_SEEDED_KEY, '1');
   if (!candidates.length) return;
   const next = existing.concat(candidates.map(c => normalizeMcpServer({
     name: c.name,
@@ -713,7 +713,7 @@ function loadMcpServers() {
 }
 
 function saveMcpServers(arr) {
-  localStorage.setItem(MCP_SERVERS_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+  writeLocalStorage(MCP_SERVERS_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
   syncPost('settings-updated', { keys: ['mcp-servers'] });   // post-commit (piège 24)
   return arr;
 }
@@ -1136,8 +1136,8 @@ function persistConversation(conv) {
     tx.oncomplete = function() {
       syncPost('conv-updated', { convId: conv.id, spaceId: spaceId });
     };
-    tx.onabort = function() { reportStorageWriteError('conversation', conv.id, tx.error); };
-  }).catch(function(err) { reportStorageWriteError('conversation', conv.id, err); });
+    tx.onabort = function() { noteStorageWriteFailure('conversation', conv.id, tx.error); };
+  }).catch(function(err) { noteStorageWriteFailure('conversation', conv.id, err); });
 }
 
 // Écriture d'un record complet SANS le mettre au chaud. Même transaction et
@@ -1164,8 +1164,8 @@ function persistConversationCold(conv) {
     tx.oncomplete = function() {
       syncPost('conv-updated', { convId: conv.id, spaceId: spaceId });
     };
-    tx.onabort = function() { reportStorageWriteError('conversation', conv.id, tx.error); };
-  }).catch(function(err) { reportStorageWriteError('conversation', conv.id, err); });
+    tx.onabort = function() { noteStorageWriteFailure('conversation', conv.id, tx.error); };
+  }).catch(function(err) { noteStorageWriteFailure('conversation', conv.id, err); });
 }
 
 function removeConversationRecord(id, spaceId) {
@@ -1176,9 +1176,10 @@ function removeConversationRecord(id, spaceId) {
     tx.objectStore('conversations').delete(id);
     tx.oncomplete = function() {
       syncPost('conv-deleted', { convId: id, spaceId: spaceId });
+      noteStorageSpaceFreed();
     };
-    tx.onabort = function() { reportStorageWriteError('conversation', id, tx.error); };
-  }).catch(function(err) { reportStorageWriteError('conversation', id, err); });
+    tx.onabort = function() { noteStorageWriteFailure('conversation', id, tx.error); };
+  }).catch(function(err) { noteStorageWriteFailure('conversation', id, err); });
 }
 
 // Recharge depuis IDB ce qu'un AUTRE onglet vient d'écrire.
@@ -1260,7 +1261,10 @@ async function replaceConvRecordsFromImport(conversations, summaries) {
     for (const rec of (summaries || [])) sumStore.put(rec);
     tx.oncomplete = function() { resolve({ conversations: (conversations || []).length, summaries: (summaries || []).length }); };
     tx.onerror = function(e) { reject(e.target.error); };
-    tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
+    tx.onabort = function() {
+      noteStorageWriteFailure('import', 'conversations+résumés', tx.error);
+      reject(tx.error || new Error('transaction avortée'));
+    };
   });
 }
 
@@ -1287,11 +1291,11 @@ function trackSummaryWrite(id, promise) {
 }
 
 // Rend la promesse du COMMIT (`tx.oncomplete`), pas celle du `put`. Rejet sur
-// `abort` et non `error` (cf. reportStorageWriteError) : sur un échec au commit,
+// `abort` et non `error` (cf. noteStorageWriteFailure) : sur un échec au commit,
 // `error` ne vient jamais, et la promesse que `refreshSummariesFromDB` attend
 // restait pendante pour toujours. Les
 // appelants restent libres de l'ignorer — l'écriture demeure fire-and-forget du
-// point de vue de l'UI (décision U-1 : pas de surface d'erreur dédiée) ; seul
+// point de vue de l'UI (l'échec aboutit à noteStorageWriteFailure) ; seul
 // `refreshSummariesFromDB` l'attend, pour ne pas lire par-dessus.
 function persistSummaryRecord(entry) {
   _summariesCache[entry.id] = entry;
@@ -1302,7 +1306,7 @@ function persistSummaryRecord(entry) {
       tx.oncomplete = function() { resolve(); };
       tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };   // tracé par le .catch
     });
-  }).catch(function(err) { reportStorageWriteError('résumé', entry.id, err); }));
+  }).catch(function(err) { noteStorageWriteFailure('résumé', entry.id, err); }));
 }
 
 // Symétrique : une suppression en vol doit être attendue elle aussi, sinon la
@@ -1316,7 +1320,7 @@ function removeSummaryRecord(id) {
       tx.oncomplete = function() { resolve(); };
       tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };   // tracé par le .catch
     });
-  }).catch(function(err) { reportStorageWriteError('résumé', id, err); }));
+  }).catch(function(err) { noteStorageWriteFailure('résumé', id, err); }));
 }
 
 // Attend les écritures de résumé en vol. Le set est relu APRÈS l'attente et
@@ -1355,20 +1359,84 @@ function mergeSummaryIndex(local, snapshot) {
   return out;
 }
 
-// Les écritures sont fire-and-forget : plus personne n'attend la promesse. Un
-// échec est tracé en console et rien de plus — même posture que `putResource`
-// (dont le rejet n'a jamais eu d'auditeur). Décision Julien (lot U-1) : pas de
-// surface d'erreur dédiée, le brief exclut toute affordance visuelle nouvelle
-// et le quota IDB est de plusieurs ordres de grandeur au-dessus de celui de
-// localStorage — l'échec d'écriture qui motivait ce lot n'a plus la même
-// probabilité. À rouvrir si l'usage réel dément.
+// ── Échecs d'écriture et état « stockage plein » (lot AG) ───────────────────
+// Les écritures sont fire-and-forget : personne n'attend la promesse. Point
+// UNIQUE où aboutit l'échec de toute écriture IndexedDB — conversations,
+// résumés, ressources, skills, migration et import compris. Il trace en
+// console, et sur un dépassement de quota (`classifyStorageError`, utils.js)
+// pose l'état de session « stockage plein ». La décision U-1 (« pas de surface
+// d'erreur dédiée ») est levée par le lot AG : le quota est désormais porté par
+// l'expression du chat, et son front par un toast.
 //
 // Écouté sur `abort` et non `error` : un échec au COMMIT (quota dépassé,
 // typiquement) avorte la transaction sans émettre `error`, et une requête en
 // erreur non rattrapée l'avorte aussi — `abort` couvre donc les deux, là où
-// `error` laissait le quota sans la moindre trace, console comprise.
-function reportStorageWriteError(kind, id, err) {
+// `error` laissait le quota sans la moindre trace, console comprise. Les sites
+// qui rendent une promesse appellent ce point DANS `onabort`, indépendamment de
+// leur `reject` : `putResource` résout sur `req.onsuccess`, et son rejet au
+// commit n'atteint plus personne.
+function noteStorageWriteFailure(kind, id, err) {
   console.error('[miaou] échec d\'écriture ' + kind + ' ' + id, err);
+  if (classifyStorageError(err) === 'quota') setStorageFull(true, true);
+}
+
+// État de SESSION, jamais persisté : un onglet ouvert après coup ne le connaît
+// qu'à sa première écriture en échec (limite assumée, décision D4 du lot AG).
+// Pas de levée sur écriture réussie : au bord du quota, une petite écriture de
+// méta passe juste avant qu'un gros message échoue, et l'état alternerait à
+// chaque tour. Seule une suppression le lève (`noteStorageSpaceFreed`).
+let _storageFull = false;
+
+function isStorageFull() { return _storageFull; }
+
+// Seul écrivain de `_storageFull`. Rend le FRONT (`'set'`, `'cleared'`) ou
+// `null` si l'état ne change pas : c'est le front, et lui seul, qui s'annonce.
+// `broadcast` est vrai chez l'onglet qui constate ou qui supprime, faux chez le
+// pair qui applique un `storage-state` reçu (pas de rebond). La levée est
+// diffusée même quand cet onglet n'était pas plein : un pair peut l'être sans
+// que cet onglet, ouvert après la pose, le sache.
+function setStorageFull(full, broadcast) {
+  const next = full === true;
+  const front = next === _storageFull ? null : (next ? 'set' : 'cleared');
+  _storageFull = next;
+  // Au front, le chat change d'expression et un toast l'annonce — dans chaque
+  // onglet, le pair qui applique un `storage-state` compris (S3). Garde
+  // `typeof` : ui.js et toasts.js ne sont pas chargés par tous les contextes
+  // qui atteignent ce point (tests QuickJS).
+  if (front && typeof document !== 'undefined' && document.body && typeof syncWorriedLogo === 'function') {
+    syncWorriedLogo();
+    toastStorageFront(front);
+  }
+  if (broadcast && (front || !next)) syncPost('storage-state', { full: next });
+  return front;
+}
+
+// Appelé sur le `tx.oncomplete` d'une suppression qui a libéré de la place —
+// conversation, ressource(s), skill ; l'Espace en hérite par sa cascade. Le
+// commit est la condition (piège 24 (a)) : une suppression avortée n'a rien
+// libéré.
+function noteStorageSpaceFreed() {
+  return setStorageFull(false, true);
+}
+
+// Écriture localStorage protégée (décision S2 du lot AG). `setItem` lève en
+// SYNCHRONE sur un dépassement de quota, et l'exception remontait jusqu'au
+// handler, interrompu en route — le broadcast post-commit, entre autres, n'était
+// jamais émis. Rend `true` si l'écriture a eu lieu.
+// Le quota localStorage (~5 Mo) est DISTINCT de celui d'IndexedDB : supprimer
+// une conversation ne le soulage pas. Il ne pose donc pas `_storageFull`.
+// L'import (`applyImportedData`) n'y passe PAS : il a sa propre surface d'erreur
+// et doit s'interrompre pour ne pas recharger sur un import à moitié fait.
+function writeLocalStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    console.error('[miaou] échec d\'écriture localStorage ' + key, err);
+    if (classifyStorageError(err) === 'quota' && typeof document !== 'undefined' && document.body
+        && typeof toastLocalQuota === 'function') toastLocalQuota();
+    return false;
+  }
 }
 
 // Écriture CIBLÉE de quelques champs d'une conversation, sans jamais toucher
@@ -1406,8 +1474,8 @@ function persistConversationField(id, fields) {
     tx.oncomplete = function() {
       syncPost('conv-updated', { convId: id, spaceId: spaceId });
     };
-    tx.onabort = function() { reportStorageWriteError('conversation', id, tx.error); };
-  }).catch(function(err) { reportStorageWriteError('conversation', id, err); });
+    tx.onabort = function() { noteStorageWriteFailure('conversation', id, tx.error); };
+  }).catch(function(err) { noteStorageWriteFailure('conversation', id, err); });
 }
 
 // ── Migration localStorage → IDB (lot U-2) ──────────────────────────────────
@@ -1521,7 +1589,10 @@ async function migrateConversationsToIdbIfNeeded() {
 
     tx.oncomplete = function() { resolve(counts); };
     tx.onerror = function(e) { reject(e.target.error); };
-    tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
+    tx.onabort = function() {
+      noteStorageWriteFailure('migration', 'conversations+résumés', tx.error);
+      reject(tx.error || new Error('transaction avortée'));
+    };
   });
 
   // POST-COMMIT uniquement (piège 24 dans sa forme la plus littérale : ici
@@ -1751,7 +1822,7 @@ function loadMemories() {
 }
 
 function persistMemories(arr) {
-  localStorage.setItem(MEMORIES_KEY, JSON.stringify(arr));
+  writeLocalStorage(MEMORIES_KEY, JSON.stringify(arr));
 }
 
 // Entrées actives : non-supprimées. `scopes` optionnel (tableau de scopes
@@ -1848,7 +1919,7 @@ function loadSpaces() {
 }
 
 function saveSpaces(arr) {
-  localStorage.setItem(SPACES_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+  writeLocalStorage(SPACES_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
   // Post-commit (piège 24) : le registre des Espaces a changé (création/renommage/
   // suppression) → les pairs re-render leur sélecteur/liste de Spaces. Pas de
   // spaceId précis (saveSpaces reçoit le tableau entier) : le récepteur recharge
@@ -1895,7 +1966,7 @@ function getActiveSpaceId() {
 }
 
 function setActiveSpaceId(id) {
-  localStorage.setItem(ACTIVE_SPACE_KEY, id || DEFAULT_SPACE_ID);
+  writeLocalStorage(ACTIVE_SPACE_KEY, id || DEFAULT_SPACE_ID);
 }
 
 // Migration idempotente (PAS un one-shot façon migrateApiServersIfNeeded) :

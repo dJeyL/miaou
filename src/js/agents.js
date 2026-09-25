@@ -1304,9 +1304,7 @@ async function driveDetachedConversation(gen, apiMessages) {
       // Fire-and-forget, mais JAMAIS nu : la fonction est async depuis le
       // correctif de réchauffage, et une promesse rejetée sans catch remonterait
       // en unhandledrejection sans que personne ne la lise.
-      wakeParentWithPendingAgentResults(gen.convId).catch(function(e) {
-        console.warn('[miaou] réveil du parent échoué :', (e && e.message) || e);
-      });
+      wakeParentWithPendingAgentResults(gen.convId).catch(function(e) { toastWakeFailed(gen.convId, e); });
     }
   }
 }
