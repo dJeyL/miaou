@@ -210,14 +210,14 @@ const WEB_DOCTRINE =
   "(type ![alt](url)) pour afficher une ressource déjà présentée ; le Markdown ne " +
   "sert qu'aux MINIATURES — l'URL de la MINIATURE pour l'image affichée, en lien " +
   "vers l'IMAGE originale (PAS la page qui la contient)\n" +
-  "- sources, OBLIGATOIRE : toute information tirée d'une page lue avec fetch_url " +
-  "dans cette conversation se source par [web_ref:URL], à la fin du paragraphe " +
-  "qui l'utilise, après son point final — jamais reportée en fin de réponse. Un " +
-  "marqueur par page ; un paragraphe qui s'appuie sur une page déjà citée plus " +
-  "haut la cite de nouveau. Le marqueur suffit, l'application l'affiche au nom " +
-  "du site : ni « Source : » ni nom de site devant, ni lien Markdown, ni note [1] " +
-  "renvoyant à une liste. Un résultat de recherche n'est pas une source : lis la " +
-  "page d'abord, ou ne la cite pas\n" +
+  "- sources, OBLIGATOIRE : toute information tirée du Web se source par " +
+  "[web_ref:URL], à la fin du paragraphe qui l'utilise, après son point final — " +
+  "jamais reportée en fin de réponse. Un marqueur par page ; un paragraphe qui " +
+  "s'appuie sur une page déjà citée plus haut la cite de nouveau. Le marqueur " +
+  "suffit, l'application l'affiche au nom du site : ni « Source : » ni nom de " +
+  "site devant, ni lien Markdown, ni note [1] renvoyant à une liste. Seule une " +
+  "page lue avec fetch_url dans cette conversation se cite, et donc s'utilise : " +
+  "un résultat de recherche sert à choisir quoi lire, jamais à affirmer\n" +
   "</ACCES_WEB>\n\n" +
   "<SANS_ACCES_WEB>\n" +
   "Si aucun outil disponible ne te permet d'accéder au Web, indique-le si c'est " +
