@@ -5505,6 +5505,84 @@ describe('moveWebRefsAfterPunctuation — la source après la ponctuation', func
   });
 });
 
+describe('webCiteNoteFor — marqueur tout prêt en queue d\'une page lue', function() {
+  var page = 'Texte de la page' + NOT_PRESENTED_NOTE;
+  it('webMeta : URL finale, note en dernière position', function() {
+    var n = webCiteNoteFor(page, { canonical_url: 'https://a.com/final' }, { url: 'https://a.com/x' }, false);
+    expect(n).toBe('\nPour citer cette page : [web_ref:https://a.com/final]');
+  });
+  it('sans URL finale : celle de l\'appel', function() {
+    expect(webCiteNoteFor(page, { title: 'T' }, { url: 'https://a.com/x' }, false))
+      .toBe('\nPour citer cette page : [web_ref:https://a.com/x]');
+  });
+  it('rien sans webMeta, sur erreur, sur binaire présenté, sur URL non http(s)', function() {
+    expect(webCiteNoteFor(page, null, { url: 'https://a.com/x' }, false)).toBe('');
+    expect(webCiteNoteFor(page, { title: 'T' }, { url: 'https://a.com/x' }, true)).toBe('');
+    expect(webCiteNoteFor('[resource_ref:res_1]' + PRESENTED_NOTE, { canonical_url: 'https://a.com/i.png' }, {}, false)).toBe('');
+    expect(webCiteNoteFor(page, { title: 'T' }, { url: 'javascript:alert(1)' }, false)).toBe('');
+    expect(webCiteNoteFor(page, { title: 'T' }, { url: 'https://a.com/b c' }, false)).toBe('');
+  });
+  it('splitToolResultNote : corps propre, les deux notes affichées', function() {
+    var r = splitToolResultNote(page + webCiteNoteFor(page, { title: 'T' }, { url: 'https://a.com/x' }, false));
+    expect(r.text).toBe('Texte de la page');
+    expect(r.note.indexOf('ne le voit PAS') >= 0).toBe(true);
+    expect(r.note.slice(-45)).toBe('Pour citer cette page : [web_ref:https://a.com/x]'.slice(-45));
+  });
+  it('splitToolResultNoteRaw : note brute recollable, marqueur conservé à l\'évacuation', function() {
+    var cite = webCiteNoteFor(page, { title: 'T' }, { url: 'https://a.com/x' }, false);
+    var r = splitToolResultNoteRaw(page + cite);
+    expect(r.text).toBe('Texte de la page');
+    expect(r.note).toBe(NOT_PRESENTED_NOTE + cite);
+    expect(formatEvacuatedToolResult('[res_9]', r.note)).toBe('[res_9]' + NOT_PRESENTED_NOTE + cite);
+  });
+  it('note de citation seule en queue, sans note de présentation', function() {
+    var r = splitToolResultNoteRaw('corps\nPour citer cette page : [web_ref:https://a.com/x]');
+    expect(r.text).toBe('corps');
+    expect(r.note).toBe('\nPour citer cette page : [web_ref:https://a.com/x]');
+  });
+  it('résultat de recherche : la note n\'empêche pas la lecture du JSON', function() {
+    var items = searchResultItems('[{"title":"T","url":"https://a.com"}]\nPour citer cette page : [web_ref:https://a.com/x]');
+    expect(items.length).toBe(1);
+  });
+});
+
+describe('convertColonUrlCitations — URL nue collée à un deux-points', function() {
+  function reg() {
+    return webSourceRegistry([
+      { role: 'tool-ack', kind: 'mcp_call', name: 'web__fetch_url', args: { url: 'https://www.site.com/page/' }, result: 'ok' },
+    ]);
+  }
+  it('forme observée : page lue → marqueur après le point', function() {
+    expect(convertColonUrlCitations('Blabla ma réponse:https://www.site.com/page/.', reg()))
+      .toBe('Blabla ma réponse. [web_ref:https://www.site.com/page/]');
+  });
+  it('fin de ligne sans ponctuation, puis paragraphe suivant', function() {
+    expect(convertColonUrlCitations('Un:https://www.site.com/page\n\nDeux.', reg()))
+      .toBe('Un [web_ref:https://www.site.com/page]\n\nDeux.');
+  });
+  it('page jamais lue : URL laissée telle quelle', function() {
+    var s = 'Blabla:https://autre.example/x.';
+    expect(convertColonUrlCitations(s, reg())).toBe(s);
+  });
+  it('deux-points suivi d\'une espace, ou URL en milieu de phrase : intact', function() {
+    var a = 'Adresse : https://www.site.com/page/.';
+    var b = 'Voir:https://www.site.com/page/ pour le détail.';
+    expect(convertColonUrlCitations(a, reg())).toBe(a);
+    expect(convertColonUrlCitations(b, reg())).toBe(b);
+  });
+  it('code inline et bloc clôturé : intacts', function() {
+    var a = 'Lance `curl:https://www.site.com/page/.` ici.';
+    var b = '```\nx:https://www.site.com/page/.\n```';
+    expect(convertColonUrlCitations(a, reg())).toBe(a);
+    expect(convertColonUrlCitations(b, reg())).toBe(b);
+  });
+  it('rendu : pastille consultée', function() {
+    var r = reg();
+    var h = resolveWebRefMarkers(convertColonUrlCitations('Vrai:https://www.site.com/page/.', r), r);
+    expect(h.indexOf('Vrai.<span class="web-refs"><a class="web-ref"')).toBe(0);
+  });
+});
+
 describe('convertSourceFootnotes — notes numérotées vers web_ref', function() {
   // Forme relevée sur gemma4:26b (contenu neutralisé) : puces, renvois avant le
   // point, filet, intitulé en gras, définition « [1] [Titre](url) ».

@@ -619,7 +619,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   streaming ; `web_ref` en pastilles par `resolveWebRefMarkers`, état lu dans
   `webSourceRegistry` — consultée = `args.url` d'un ack non en erreur, JAMAIS
   `result` que l'évacuation réécrit —, relayée par un agent, groupe replié
-  derrière « +N »), lien d'autorisation
+  derrière « +N » ; marqueur tout prêt en queue d'une page lue
+  (`webCiteNoteFor`, note MIAOU détachée par les deux `splitToolResultNote*`)
+  et URL nue collée à un deux-points ramenée au marqueur si la page est lue
+  (`convertColonUrlCitations`)), lien d'autorisation
   d'un ack refusé (campagne AB : `ackAuthorizationTarget`, seule affordance
   d'ack rendue en texte, absente des exports), et **microcompaction des tool
   results** (lot AE : `microcompactToolResults`, seuil uniforme

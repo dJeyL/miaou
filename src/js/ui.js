@@ -473,9 +473,13 @@ function resolveRefMarkers(text, opts) {
   const withFiles = resolveFileRefMarkers(resolveConvRefs(normalizeRefLinkForms(text), opts), function(h) {
     return fileRefRecord(h, ctx);
   }, opts);
-  if (withFiles.indexOf('[web_ref:') < 0) return withFiles;
+  const hasColonUrl = withFiles.indexOf(':http') >= 0;
+  if (withFiles.indexOf('[web_ref:') < 0 && !hasColonUrl) return withFiles;
   const reg = (opts && opts.webSources) || displayedWebSources();
-  return resolveWebRefMarkers(withFiles, reg, opts);
+  // URL nue collée à un deux-points, page lue : ramenée au marqueur
+  // (convertColonUrlCitations, utils.js) avant la résolution en pastilles.
+  const withWeb = hasColonUrl ? convertColonUrlCitations(withFiles, reg) : withFiles;
+  return resolveWebRefMarkers(withWeb, reg, opts);
 }
 
 // Registre des sources web du fil affiché, recalculé seulement quand ce qu'il

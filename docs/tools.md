@@ -1749,6 +1749,29 @@ s'y ajoute.
      registre ne change qu'à l'arrivée d'un ack. Export HTML : lien externe
      ordinaire entre parenthèses, au libellé de la pastille, sans style
      (`EXPORT_CSS` figé, piège 22).
+   - **URL nue collée à un deux-points** — `blabla:https://site/page/.`, le
+     marqueur privé de `[web_ref` et de `]`, observé sur Mistral Medium 3.5
+     qui sait pourtant réécrire en marqueurs quand on le lui signale.
+     `convertColonUrlCitations` (utils.js, pure) la ramène à
+     `blabla. [web_ref:URL]`, appelée par `resolveRefMarkers` avant les
+     pastilles. Une URL nue ayant des usages légitimes, la conversion exige la
+     forme (deux-points COLLÉ, ponctuation de fin de phrase ou fin de ligne,
+     hors code) ET une page lue d'après le registre (consultée ou relayée) :
+     une URL jamais lue reste un lien ordinaire. Rendu seulement — à la copie
+     et au `.md`, une URL nue est déjà un lien.
+   - **Marqueur tout prêt en queue de résultat** — la consigne de
+     `WEB_DOCTRINE` est lue au début du contexte, loin du moment où le modèle
+     écrit. Le résultat d'un appel porteur de `webMeta`, non en erreur et qui
+     n'est pas un binaire présenté, reçoit en DERNIÈRE position
+     `\nPour citer cette page : [web_ref:URL]` (`webCiteNoteFor`, utils.js,
+     URL finale sinon celle de l'appel), ajouté à `out` dans la boucle
+     d'outils d'api.js : même octets dans le message `tool` et dans le
+     `result` persisté. C'est une note MIAOU comme `NOT_PRESENTED_NOTE` :
+     `splitToolResultNote` et `splitToolResultNoteRaw` la détachent d'abord
+     (`splitWebCiteNote`), l'inspecteur l'affiche avec la note de
+     présentation, et l'évacuation la recolle derrière le handle — le
+     marqueur survit à un allègement. Coût : une trentaine de caractères plus
+     l'URL, par page lue.
 
 Couche DOM (marked et DOMPurify réels, clic, lightbox, téléchargement, toast,
 infobulle d'un lien coupé sur deux lignes, copie et export `.md`) :

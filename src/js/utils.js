@@ -1111,6 +1111,46 @@ const NOT_PRESENTED_NOTE = '\n[Ce contenu ne t\'est communiqué qu\'à toi : ' +
 const INLINE_HANDLE_NOTE_PATTERN =
   ' ?— texte adressable par js__eval \\(blob=[A-Za-z0-9_]+\\), non inliné dans le contexte\\.';
 
+// Quatrième note MIAOU : le marqueur de citation tout prêt, en queue du
+// résultat d'une page web lue (post-lot AI). La consigne de WEB_DOCTRINE est
+// lue au début du contexte, loin du moment où le modèle écrit sa réponse ; un
+// modèle qui la connaît (il se corrige quand on le lui signale) retombait
+// quand même sur une URL nue collée à un deux-points (observé sur Mistral
+// Medium 3.5). Le marqueur exact, posé à côté du contenu qu'il vient de lire,
+// n'a plus qu'à être recopié.
+//
+// Posée APRÈS les deux notes de présentation, donc toujours DERNIÈRE : les
+// séparateurs (splitToolResultNote/Raw) la détachent d'abord, puis cherchent
+// l'autre note sur le reste. Elle porte une URL, donc un motif et non un
+// littéral (comme INLINE_HANDLE_NOTE_PATTERN) ; l'émetteur unique est
+// webCiteNoteFor, qui compose la phrase depuis WEB_CITE_NOTE_PREFIX.
+const WEB_CITE_NOTE_PREFIX = '\nPour citer cette page : ';
+const WEB_CITE_NOTE_RE = /\nPour citer cette page : \[web_ref:https?:\/\/[^\s\]]+\]$/;
+
+// Note de citation d'un résultat d'outil, ou ''. Seulement pour un appel qui
+// a publié des métadonnées de page (`webMeta`, donc fetch_url de mcp_web) et
+// n'a pas échoué, et jamais pour un binaire présenté (image) : ce n'est pas
+// une page qu'on cite. URL : la finale après redirections (`canonical_url`),
+// sinon celle de l'appel — les deux comptent comme consultées pour le
+// registre. Byte-stable : ne dérive que de champs figés à l'appel. PUR.
+function webCiteNoteFor(result, webMeta, args, isError) {
+  if (isError || !webMeta) return '';
+  const s = result == null ? '' : String(result);
+  if (s.length >= PRESENTED_NOTE.length && s.slice(-PRESENTED_NOTE.length) === PRESENTED_NOTE) return '';
+  const url = webMeta.canonical_url || (args && typeof args.url === 'string' ? args.url.trim() : '');
+  if (!new RegExp('^' + WEB_REF_MARKER_RE.source + '$').test('[web_ref:' + url + ']')) return '';
+  return WEB_CITE_NOTE_PREFIX + '[web_ref:' + url + ']';
+}
+
+// Détache la note de citation de queue, s'il y en a une. `cite` est brute
+// (saut de ligne de tête compris). Le reste n'est jamais vide : un résultat
+// réduit à la note seule est laissé tel quel, comme pour les autres notes. PUR.
+function splitWebCiteNote(s) {
+  const m = WEB_CITE_NOTE_RE.exec(s);
+  if (!m || m.index === 0) return { rest: s, cite: '' };
+  return { rest: s.slice(0, m.index), cite: m[0] };
+}
+
 // Sépare un résultat d'outil de la note de présentation que MIAOU y a
 // concaténée pour le modèle. L'ack persiste UN champ `result` servant deux
 // destinataires — le modèle (qui a besoin de la note) et l'inspecteur (qui
@@ -1126,7 +1166,10 @@ const INLINE_HANDLE_NOTE_PATTERN =
 // CITERAIT ne doit pas être amputé.
 // Pure, testable en QuickJS.
 function splitToolResultNote(result) {
-  const s = result == null ? '' : String(result);
+  // Note de citation d'abord : toujours dernière (webCiteNoteFor).
+  const c = splitWebCiteNote(result == null ? '' : String(result));
+  const s = c.rest;
+  const cite = c.cite.replace(/^\n/, '');
   const notes = [NOT_PRESENTED_NOTE, PRESENTED_NOTE];
   for (let i = 0; i < notes.length; i++) {
     const n = notes[i];
@@ -1136,13 +1179,14 @@ function splitToolResultNote(result) {
       // encadrants sont un marqueur destiné au MODÈLE (comme le
       // '[ressource rendue dans l'interface]' de flattenToolResult) : dans le
       // drawer c'est une phrase d'interface, on les retire.
+      const note = n.replace(/^\n/, '').replace(/^\[/, '').replace(/\]$/, '');
       return {
         text: s.slice(0, s.length - n.length),
-        note: n.replace(/^\n/, '').replace(/^\[/, '').replace(/\]$/, ''),
+        note: cite ? note + '\n' + cite : note,
       };
     }
   }
-  return { text: s, note: '' };
+  return { text: s, note: cite };
 }
 
 // Sortie d'outil : JSON ré-indenté s'il parse, texte brut sinon. Le `result`
@@ -1623,6 +1667,51 @@ function moveWebRefsAfterPunctuation(text) {
     const lead = a[1], refs = a[2], punct = a[a.length - 3];
     return punct + (lead || ' ') + refs;
   });
+}
+
+// Quatrième forme déviante (post-lot AI) : la source écrite en URL nue COLLÉE
+// à un deux-points, en fin de phrase — `blabla:https://site/page/.` —, soit le
+// marqueur privé de `[web_ref` et de `]`. Observé sur Mistral Medium 3.5, qui
+// sait réécrire en marqueurs quand on le lui signale mais n'y pense pas seul.
+// Réécrite en `blabla. [web_ref:URL]`.
+//
+// Contrairement aux trois autres formes, une URL nue a des usages légitimes
+// (une adresse qu'on DONNE) : la conversion exige donc, en plus de la forme,
+// que la page ait été lue dans la conversation (registre : consultée ou
+// relayée). Une URL jamais lue reste telle quelle, lien ordinaire. Gardes de
+// forme : deux-points collé au mot qui précède (`Adresse : https://…`, avec
+// son espace, n'est pas touché), URL suivie d'une ponctuation de fin de phrase
+// ou de la fin de ligne, hors bloc de code clôturé et hors code inline. Ne sert
+// qu'au RENDU (resolveRefMarkers) : à la copie et au `.md`, une URL nue est
+// déjà un lien. PUR.
+const WEB_COLON_URL_RE = /([^\s:\/]):(https?:\/\/[^\s<>()\[\]`]+?)([.!?…]*)(?=[ \t]*$|[ \t])/gm;
+function convertColonUrlCitations(text, registry) {
+  const src = String(text == null ? '' : text);
+  if (src.indexOf(':http') < 0) return src;
+  const reg = registry instanceof Map ? registry : new Map();
+  const read = function(u) {
+    const e = reg.get(normalizeWebUrl(u));
+    return !!(e && (e.consulted || e.relayed));
+  };
+  const convert = function(seg) {
+    return seg.replace(WEB_COLON_URL_RE, function(match, before, url, punct, offset, whole) {
+      // Fin de phrase : une ponctuation, ou rien d'autre sur la ligne.
+      const endOfLine = /^[ \t]*$/.test(whole.slice(offset + match.length));
+      if ((!punct && !endOfLine) || !read(url)) return match;
+      return before + punct + ' [web_ref:' + url + ']';
+    });
+  };
+  let fence = null;
+  return src.split('\n').map(function(line) {
+    const f = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      if (f && f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = null;
+      return line;
+    }
+    if (f) { fence = f[1]; return line; }
+    // Segments impairs = code inline, laissés intacts.
+    return line.split(/(`[^`]*`)/).map(function(seg, i) { return i % 2 ? seg : convert(seg); }).join('');
+  }).join('\n');
 }
 
 // Domaine affichable d'une URL de source : hôte en minuscules, sans `www.`,
@@ -3437,15 +3526,18 @@ function emittedHistoryCharCount(thread) {
 // La liste des notes reste celle de `splitToolResultNote` — une seule source.
 // Pure, testable en QuickJS.
 function splitToolResultNoteRaw(result) {
-  var s = result == null ? '' : String(result);
+  // Note de citation d'abord (toujours dernière), recollée derrière l'autre :
+  // une évacuation garde ainsi le marqueur tout prêt dans le contexte.
+  var c = splitWebCiteNote(result == null ? '' : String(result));
+  var s = c.rest;
   var notes = [NOT_PRESENTED_NOTE, PRESENTED_NOTE];
   for (var i = 0; i < notes.length; i++) {
     var n = notes[i];
     if (s.length > n.length && s.slice(-n.length) === n) {
-      return { text: s.slice(0, s.length - n.length), note: n };
+      return { text: s.slice(0, s.length - n.length), note: n + c.cite };
     }
   }
-  return { text: s, note: '' };
+  return { text: s, note: c.cite };
 }
 
 // Recompose le `result` d'un ack évacué : le handle statique, puis la note

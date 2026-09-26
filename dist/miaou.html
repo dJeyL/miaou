@@ -5197,7 +5197,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-26 21:47 UTC */
+/* miaou — built: 2026-09-26 22:01 UTC */
 
 /* ── utils.js ── */
 
@@ -5679,20 +5679,42 @@ const NOT_PRESENTED_NOTE = '\n[Ce contenu ne t\'est communiqué qu\'à toi : ' +
 const INLINE_HANDLE_NOTE_PATTERN =
   ' ?— texte adressable par js__eval \\(blob=[A-Za-z0-9_]+\\), non inliné dans le contexte\\.';
 
-function splitToolResultNote(result) {
+const WEB_CITE_NOTE_PREFIX = '\nPour citer cette page : ';
+const WEB_CITE_NOTE_RE = /\nPour citer cette page : \[web_ref:https?:\/\/[^\s\]]+\]$/;
+
+function webCiteNoteFor(result, webMeta, args, isError) {
+  if (isError || !webMeta) return '';
   const s = result == null ? '' : String(result);
+  if (s.length >= PRESENTED_NOTE.length && s.slice(-PRESENTED_NOTE.length) === PRESENTED_NOTE) return '';
+  const url = webMeta.canonical_url || (args && typeof args.url === 'string' ? args.url.trim() : '');
+  if (!new RegExp('^' + WEB_REF_MARKER_RE.source + '$').test('[web_ref:' + url + ']')) return '';
+  return WEB_CITE_NOTE_PREFIX + '[web_ref:' + url + ']';
+}
+
+function splitWebCiteNote(s) {
+  const m = WEB_CITE_NOTE_RE.exec(s);
+  if (!m || m.index === 0) return { rest: s, cite: '' };
+  return { rest: s.slice(0, m.index), cite: m[0] };
+}
+
+function splitToolResultNote(result) {
+
+  const c = splitWebCiteNote(result == null ? '' : String(result));
+  const s = c.rest;
+  const cite = c.cite.replace(/^\n/, '');
   const notes = [NOT_PRESENTED_NOTE, PRESENTED_NOTE];
   for (let i = 0; i < notes.length; i++) {
     const n = notes[i];
     if (s.length > n.length && s.slice(-n.length) === n) {
 
+      const note = n.replace(/^\n/, '').replace(/^\[/, '').replace(/\]$/, '');
       return {
         text: s.slice(0, s.length - n.length),
-        note: n.replace(/^\n/, '').replace(/^\[/, '').replace(/\]$/, ''),
+        note: cite ? note + '\n' + cite : note,
       };
     }
   }
-  return { text: s, note: '' };
+  return { text: s, note: cite };
 }
 
 function inspectResultShape(result) {
@@ -5984,6 +6006,36 @@ function moveWebRefsAfterPunctuation(text) {
     const lead = a[1], refs = a[2], punct = a[a.length - 3];
     return punct + (lead || ' ') + refs;
   });
+}
+
+const WEB_COLON_URL_RE = /([^\s:\/]):(https?:\/\/[^\s<>()\[\]`]+?)([.!?…]*)(?=[ \t]*$|[ \t])/gm;
+function convertColonUrlCitations(text, registry) {
+  const src = String(text == null ? '' : text);
+  if (src.indexOf(':http') < 0) return src;
+  const reg = registry instanceof Map ? registry : new Map();
+  const read = function(u) {
+    const e = reg.get(normalizeWebUrl(u));
+    return !!(e && (e.consulted || e.relayed));
+  };
+  const convert = function(seg) {
+    return seg.replace(WEB_COLON_URL_RE, function(match, before, url, punct, offset, whole) {
+
+      const endOfLine = /^[ \t]*$/.test(whole.slice(offset + match.length));
+      if ((!punct && !endOfLine) || !read(url)) return match;
+      return before + punct + ' [web_ref:' + url + ']';
+    });
+  };
+  let fence = null;
+  return src.split('\n').map(function(line) {
+    const f = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      if (f && f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = null;
+      return line;
+    }
+    if (f) { fence = f[1]; return line; }
+
+    return line.split(/(`[^`]*`)/).map(function(seg, i) { return i % 2 ? seg : convert(seg); }).join('');
+  }).join('\n');
 }
 
 function webRefDomain(url) {
@@ -7040,15 +7092,17 @@ function emittedHistoryCharCount(thread) {
 }
 
 function splitToolResultNoteRaw(result) {
-  var s = result == null ? '' : String(result);
+
+  var c = splitWebCiteNote(result == null ? '' : String(result));
+  var s = c.rest;
   var notes = [NOT_PRESENTED_NOTE, PRESENTED_NOTE];
   for (var i = 0; i < notes.length; i++) {
     var n = notes[i];
     if (s.length > n.length && s.slice(-n.length) === n) {
-      return { text: s.slice(0, s.length - n.length), note: n };
+      return { text: s.slice(0, s.length - n.length), note: n + c.cite };
     }
   }
-  return { text: s, note: '' };
+  return { text: s, note: c.cite };
 }
 
 function formatEvacuatedToolResult(handle, note) {
@@ -10505,7 +10559,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790459232}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790460119}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -14261,13 +14315,16 @@ const WEB_DOCTRINE =
   "sert qu'aux MINIATURES — l'URL de la MINIATURE pour l'image affichée, en lien " +
   "vers l'IMAGE originale (PAS la page qui la contient)\n" +
   "- sources, OBLIGATOIRE : toute information tirée du Web se source par " +
-  "[web_ref:URL], à la fin du paragraphe qui l'utilise, après son point final — " +
-  "jamais reportée en fin de réponse. Un marqueur par page ; un paragraphe qui " +
-  "s'appuie sur une page déjà citée plus haut la cite de nouveau. Le marqueur " +
-  "suffit, l'application l'affiche au nom du site : ni « Source : » ni nom de " +
-  "site devant, ni lien Markdown, ni note [1] renvoyant à une liste. Seule une " +
-  "page lue avec fetch_url dans cette conversation se cite, et donc s'utilise : " +
-  "un résultat de recherche sert à choisir quoi lire, jamais à affirmer\n" +
+  "[web_ref:URL], SEUL format reconnu — une URL nue, un lien ou une note ne sont " +
+  "pas des sources pour l'application. Quand le résultat d'une page se termine " +
+  "par « Pour citer cette page : [web_ref:…] », recopie ce marqueur tel quel. " +
+  "Place-le à la fin du paragraphe qui utilise la page, après son point final — " +
+  "jamais reporté en fin de réponse. Un marqueur par page ; un paragraphe qui " +
+  "s'appuie sur une page déjà citée plus haut la cite de nouveau. Il se suffit, " +
+  "l'application l'affiche au nom du site : rien devant, ni « Source : », ni nom " +
+  "de site, ni deux-points. Seule une page lue avec fetch_url dans cette " +
+  "conversation se cite, et donc s'utilise : un résultat de recherche sert à " +
+  "choisir quoi lire, jamais à affirmer\n" +
   "</ACCES_WEB>\n\n" +
   "<SANS_ACCES_WEB>\n" +
   "Si aucun outil disponible ne te permet d'accéder au Web, indique-le si c'est " +
@@ -17295,10 +17352,13 @@ async function runConversation(messages, hooks) {
                 : (toolExecContext || {});
               await internResourcesFromResult(rawResult, ictx.convId, Date.now, Math.random);
             }
-            out = flattenToolResult(rawResult);
-            callCounts.set(key, (callCounts.get(key) || 0) + 1);
 
             const webMeta = webMetaFromResult(rawResult);
+            out = flattenToolResult(rawResult);
+
+            out += webCiteNoteFor(out, webMeta, args, !!(rawResult && rawResult.isError));
+            callCounts.set(key, (callCounts.get(key) || 0) + 1);
+
             if (h.onEnrichLastAck) h.onEnrichLastAck({
               isMcp,
               name: tc.function.name,
@@ -17984,9 +18044,12 @@ function resolveRefMarkers(text, opts) {
   const withFiles = resolveFileRefMarkers(resolveConvRefs(normalizeRefLinkForms(text), opts), function(h) {
     return fileRefRecord(h, ctx);
   }, opts);
-  if (withFiles.indexOf('[web_ref:') < 0) return withFiles;
+  const hasColonUrl = withFiles.indexOf(':http') >= 0;
+  if (withFiles.indexOf('[web_ref:') < 0 && !hasColonUrl) return withFiles;
   const reg = (opts && opts.webSources) || displayedWebSources();
-  return resolveWebRefMarkers(withFiles, reg, opts);
+
+  const withWeb = hasColonUrl ? convertColonUrlCitations(withFiles, reg) : withFiles;
+  return resolveWebRefMarkers(withWeb, reg, opts);
 }
 
 let _webSourcesMemo = { thread: null, sig: '', reg: null };

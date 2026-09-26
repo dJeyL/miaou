@@ -1091,16 +1091,21 @@ async function runConversation(messages, hooks) {
                 : (toolExecContext || {});
               await internResourcesFromResult(rawResult, ictx.convId, Date.now, Math.random);
             }
+            // `webMeta` (lot AI) : métadonnées de page que l'outil a posées
+            // dans le `_meta` de son résultat, hors `content` — donc hors
+            // contexte modèle (webMetaFromResult, utils.js).
+            const webMeta = webMetaFromResult(rawResult);
             out = flattenToolResult(rawResult);
+            // Marqueur de citation tout prêt en queue d'une page lue
+            // (webCiteNoteFor, utils.js) : dans `out`, donc à la fois dans le
+            // message `tool` et dans le `result` persisté — le rejeu reste
+            // byte-stable, et l'évacuation le recolle derrière le handle.
+            out += webCiteNoteFor(out, webMeta, args, !!(rawResult && rawResult.isError));
             callCounts.set(key, (callCounts.get(key) || 0) + 1);
             // Enrichit l'ack de ce tool_call avec les champs nécessaires à la
             // réinjection cross-turn (args, result aplati, ts, group). Pour les
             // outils distants l'ack est déjà dans earlyRendered ; pour les
             // outils internes il est encore dans _pendingToolAcks.
-            // `webMeta` (lot AI) : métadonnées de page que l'outil a posées
-            // dans le `_meta` de son résultat, hors `content` — donc hors
-            // contexte modèle (webMetaFromResult, utils.js).
-            const webMeta = webMetaFromResult(rawResult);
             if (h.onEnrichLastAck) h.onEnrichLastAck({
               isMcp,
               name: tc.function.name,
