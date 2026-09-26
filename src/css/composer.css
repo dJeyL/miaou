@@ -325,13 +325,22 @@
   bottom: calc(100% + 4px);
   left: 0;
   right: auto;
+  /* Sans `width` explicite, un absolu en `right: auto` se dimensionne en
+     shrink-to-fit sur la place disponible dans son ancre — la pilule, étroite
+     quand le modèle courant a un nom court : le menu restait alors collé à son
+     min-width et repliait tous les autres noms. `max-content` le cale sur la
+     ligne la plus longue, bornée par le max-width. Borne DÉRIVÉE de --col
+     (moitié de la colonne), jamais en pixels : elle suit les crans de largeur
+     (applyColWidth, ui.js) — 360px au cran de base, comme la valeur fixe
+     d'origine. */
+  width: max-content;
   min-width: 220px;
-  max-width: 360px;
+  max-width: calc(var(--col) / 2);
   transform: translateY(4px);
 }
 #composer-model-menu.show { transform: none; }
 /* Le libellé du BOUTON est abrégé (shortenModelLabel), la liste déroulée garde
-   les noms COMPLETS : un identifiant plus large que les 360px du menu doit donc
+   les noms COMPLETS : un identifiant plus large que la borne du menu doit donc
    revenir à la ligne plutôt que déborder. align-items: flex-start garde le ✓
    aligné sur la PREMIÈRE ligne du nom, pas centré sur un bloc à deux lignes. */
 #composer-model-menu .model-opt { align-items: flex-start; }

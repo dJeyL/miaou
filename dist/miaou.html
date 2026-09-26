@@ -2071,8 +2071,10 @@ html[data-wide-tables="off"] .table-bleed {
   bottom: calc(100% + 4px);
   left: 0;
   right: auto;
+
+  width: max-content;
   min-width: 220px;
-  max-width: 360px;
+  max-width: calc(var(--col) / 2);
   transform: translateY(4px);
 }
 #composer-model-menu.show { transform: none; }
@@ -5127,7 +5129,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-26 10:13 UTC */
+/* miaou — built: 2026-09-26 10:30 UTC */
 
 /* ── utils.js ── */
 
@@ -10041,7 +10043,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790417584}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790418650}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
