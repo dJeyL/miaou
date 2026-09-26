@@ -1101,6 +1101,9 @@ async function runConversation(messages, hooks) {
             // message `tool` et dans le `result` persisté — le rejeu reste
             // byte-stable, et l'évacuation le recolle derrière le handle.
             out += webCiteNoteFor(out, webMeta, args, !!(rawResult && rawResult.isError));
+            // Symétrique pour un résultat de recherche (webSearchNoteFor) :
+            // les extraits servent à choisir quoi lire, pas à affirmer.
+            out += webSearchNoteFor(out, !!(rawResult && rawResult.isError));
             callCounts.set(key, (callCounts.get(key) || 0) + 1);
             // Enrichit l'ack de ce tool_call avec les champs nécessaires à la
             // réinjection cross-turn (args, result aplati, ts, group). Pour les

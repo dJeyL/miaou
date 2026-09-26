@@ -1776,6 +1776,19 @@ s'y ajoute.
      réponse ; le motif (`WEB_CITE_NOTE_RE`) reconnaît encore la forme courte,
      sans elle, des premiers résultats persistés. Coût : environ 80 caractères
      plus l'URL, par page lue.
+   - **Note de recherche** — pendant de la précédente, en queue d'un
+     résultat de RECHERCHE : les extraits contiennent souvent déjà la
+     réponse, et un modèle modeste s'en contente sans lire ni citer (observé
+     sur gemma4:26b, qui attribuait ses chiffres par un domaine entre
+     parenthèses). `webSearchNoteFor` (utils.js, pure) reconnaît un résultat
+     de recherche à sa FORME — `searchResultItems` non vide, au moins une URL
+     http(s) —, jamais au nom de l'outil, et ajoute le littéral fixe
+     `WEB_SEARCH_NOTE` (« ces extraits ne sont pas des sources… lis sa page
+     avec fetch_url ; son résultat te donnera le marqueur ») : il renvoie à la
+     note de citation que la lecture fera apparaître. Exclusive de la note de
+     citation (un résultat n'est pas les deux), détachée par le même
+     `splitWebCiteNote`. Environ 190 caractères par recherche. Effet mesuré
+     partiel : gemma a lu deux pages sur cinq au premier essai.
    - **Sources en liste** — des marqueurs séparés par une virgule ou un
      point-virgule forment UN groupe : `moveWebRefsAfterPunctuation` retire
      d'abord ces séparateurs, sans quoi chaque virgule remontait devant le

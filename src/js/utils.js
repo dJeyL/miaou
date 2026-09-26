@@ -1147,10 +1147,39 @@ function webCiteNoteFor(result, webMeta, args, isError) {
   return WEB_CITE_NOTE_PREFIX + '[web_ref:' + url + ']';
 }
 
-// Détache la note de citation de queue, s'il y en a une. `cite` est brute
-// (saut de ligne de tête compris). Le reste n'est jamais vide : un résultat
-// réduit à la note seule est laissé tel quel, comme pour les autres notes. PUR.
+// Cinquième note MIAOU, symétrique de la précédente, en queue d'un résultat
+// de RECHERCHE : les extraits contiennent souvent déjà la réponse (une
+// population, un prix), et un modèle modeste s'en contente, sans lire ni
+// citer — observé sur gemma4:26b, qui attribuait ses chiffres par un nom de
+// domaine entre parenthèses. La consigne « lis avant d'utiliser » de
+// WEB_DOCTRINE est loin ; celle-ci est posée là où la tentation se présente,
+// et renvoie à la note de citation que la lecture fera apparaître.
+// Littéral fixe, émis par webSearchNoteFor seul.
+const WEB_SEARCH_NOTE = '\nCes extraits ne sont pas des sources : ils servent à choisir quoi ' +
+  'lire. Avant d\'utiliser une information, lis sa page avec fetch_url ; son résultat ' +
+  'te donnera le marqueur [web_ref:…] à recopier pour la citer.';
+
+// Note de recherche d'un résultat d'outil, ou ''. Un résultat de recherche se
+// reconnaît à sa FORME (searchResultItems : tableau d'objets portant une URL
+// http(s)), jamais au nom de l'outil — tout moteur est couvert. PUR.
+function webSearchNoteFor(result, isError) {
+  if (isError) return '';
+  const hasUrl = searchResultItems(result).some(function(o) {
+    const u = typeof o.url === 'string' ? o.url : (typeof o.page_url === 'string' ? o.page_url : '');
+    return /^https?:\/\/\S/i.test(u);
+  });
+  return hasUrl ? WEB_SEARCH_NOTE : '';
+}
+
+// Détache la note web de queue (citation ou recherche, exclusives), s'il y en
+// a une. `cite` est brute (saut de ligne de tête compris). Le reste n'est
+// jamais vide : un résultat réduit à la note seule est laissé tel quel, comme
+// pour les autres notes. PUR.
 function splitWebCiteNote(s) {
+  const n = WEB_SEARCH_NOTE;
+  if (s.length > n.length && s.slice(-n.length) === n) {
+    return { rest: s.slice(0, s.length - n.length), cite: n };
+  }
   const m = WEB_CITE_NOTE_RE.exec(s);
   if (!m || m.index === 0) return { rest: s, cite: '' };
   return { rest: s.slice(0, m.index), cite: m[0] };

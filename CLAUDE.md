@@ -620,8 +620,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `webSourceRegistry` — consultée = `args.url` d'un ack non en erreur, JAMAIS
   `result` que l'évacuation réécrit —, relayée par un agent, groupe replié
   derrière « +N » ; marqueur tout prêt en queue d'une page lue
-  (`webCiteNoteFor`, note MIAOU détachée par les deux `splitToolResultNote*`)
-  et URL nue collée à un deux-points ramenée au marqueur si la page est lue
+  (`webCiteNoteFor`, note MIAOU détachée par les deux `splitToolResultNote*`),
+  son pendant en queue d'un résultat de recherche (`webSearchNoteFor`), et URL nue collée à un deux-points ramenée au marqueur si la page est lue
   (`convertColonUrlCitations`) ; liste finale de sources réduite à une rangée
   de pastilles (`reduceSourceLines`)), lien d'autorisation
   d'un ack refusé (campagne AB : `ackAuthorizationTarget`, seule affordance

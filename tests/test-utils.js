@@ -5552,6 +5552,29 @@ describe('webCiteNoteFor — marqueur tout prêt en queue d\'une page lue', func
   });
 });
 
+describe('webSearchNoteFor — les extraits servent à choisir quoi lire', function() {
+  var brave = '[{"title":"Bordeaux","url":"https://a.example/bdx","description":"274 427 habitants"}]' + NOT_PRESENTED_NOTE;
+  it('résultat de recherche (forme, pas nom d\'outil) → note', function() {
+    expect(webSearchNoteFor(brave, false)).toBe(WEB_SEARCH_NOTE);
+    expect(webSearchNoteFor('{"results":[{"title":"I","page_url":"https://b.example/p"}]}', false)).toBe(WEB_SEARCH_NOTE);
+  });
+  it('rien sur erreur, texte libre, JSON sans URL http(s)', function() {
+    expect(webSearchNoteFor(brave, true)).toBe('');
+    expect(webSearchNoteFor('Erreur 429 : quota dépassé.', false)).toBe('');
+    expect(webSearchNoteFor('[{"title":"x","url":"javascript:alert(1)"}]', false)).toBe('');
+    expect(webSearchNoteFor('[1,2,3]', false)).toBe('');
+  });
+  it('détachée par les deux séparateurs, JSON toujours lisible, recollée à l\'évacuation', function() {
+    var full = brave + WEB_SEARCH_NOTE;
+    var d = splitToolResultNote(full);
+    expect(inspectResultShape(d.text).lang).toBe('json');
+    expect(d.note.slice(-WEB_SEARCH_NOTE.length + 1)).toBe(WEB_SEARCH_NOTE.slice(1));
+    var r = splitToolResultNoteRaw(full);
+    expect(r.note).toBe(NOT_PRESENTED_NOTE + WEB_SEARCH_NOTE);
+    expect(searchResultItems(full).length).toBe(1);
+  });
+});
+
 describe('sources en liste : virgules et ligne finale', function() {
   var a = '[web_ref:https://a.com]', b = '[web_ref:https://b.com]', c = '[web_ref:https://c.com]';
   it('forme observée : intitulé en italique, marqueurs séparés par des virgules', function() {
