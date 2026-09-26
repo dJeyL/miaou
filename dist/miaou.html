@@ -5197,7 +5197,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-26 22:01 UTC */
+/* miaou — built: 2026-09-26 22:13 UTC */
 
 /* ── utils.js ── */
 
@@ -5679,8 +5679,8 @@ const NOT_PRESENTED_NOTE = '\n[Ce contenu ne t\'est communiqué qu\'à toi : ' +
 const INLINE_HANDLE_NOTE_PATTERN =
   ' ?— texte adressable par js__eval \\(blob=[A-Za-z0-9_]+\\), non inliné dans le contexte\\.';
 
-const WEB_CITE_NOTE_PREFIX = '\nPour citer cette page : ';
-const WEB_CITE_NOTE_RE = /\nPour citer cette page : \[web_ref:https?:\/\/[^\s\]]+\]$/;
+const WEB_CITE_NOTE_PREFIX = '\nPour citer cette page, à la fin de chaque paragraphe qui s\'en sert : ';
+const WEB_CITE_NOTE_RE = /\nPour citer cette page(?:, à la fin de chaque paragraphe qui s'en sert)? : \[web_ref:https?:\/\/[^\s\]]+\]$/;
 
 function webCiteNoteFor(result, webMeta, args, isError) {
   if (isError || !webMeta) return '';
@@ -5926,7 +5926,7 @@ function normalizeRefLinkForms(text) {
     const l = label.trim();
     return '[' + kind + ':' + ref + (l ? '|' + l : '') + ']';
   });
-  return moveWebRefsAfterPunctuation(convertSourceFootnotes(out));
+  return reduceSourceLines(moveWebRefsAfterPunctuation(convertSourceFootnotes(out)));
 }
 
 const FOOTNOTE_DEF_RE = /^\s*(?:[-*+]\s+)?(?:\[\^?(\d{1,3})\]:?|(\d{1,3})[.)])\s+(.*\S)\s*$/;
@@ -5998,14 +5998,58 @@ function convertSourceFootnotes(text) {
 }
 
 function moveWebRefsAfterPunctuation(text) {
-  const group = WEB_REF_MARKER_RE.source + '(?:[ \\t]*' + WEB_REF_MARKER_RE.source + ')*';
+  const M = WEB_REF_MARKER_RE.source;
+  const listed = String(text).replace(new RegExp('(' + M + ')[ \\t]*[,;][ \\t]*(?=\\[web_ref:https?:)', 'g'), '$1 ');
+  const group = M + '(?:[ \\t]*' + M + ')*';
   const re = new RegExp('([ \\t]*)(' + group + ')([ \\u00a0\\u202f]?[.,;:!?…]+)', 'g');
 
-  return String(text).replace(re, function() {
+  return listed.replace(re, function() {
     const a = arguments;
     const lead = a[1], refs = a[2], punct = a[a.length - 3];
     return punct + (lead || ' ') + refs;
   });
+}
+
+const SOURCE_LINE_LABEL_RE = /^(?:sources?|références?|references?|liens?)?$/i;
+function sourceLineKind(line) {
+  const refs = line.match(new RegExp(WEB_REF_MARKER_RE.source, 'g')) || [];
+  const rest = line.replace(new RegExp(WEB_REF_MARKER_RE.source, 'g'), '')
+    .replace(/^\s*[-+*]\s+/, '').replace(/[*_#:,;.\s]/g, '');
+  if (!SOURCE_LINE_LABEL_RE.test(rest)) return { kind: 'text' };
+  if (refs.length) return { kind: 'refs', refs: refs };
+  return rest ? { kind: 'label' } : { kind: 'text' };
+}
+function reduceSourceLines(text) {
+  const src = String(text == null ? '' : text);
+  if (src.indexOf('[web_ref:') < 0) return src;
+  const lines = src.split('\n');
+  let fence = null;
+  const kinds = lines.map(function(line) {
+    const f = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      if (f && f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = null;
+      return { kind: 'code' };
+    }
+    if (f) { fence = f[1]; return { kind: 'code' }; }
+    return sourceLineKind(line);
+  });
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const k = kinds[i];
+    if (k.kind === 'label') {
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trim()) j++;
+      if (j < lines.length && kinds[j].kind === 'refs') { i = j - 1; continue; }
+      out.push(lines[i]);
+    } else if (k.kind === 'refs') {
+      let refs = k.refs.slice();
+      while (i + 1 < lines.length && kinds[i + 1].kind === 'refs') { i++; refs = refs.concat(kinds[i].refs); }
+      out.push(refs.join(' '));
+    } else {
+      out.push(lines[i]);
+    }
+  }
+  return out.join('\n');
 }
 
 const WEB_COLON_URL_RE = /([^\s:\/]):(https?:\/\/[^\s<>()\[\]`]+?)([.!?…]*)(?=[ \t]*$|[ \t])/gm;
@@ -10559,7 +10603,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790460119}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790460789}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -14317,7 +14361,7 @@ const WEB_DOCTRINE =
   "- sources, OBLIGATOIRE : toute information tirée du Web se source par " +
   "[web_ref:URL], SEUL format reconnu — une URL nue, un lien ou une note ne sont " +
   "pas des sources pour l'application. Quand le résultat d'une page se termine " +
-  "par « Pour citer cette page : [web_ref:…] », recopie ce marqueur tel quel. " +
+  "par « Pour citer cette page… : [web_ref:…] », recopie ce marqueur tel quel. " +
   "Place-le à la fin du paragraphe qui utilise la page, après son point final — " +
   "jamais reporté en fin de réponse. Un marqueur par page ; un paragraphe qui " +
   "s'appuie sur une page déjà citée plus haut la cite de nouveau. Il se suffit, " +

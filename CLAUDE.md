@@ -622,7 +622,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   derrière « +N » ; marqueur tout prêt en queue d'une page lue
   (`webCiteNoteFor`, note MIAOU détachée par les deux `splitToolResultNote*`)
   et URL nue collée à un deux-points ramenée au marqueur si la page est lue
-  (`convertColonUrlCitations`)), lien d'autorisation
+  (`convertColonUrlCitations`) ; liste finale de sources réduite à une rangée
+  de pastilles (`reduceSourceLines`)), lien d'autorisation
   d'un ack refusé (campagne AB : `ackAuthorizationTarget`, seule affordance
   d'ack rendue en texte, absente des exports), et **microcompaction des tool
   results** (lot AE : `microcompactToolResults`, seuil uniforme

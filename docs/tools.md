@@ -1763,15 +1763,31 @@ s'y ajoute.
      `WEB_DOCTRINE` est lue au début du contexte, loin du moment où le modèle
      écrit. Le résultat d'un appel porteur de `webMeta`, non en erreur et qui
      n'est pas un binaire présenté, reçoit en DERNIÈRE position
-     `\nPour citer cette page : [web_ref:URL]` (`webCiteNoteFor`, utils.js,
+     `\nPour citer cette page, à la fin de chaque paragraphe qui s'en sert :
+     [web_ref:URL]` (`webCiteNoteFor`, utils.js,
      URL finale sinon celle de l'appel), ajouté à `out` dans la boucle
      d'outils d'api.js : même octets dans le message `tool` et dans le
      `result` persisté. C'est une note MIAOU comme `NOT_PRESENTED_NOTE` :
      `splitToolResultNote` et `splitToolResultNoteRaw` la détachent d'abord
      (`splitWebCiteNote`), l'inspecteur l'affiche avec la note de
      présentation, et l'évacuation la recolle derrière le handle — le
-     marqueur survit à un allègement. Coût : une trentaine de caractères plus
-     l'URL, par page lue.
+     marqueur survit à un allègement. La clause de placement a été ajoutée
+     quand le même modèle, format acquis, regroupait ses sources en fin de
+     réponse ; le motif (`WEB_CITE_NOTE_RE`) reconnaît encore la forme courte,
+     sans elle, des premiers résultats persistés. Coût : environ 80 caractères
+     plus l'URL, par page lue.
+   - **Sources en liste** — des marqueurs séparés par une virgule ou un
+     point-virgule forment UN groupe : `moveWebRefsAfterPunctuation` retire
+     d'abord ces séparateurs, sans quoi chaque virgule remontait devant le
+     marqueur précédent (`Sources : [a], [b]` rendait `Sources :, [a], [b]`).
+     Puis `reduceSourceLines` (utils.js, pure, dernier temps de
+     `normalizeRefLinkForms`) réduit à ses seuls marqueurs une ligne qui ne
+     contient QUE des marqueurs, un intitulé facultatif (`Sources`,
+     `Références`, `Liens`), de l'emphase, une puce et de la ponctuation ;
+     un intitulé seul part avec la liste qui le suit, et les lignes de
+     marqueurs consécutives fusionnent en un groupe. Ça rend lisible une liste
+     finale, sans la redistribuer : rien ne dit quelle page nourrit quel
+     paragraphe. Une ligne qui porte un autre mot n'est jamais touchée.
 
 Couche DOM (marked et DOMPurify réels, clic, lightbox, téléchargement, toast,
 infobulle d'un lien coupé sur deux lignes, copie et export `.md`) :

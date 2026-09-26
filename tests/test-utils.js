@@ -5509,11 +5509,11 @@ describe('webCiteNoteFor — marqueur tout prêt en queue d\'une page lue', func
   var page = 'Texte de la page' + NOT_PRESENTED_NOTE;
   it('webMeta : URL finale, note en dernière position', function() {
     var n = webCiteNoteFor(page, { canonical_url: 'https://a.com/final' }, { url: 'https://a.com/x' }, false);
-    expect(n).toBe('\nPour citer cette page : [web_ref:https://a.com/final]');
+    expect(n).toBe('\nPour citer cette page, à la fin de chaque paragraphe qui s\'en sert : [web_ref:https://a.com/final]');
   });
   it('sans URL finale : celle de l\'appel', function() {
     expect(webCiteNoteFor(page, { title: 'T' }, { url: 'https://a.com/x' }, false))
-      .toBe('\nPour citer cette page : [web_ref:https://a.com/x]');
+      .toBe('\nPour citer cette page, à la fin de chaque paragraphe qui s\'en sert : [web_ref:https://a.com/x]');
   });
   it('rien sans webMeta, sur erreur, sur binaire présenté, sur URL non http(s)', function() {
     expect(webCiteNoteFor(page, null, { url: 'https://a.com/x' }, false)).toBe('');
@@ -5526,7 +5526,8 @@ describe('webCiteNoteFor — marqueur tout prêt en queue d\'une page lue', func
     var r = splitToolResultNote(page + webCiteNoteFor(page, { title: 'T' }, { url: 'https://a.com/x' }, false));
     expect(r.text).toBe('Texte de la page');
     expect(r.note.indexOf('ne le voit PAS') >= 0).toBe(true);
-    expect(r.note.slice(-45)).toBe('Pour citer cette page : [web_ref:https://a.com/x]'.slice(-45));
+    expect(r.note.slice(-45)).toBe('Pour citer cette page, à la fin de chaque paragraphe qui s\'en sert : [web_ref:https://a.com/x]'.slice(-45));
+    expect(r.note.indexOf('\nPour citer') > 0).toBe(true);
   });
   it('splitToolResultNoteRaw : note brute recollable, marqueur conservé à l\'évacuation', function() {
     var cite = webCiteNoteFor(page, { title: 'T' }, { url: 'https://a.com/x' }, false);
@@ -5534,6 +5535,11 @@ describe('webCiteNoteFor — marqueur tout prêt en queue d\'une page lue', func
     expect(r.text).toBe('Texte de la page');
     expect(r.note).toBe(NOT_PRESENTED_NOTE + cite);
     expect(formatEvacuatedToolResult('[res_9]', r.note)).toBe('[res_9]' + NOT_PRESENTED_NOTE + cite);
+  });
+  it('forme courte des premiers résultats persistés : toujours détachée', function() {
+    var r = splitToolResultNoteRaw('corps' + NOT_PRESENTED_NOTE + '\nPour citer cette page : [web_ref:https://a.com/x]');
+    expect(r.text).toBe('corps');
+    expect(r.note).toBe(NOT_PRESENTED_NOTE + '\nPour citer cette page : [web_ref:https://a.com/x]');
   });
   it('note de citation seule en queue, sans note de présentation', function() {
     var r = splitToolResultNoteRaw('corps\nPour citer cette page : [web_ref:https://a.com/x]');
@@ -5543,6 +5549,35 @@ describe('webCiteNoteFor — marqueur tout prêt en queue d\'une page lue', func
   it('résultat de recherche : la note n\'empêche pas la lecture du JSON', function() {
     var items = searchResultItems('[{"title":"T","url":"https://a.com"}]\nPour citer cette page : [web_ref:https://a.com/x]');
     expect(items.length).toBe(1);
+  });
+});
+
+describe('sources en liste : virgules et ligne finale', function() {
+  var a = '[web_ref:https://a.com]', b = '[web_ref:https://b.com]', c = '[web_ref:https://c.com]';
+  it('forme observée : intitulé en italique, marqueurs séparés par des virgules', function() {
+    expect(normalizeRefLinkForms('Réponse.\n\n*Sources : ' + a + ', ' + b + ', ' + c + '*'))
+      .toBe('Réponse.\n\n' + a + ' ' + b + ' ' + c);
+  });
+  it('virgules de liste retirées, ponctuation finale remontée devant le groupe', function() {
+    expect(moveWebRefsAfterPunctuation('Vrai ' + a + ', ' + b + '.')).toBe('Vrai. ' + a + ' ' + b);
+    expect(moveWebRefsAfterPunctuation('Vrai ' + a + ', et suite')).toBe('Vrai, ' + a + ' et suite');
+  });
+  it('intitulé en gras, puis liste à puces sous un intitulé seul', function() {
+    expect(reduceSourceLines('**Sources :** ' + a + ' ' + b)).toBe(a + ' ' + b);
+    expect(reduceSourceLines('Fin.\n\n### Sources\n\n- ' + a + '\n- ' + b + '\n'))
+      .toBe('Fin.\n\n' + a + ' ' + b + '\n');
+  });
+  it('ligne portant un autre mot, intitulé suivi de texte, code : intacts', function() {
+    var t = 'Voir aussi ' + a;
+    expect(reduceSourceLines(t)).toBe(t);
+    var h = '## Sources\n\nLe texte suit.\n' + a;
+    expect(reduceSourceLines(h)).toBe(h);
+    var k = '```\n*Sources : ' + a + '*\n```';
+    expect(reduceSourceLines(k)).toBe(k);
+  });
+  it('copie : liens au domaine, sans intitulé ni virgules parasites', function() {
+    expect(neutralizeRefMarkers('*Sources : ' + a + ', ' + b + '*', 'copy'))
+      .toBe('[a.com](https://a.com) [b.com](https://b.com)');
   });
 });
 

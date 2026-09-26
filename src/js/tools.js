@@ -213,7 +213,7 @@ const WEB_DOCTRINE =
   "- sources, OBLIGATOIRE : toute information tirée du Web se source par " +
   "[web_ref:URL], SEUL format reconnu — une URL nue, un lien ou une note ne sont " +
   "pas des sources pour l'application. Quand le résultat d'une page se termine " +
-  "par « Pour citer cette page : [web_ref:…] », recopie ce marqueur tel quel. " +
+  "par « Pour citer cette page… : [web_ref:…] », recopie ce marqueur tel quel. " +
   "Place-le à la fin du paragraphe qui utilise la page, après son point final — " +
   "jamais reporté en fin de réponse. Un marqueur par page ; un paragraphe qui " +
   "s'appuie sur une page déjà citée plus haut la cite de nouveau. Il se suffit, " +

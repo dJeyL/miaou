@@ -1124,8 +1124,13 @@ const INLINE_HANDLE_NOTE_PATTERN =
 // l'autre note sur le reste. Elle porte une URL, donc un motif et non un
 // littéral (comme INLINE_HANDLE_NOTE_PATTERN) ; l'émetteur unique est
 // webCiteNoteFor, qui compose la phrase depuis WEB_CITE_NOTE_PREFIX.
-const WEB_CITE_NOTE_PREFIX = '\nPour citer cette page : ';
-const WEB_CITE_NOTE_RE = /\nPour citer cette page : \[web_ref:https?:\/\/[^\s\]]+\]$/;
+//
+// La note dit aussi OÙ poser le marqueur : le même modèle, format acquis,
+// regroupait ensuite toutes ses sources en fin de réponse (trois fois sur
+// quatre). Le motif reconnaît encore la forme courte des premiers résultats
+// persistés, sans la clause de placement.
+const WEB_CITE_NOTE_PREFIX = '\nPour citer cette page, à la fin de chaque paragraphe qui s\'en sert : ';
+const WEB_CITE_NOTE_RE = /\nPour citer cette page(?:, à la fin de chaque paragraphe qui s'en sert)? : \[web_ref:https?:\/\/[^\s\]]+\]$/;
 
 // Note de citation d'un résultat d'outil, ou ''. Seulement pour un appel qui
 // a publié des métadonnées de page (`webMeta`, donc fetch_url de mcp_web) et
@@ -1558,7 +1563,7 @@ function normalizeRefLinkForms(text) {
     const l = label.trim();
     return '[' + kind + ':' + ref + (l ? '|' + l : '') + ']';
   });
-  return moveWebRefsAfterPunctuation(convertSourceFootnotes(out));
+  return reduceSourceLines(moveWebRefsAfterPunctuation(convertSourceFootnotes(out)));
 }
 
 // Troisième forme déviante, la plus tenace : les notes numérotées. Le modèle
@@ -1657,16 +1662,77 @@ function convertSourceFootnotes(text) {
 // Les parenthèses et guillemets fermants ne bougent pas : le marqueur peut
 // légitimement être à l'intérieur. PUR ; appelé par normalizeRefLinkForms, donc
 // au rendu comme à la neutralisation (copie, `.md`).
+//
+// Une virgule ou un point-virgule ENTRE deux marqueurs (`[web_ref:a], [web_ref:b]`)
+// sépare une liste, il ne clôt rien : il est retiré d'abord, et la liste
+// devient un seul groupe. Sans ce premier temps, chaque virgule était remontée
+// devant le marqueur qui la précède — `Sources : [a], [b]` rendait
+// `Sources :, [a], [b]` (observé en post-lot AI).
 function moveWebRefsAfterPunctuation(text) {
-  const group = WEB_REF_MARKER_RE.source + '(?:[ \\t]*' + WEB_REF_MARKER_RE.source + ')*';
+  const M = WEB_REF_MARKER_RE.source;
+  const listed = String(text).replace(new RegExp('(' + M + ')[ \\t]*[,;][ \\t]*(?=\\[web_ref:https?:)', 'g'), '$1 ');
+  const group = M + '(?:[ \\t]*' + M + ')*';
   const re = new RegExp('([ \\t]*)(' + group + ')([ \\u00a0\\u202f]?[.,;:!?…]+)', 'g');
   // Le motif d'un marqueur porte son propre groupe capturant : la ponctuation
   // est donc lue en DERNIÈRE capture (avant offset et chaîne), pas par rang.
-  return String(text).replace(re, function() {
+  return listed.replace(re, function() {
     const a = arguments;
     const lead = a[1], refs = a[2], punct = a[a.length - 3];
     return punct + (lead || ' ') + refs;
   });
+}
+
+// Cinquième forme déviante (post-lot AI) : toutes les sources regroupées en
+// fin de réponse, sur une ligne à intitulé souvent mise en italique —
+// `*Sources : [web_ref:a], [web_ref:b]*` —, ou en liste à puces sous un
+// intitulé seul. L'application ne sait pas à quel paragraphe rattacher chaque
+// source et ne les déplace pas ; elle rend seulement la fin lisible : une ligne
+// qui ne contient QUE des marqueurs, un intitulé facultatif (`Sources`,
+// `Références`, `Liens`), de l'emphase, une puce et de la ponctuation, est
+// réduite à ses marqueurs. Un intitulé seul sur sa ligne part avec la liste
+// qui le suit, et les lignes de marqueurs consécutives fusionnent en un seul
+// groupe. Une ligne qui porte le moindre autre mot n'est jamais touchée ; code
+// clôturé exclu. PUR ; appelé par normalizeRefLinkForms, après les virgules.
+const SOURCE_LINE_LABEL_RE = /^(?:sources?|références?|references?|liens?)?$/i;
+function sourceLineKind(line) {
+  const refs = line.match(new RegExp(WEB_REF_MARKER_RE.source, 'g')) || [];
+  const rest = line.replace(new RegExp(WEB_REF_MARKER_RE.source, 'g'), '')
+    .replace(/^\s*[-+*]\s+/, '').replace(/[*_#:,;.\s]/g, '');
+  if (!SOURCE_LINE_LABEL_RE.test(rest)) return { kind: 'text' };
+  if (refs.length) return { kind: 'refs', refs: refs };
+  return rest ? { kind: 'label' } : { kind: 'text' };
+}
+function reduceSourceLines(text) {
+  const src = String(text == null ? '' : text);
+  if (src.indexOf('[web_ref:') < 0) return src;
+  const lines = src.split('\n');
+  let fence = null;
+  const kinds = lines.map(function(line) {
+    const f = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      if (f && f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = null;
+      return { kind: 'code' };
+    }
+    if (f) { fence = f[1]; return { kind: 'code' }; }
+    return sourceLineKind(line);
+  });
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const k = kinds[i];
+    if (k.kind === 'label') {
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trim()) j++;
+      if (j < lines.length && kinds[j].kind === 'refs') { i = j - 1; continue; }
+      out.push(lines[i]);
+    } else if (k.kind === 'refs') {
+      let refs = k.refs.slice();
+      while (i + 1 < lines.length && kinds[i + 1].kind === 'refs') { i++; refs = refs.concat(kinds[i].refs); }
+      out.push(refs.join(' '));
+    } else {
+      out.push(lines[i]);
+    }
+  }
+  return out.join('\n');
 }
 
 // Quatrième forme déviante (post-lot AI) : la source écrite en URL nue COLLÉE
