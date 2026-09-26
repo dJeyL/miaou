@@ -589,7 +589,7 @@ body.conv-readonly .msg-continue {
    Deux différences ASSUMÉES avec `.conv-readonly` juste au-dessus, et elles
    vont ensemble :
    - `pointer-events` reste ACTIF. Le couper, comme le fait le readonly,
-     empêcherait `cursor: not-allowed` de s'afficher et le `title` de paraître
+     empêcherait `cursor: not-allowed` de s'afficher et l'infobulle de paraître
      — or c'est précisément ce qu'on veut ici : dire pourquoi, pas seulement
      interdire. Le clic est neutralisé côté JS (enterEditMode,
      regenerateResponse), et de toute façon la seule garde qui protège le

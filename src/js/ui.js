@@ -300,10 +300,10 @@ function renderDidYouKnow(hostEl, tip) {
   // (pose puis re-rendus au redimensionnement), il n'y a donc aucun câblage
   // durable à maintenir — et l'affordance suit le nœud sans dépendre d'un nom
   // global cité dans une template string.
-  // `title` plutôt qu'un texte d'invite ajouté dans l'encart : l'astuce est
+  // Infobulle plutôt qu'un texte d'invite ajouté dans l'encart : l'astuce est
   // courte et bornée en hauteur (elle s'élague déjà faute de place), une ligne
   // de plus y disputerait la place au contenu.
-  el.title = 'Demander à développer';
+  setTip(el, 'Demander à développer');
   el.addEventListener('click', () => askToDevelopWelcomeTip(hostEl));
   hostEl.appendChild(el);
 }
@@ -1209,8 +1209,8 @@ function attachDiagramActions(view, code) {
   const mk = (cls, title, html, fn) => {
     const b = document.createElement('button');
     b.className = cls;
-    b.title = title;
     b.innerHTML = html;
+    setTip(b, title);   // après le contenu : la règle ARIA lit le texte visible
     b.onclick = fn;
     bar.appendChild(b);
   };
@@ -1273,8 +1273,8 @@ function ensureLightbox() {
   const mk = (title, html, fn) => {
     const b = document.createElement('button');
     b.className = 'mermaid-lb-btn';
-    b.title = title;
     b.innerHTML = html;
+    setTip(b, title);   // après le contenu : la règle ARIA lit le texte visible
     b.onclick = fn;
     bar.appendChild(b);
     return b;
@@ -1945,16 +1945,16 @@ function assistantHead(model, reasoning, ts, server) {
     `<span class="msg-ts-sep inline-sep"${tsText ? '' : ' hidden'}>·</span>` +
     `<span class="msg-ts"${tsText ? '' : ' hidden'}>${escHtml(tsText)}</span>` +
     `<div class="meta-actions">` +
-      `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)" title="Raisonnement" aria-label="Raisonnement">` +
+      `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)"${tipAttrs('Raisonnement')}>` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M11 2.5l1.5 3.8 3.8 1.5-3.8 1.5L11 13.1 9.5 9.3 5.7 7.8l3.8-1.5z"/><path d="M17.5 13l.9 2.2 2.2.9-2.2.9-.9 2.2-.9-2.2-2.2-.9 2.2-.9z"/></svg>` +
       `</button>` +
-      `<button class="msg-copy" hidden title="Copier" onclick="copyMsg(this)">` +
+      `<button class="msg-copy" hidden${tipAttrs('Copier')} onclick="copyMsg(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
       `</button>` +
-      `<button class="msg-dl" hidden title="Télécharger en .md" onclick="downloadMsgMd(this)">` +
+      `<button class="msg-dl" hidden${tipAttrs('Télécharger en .md')} onclick="downloadMsgMd(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>` +
       `</button>` +
-      `<button class="msg-regen" hidden title="Régénérer la réponse" onclick="onRegenBtn(this)">` +
+      `<button class="msg-regen" hidden${tipAttrs('Régénérer la réponse')} onclick="onRegenBtn(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>` +
       `</button>` +
     `</div>` +
@@ -2037,7 +2037,7 @@ function agentOpenButtonHtml(agentResult) {
   const id = (agentResult && agentResult.id) || '';
   if (!id || !loadConversation(id)) return '';
   return (
-    `<button class="msg-open-agent" title="Ouvrir le fil de l'agent" onclick="onOpenAgentConv(this)" data-agent-conv="${escHtml(id)}">` +
+    `<button class="msg-open-agent"${tipAttrs('Ouvrir le fil de l\'agent')} onclick="onOpenAgentConv(this)" data-agent-conv="${escHtml(id)}">` +
     ICON_EYE +
     `</button>`
   );
@@ -2069,10 +2069,10 @@ function buildMsg(role, content, model, reasoning, ts, server, truncated, attach
       `<div class="msg-user-footer">` +
       `<div class="msg-user-actions">` +
       (agentResult ? agentOpenButtonHtml(agentResult) :
-      `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
+      `<button class="msg-edit"${tipAttrs('Éditer')} onclick="onEditMsg(this)">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>`) +
-      `<button class="msg-copy-user" title="Copier" onclick="copyMsg(this)">` +
+      `<button class="msg-copy-user"${tipAttrs('Copier')} onclick="copyMsg(this)">` +
       `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
       `</button>` +
       `</div>` +
@@ -2220,14 +2220,14 @@ function decoratePre(scope) {
       `<div class="code-actions">` +
       // Toggle mermaid : présent dès le décor (y compris pendant le streaming)
       // mais caché — révélé par renderMermaidUnder au premier rendu réussi.
-      (isMermaidLang(lang) ? `<button class="code-mmd-toggle" title="Diagramme / source" hidden>${svgDiagram}</button>` : '') +
+      (isMermaidLang(lang) ? `<button class="code-mmd-toggle"${tipAttrs('Diagramme / source')} hidden>${svgDiagram}</button>` : '') +
       // Aperçu sandboxé : clic EXPLICITE uniquement, jamais automatique.
-      (isPreviewableLang(lang) ? `<button class="code-preview-btn" title="Aperçu">${svgEye}</button>` : '') +
+      (isPreviewableLang(lang) ? `<button class="code-preview-btn"${tipAttrs('Aperçu')}>${svgEye}</button>` : '') +
       // Conversion en page HTML (lot R) : même geste que le convertisseur des
       // réglages, appliqué au contenu du bloc. Markdown seulement.
-      (isMarkdownLang(lang) ? `<button class="code-md-html" title="Convertir en page HTML">${svgPage}</button>` : '') +
-      `<button class="code-copy" title="Copier">${svgCopy}</button>` +
-      `<button class="code-dl" title="Télécharger">${svgDl}</button>` +
+      (isMarkdownLang(lang) ? `<button class="code-md-html"${tipAttrs('Convertir en page HTML')}>${svgPage}</button>` : '') +
+      `<button class="code-copy"${tipAttrs('Copier')}>${svgCopy}</button>` +
+      `<button class="code-dl"${tipAttrs('Télécharger')}>${svgDl}</button>` +
       `</div>`;
     const mmdToggle = head.querySelector('.code-mmd-toggle');
     if (mmdToggle) mmdToggle.onclick = () => {
@@ -2248,8 +2248,8 @@ function decoratePre(scope) {
         box.className = 'code-preview';
         const close = document.createElement('button');
         close.className = 'code-preview-close';
-        close.title = "Fermer l'aperçu";
         close.textContent = '×';
+        setTip(close, "Fermer l'aperçu");
         close.onclick = () => { box.remove(); pre.classList.remove('preview-open'); };
         const frame = document.createElement('iframe');
         frame.setAttribute('sandbox', 'allow-scripts');
@@ -2495,12 +2495,12 @@ function syncLastAssistantActions() {
       // Réponse que la compaction a retirée de ce qui part au modèle : la
       // continuer n'a plus de sens (`compactionFollows`, utils.js). Désactivé
       // et non masqué, comme sur les bulles anciennes — le texte « Réponse
-      // incomplète » reste vrai ; le title dit pourquoi le bouton est inerte.
+      // incomplète » reste vrai ; l'infobulle dit pourquoi le bouton est inerte.
       const cut = b === last && compactionFollows(currentThread, msgIndex(b));
       continueBtn.disabled = sending || b !== last || cut;
-      continueBtn.title = cut
+      setTip(continueBtn, cut
         ? 'Cette réponse n\'est plus transmise au modèle depuis la compaction : elle ne peut plus être continuée.'
-        : '';
+        : '');
     }
   }
   syncAgentBusyAffordances();
@@ -2513,13 +2513,13 @@ function syncLastAssistantActions() {
 // même classe couvre du même coup les bulles créées PENDANT que la garde tient.
 //
 // Grisé, PAS masqué. Un bouton qui disparaît puis revient se lit comme un bug
-// d'affichage ; grisé avec un `title` qui donne la raison, l'état est lisible
+// d'affichage ; grisé avec une infobulle qui donne la raison, l'état est lisible
 // et le geste reste découvrable. C'est le traitement déjà retenu pour la case
 // de déplacement d'une conversation dont un agent tourne (convItemEl) — même
 // situation, même vocabulaire.
 //
 // `pointer-events` reste ACTIF, contrairement à `body.conv-readonly` : le
-// couper empêcherait `cursor: not-allowed` de s'afficher et le `title` de
+// couper empêcherait `cursor: not-allowed` de s'afficher et l'infobulle de
 // paraître. Le clic est neutralisé côté JS (enterEditMode, regenerateResponse),
 // où vit de toute façon la seule garde qui protège le thread.
 function syncAgentBusyAffordances() {
@@ -2529,14 +2529,14 @@ function syncAgentBusyAffordances() {
     ? 'Un agent de cette conversation travaille : l\'historique ne peut pas être réécrit pour l\'instant.'
     : '';
   for (const btn of document.querySelectorAll('#thread .msg-edit')) {
-    if (busy) btn.title = hint; else btn.title = 'Éditer';
+    setTip(btn, busy ? hint : 'Éditer');
   }
   // Libellés de repos recopiés des points de construction (buildMsg, ui.js) :
   // « Éditer » et « Régénérer la réponse ». Les réécrire de mémoire changerait
   // l'infobulle en silence — c'est arrivé ici même, « Régénérer » au lieu de
   // « Régénérer la réponse », rattrapé en relisant la source.
   for (const btn of document.querySelectorAll('#thread .msg-regen')) {
-    if (busy) btn.title = hint; else btn.title = 'Régénérer la réponse';
+    setTip(btn, busy ? hint : 'Régénérer la réponse');
   }
 }
 
@@ -3329,13 +3329,18 @@ function armThenRun(btn, onConfirm, armedLabel, armedTitle) {
     return;
   }
   btn.classList.add('armed');
-  btn._origTitle = btn.title;
-  btn.title = armedTitle || 'Cliquer à nouveau pour confirmer';
+  // `getTip`, jamais l'attribut `title` : c'est la source qu'écrit `setTip`.
+  // Libellé AVANT l'infobulle, à l'armement comme au désarmement : la règle
+  // ARIA de `setTip` lit le texte visible du bouton au moment de l'appel. Le
+  // `setTip` de l'armement réaffiche la bulle sous le pointeur (lot AH) :
+  // c'est ce qui rend l'armement visible après le clic qui l'a masquée.
+  btn._origTitle = getTip(btn);
   if (armedLabel != null) { btn._origLabel = btn.textContent; btn.textContent = armedLabel; }
+  setTip(btn, armedTitle || 'Cliquer à nouveau pour confirmer');
   btn._disarmTimer = setTimeout(() => {
     btn.classList.remove('armed');
-    btn.title = btn._origTitle || '';
     if (armedLabel != null && btn._origLabel != null) btn.textContent = btn._origLabel;
+    setTip(btn, btn._origTitle || '');
   }, ARM_DELETE_MS);
 }
 
@@ -3457,11 +3462,11 @@ function convItemEl(c, convs) {
   // de référentiel que le piège 18 interdit. `hasWorkingAgent` est LE prédicat,
   // le même que celui de l'exclusion de présélection (enterMoveMode) et de la
   // pastille : pas un second balayage.
-  // Le titre porte la RAISON : une case inerte sans explication se lit comme un
-  // bug (« pourquoi je ne peux pas cocher celle-là ? »).
+  // L'infobulle porte la RAISON : une case inerte sans explication se lit comme
+  // un bug (« pourquoi je ne peux pas cocher celle-là ? »).
   const agentBusy = hasWorkingAgent(c.id, convs);
   const lockAttrs = agentBusy
-    ? ' disabled title="Un agent de cette conversation travaille : elle ne peut pas être déplacée pour l\'instant."'
+    ? ' disabled' + tipAttrs('Un agent de cette conversation travaille : elle ne peut pas être déplacée pour l\'instant.')
     : '';
   // convLabel, pas `c.title` nu (lot AA) : c'était la dernière des surfaces de
   // libellé restée hors du prédicat. Elle y gagne l'extrait provisoire — la
@@ -3474,11 +3479,11 @@ function convItemEl(c, convs) {
     `<input type="checkbox" class="conv-select" onclick="event.stopPropagation();toggleConvSelection('${c.id}',this.checked)"${checked}${lockAttrs}>
      <div class="conv-body">
        <div class="${titleCls}">${escHtml(lbl.text || 'Nouvelle conversation')}</div>
-       <div class="conv-date" title="${escHtml(formatFullDateFr(c.updatedAt || c.timestamp))}">${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
+       <div class="conv-date"${tipAttrs(formatFullDateFr(c.updatedAt || c.timestamp), { text: relativeWhen(c.updatedAt || c.timestamp) })}>${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
      </div>
      <div class="conv-actions">
-       <button class="conv-pin" title="${c.pinned ? 'Désépingler' : 'Épingler'}" onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
-       <button class="conv-del" title="Supprimer" onclick="event.stopPropagation();onConvDel(this,'${c.id}')">
+       <button class="conv-pin"${tipAttrs(c.pinned ? 'Désépingler' : 'Épingler')} onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
+       <button class="conv-del"${tipAttrs('Supprimer')} onclick="event.stopPropagation();onConvDel(this,'${c.id}')">
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
        </button>
      </div>`;
@@ -3634,17 +3639,17 @@ function renderMoveBar() {
   const moveBtn = document.createElement('button');
   moveBtn.type = 'button';
   moveBtn.className = 'move-bar-go';
-  moveBtn.title = 'Déplacer';
   moveBtn.disabled = n === 0 || !pill;
   moveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  setTip(moveBtn, 'Déplacer');
   if (pill) moveBtn.onclick = () => moveSelectedConversations(pill.input.value);
   actions.appendChild(moveBtn);
 
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'move-bar-cancel';
-  cancelBtn.title = 'Annuler';
   cancelBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+  setTip(cancelBtn, 'Annuler');
   cancelBtn.onclick = () => exitMoveMode();
   actions.appendChild(cancelBtn);
 
@@ -3861,6 +3866,10 @@ function setTitle(label) {
   const el = $('conv-title');
   el.textContent = o.text || '';
   el.classList.toggle('provisional', !!o.provisional);
+  // Le titre porte l'infobulle « Renommer la conversation » : vide (conversation
+  // neuve), il reçoit cette infobulle pour nom accessible ; rempli, elle doit
+  // redevenir une description, sans quoi elle masquerait le titre (lot AH).
+  refreshTipAria(el);
   // L'onglet reçoit l'extrait BRUT, sans marque de provisoire : il n'a pas
   // d'italique, et distinguer les conversations entre plusieurs onglets prime
   // sur signaler le statut du titre.
@@ -3885,9 +3894,17 @@ function documentTitleFor(text) {
 // un agent n'est de toute façon jamais titré, donc jamais verrouillé par
 // l'autre chemin.
 function setTitleEditableForConv(conv) {
-  const el = $('conv-title');
+  applyConvTitleEditable($('conv-title'), !isAgentConversation(conv));
+}
+
+// Point d'écriture UNIQUE de l'éditabilité du titre, pour ses deux écrivains
+// (setTitleEditableForConv ici, setTitleEditable dans main.js) : il pose
+// l'attribut et l'infobulle ensemble. Un titre inerte (fil d'agent, retitrage
+// en cours) ne porte pas d'infobulle « Renommer » : elle mentirait.
+function applyConvTitleEditable(el, editable) {
   if (!el) return;
-  el.contentEditable = isAgentConversation(conv) ? 'false' : 'true';
+  el.contentEditable = editable ? 'true' : 'false';
+  setTip(el, editable ? 'Renommer la conversation' : '');
 }
 
 // Bandeau de parenté d'agent : la voie de RETOUR vers la conversation qui a
@@ -3943,19 +3960,18 @@ function syncAgentBanner(conv) {
   if (parent) {
     // `.text` seul : le bandeau n'italise pas le provisoire — le libellé du
     // parent y est une information d'orientation, pas un titre en attente, et
-    // le `title` d'attribut qui en dérive est du texte brut.
+    // l'infobulle qui en dérive est du texte brut.
     const label = convLabel(parent).text || 'Nouvelle conversation';
     link.textContent = label;
     link.onclick = () => selectConv(parent.id, true);
     link.style.pointerEvents = '';
     if (btn) {
       btn.hidden = false;
-      // `title` porte le NOM du parent : le bouton est une icône seule, et le
-      // bandeau qui porte ce nom en clair défile hors de vue dès qu'on descend
-      // dans le fil. Sans lui, l'affordance permanente serait muette sur sa
-      // destination.
-      btn.title = 'Retour à « ' + label + ' »';
-      btn.setAttribute('aria-label', btn.title);
+      // L'infobulle porte le NOM du parent : le bouton est une icône seule, et
+      // le bandeau qui porte ce nom en clair défile hors de vue dès qu'on
+      // descend dans le fil. Sans elle, l'affordance permanente serait muette
+      // sur sa destination. Nom accessible posé par setTip (bouton-icône).
+      setTip(btn, 'Retour à « ' + label + ' »');
       // Cible relue à CHAQUE appel, jamais figée : un agent peut être réouvert
       // après que son parent a été renommé, et syncAgentBanner est rappelée à
       // chaque ouverture de conversation.
@@ -4190,7 +4206,7 @@ function setComposerStreaming(on, phase, variant) {
   const send = $('send-btn');
   if (!send) return;
   send.classList.toggle('streaming', on);
-  send.title = on ? 'Arrêter' : 'Envoyer';
+  setTip(send, on ? 'Arrêter' : 'Envoyer');
   // Mode file (lot Q) : le placeholder annonce la mise en file pendant la
   // génération — l'affordance principale du mécanisme, avec le rail de puces.
   const ta = $('composer-text');
@@ -4211,7 +4227,7 @@ function setComposerPhase(phase, variant) {
 // Stop cliqué pendant un tour d'outils (gen.abort momentanément null, cf.
 // abortStream/main.js) : l'arrêt est pris en compte mais différé jusqu'à la
 // frontière de tour suivante. Le bouton se désactive et change d'apparence —
-// pas seulement de title — pour qu'un second clic soit IMPOSSIBLE plutôt que
+// pas seulement d'infobulle — pour qu'un second clic soit IMPOSSIBLE plutôt que
 // simplement sans effet (l'utilisateur ne doit pas pouvoir croire qu'il n'a
 // pas cliqué assez fort). Levé par setSending(false) (fin de génération) ou
 // par le rebranchement d'écran sur une génération qui a déjà fini d'honorer
@@ -4227,10 +4243,10 @@ function setStopping(on) {
   send.classList.toggle('stopping', on);
   if (on) {
     send.disabled = true;
-    send.title = 'Arrêt en cours…';
+    setTip(send, 'Arrêt en cours…');
   } else if (send.classList.contains('streaming')) {
     send.disabled = false;
-    send.title = 'Arrêter';
+    setTip(send, 'Arrêter');
   }
 }
 // ── Pastille de connexion (pilule modèle) ───────────────────────────────────
@@ -4280,16 +4296,17 @@ function syncConnDot() {
   if (!dot) return;
   const health = resolveBackendHealth(activeApiConfig(), REQUIRE_API_KEY, _backendProbe);
   // 'unconfigured' et 'down' sont tous deux rouges, mais ne disent PAS la même
-  // chose : le titre porte la distinction, et c'est lui qui envoie au bon geste.
+  // chose : l'infobulle porte la distinction, et c'est elle qui envoie au bon
+  // geste — en deux étages quand il y en a un (état, puis geste : lot AH).
   if (health === 'ok') {
     dot.className = 'dot ok';
-    dot.title = 'Backend joignable';
+    setTip(dot, 'Backend joignable');
   } else if (health === 'unconfigured') {
     dot.className = 'dot err';
-    dot.title = 'API non configurée — ouvrir les paramètres';
+    setTip(dot, { label: 'API non configurée', detail: 'Ouvrir les paramètres' });
   } else {
     dot.className = 'dot err';
-    dot.title = 'Backend injoignable';
+    setTip(dot, 'Backend injoignable');
   }
   syncWorriedLogo();
   syncHealthToasts();
@@ -4440,8 +4457,8 @@ function buildInterjectionChip(item) {
     '<span class="ij-glyph"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 20l1.1-4.1a8.3 8.3 0 0 1-1-4A8.4 8.4 0 0 1 12 3.5a8.4 8.4 0 0 1 9 8z"/><path d="M12 8v4l2.5 1.5"/></svg></span>' +
     '<span class="ij-text"></span>' +
     '<span class="ij-hint">cliquer pour éditer</span>' +
-    '<button class="ij-copy" title="Copier" aria-label="Copier cette interjection"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>' +
-    '<button class="ij-x" title="Annuler" aria-label="Annuler cette interjection"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+    '<button class="ij-copy"' + tipAttrs('Copier', { ariaLabel: 'Copier cette interjection' }) + '><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>' +
+    '<button class="ij-x"' + tipAttrs('Annuler', { ariaLabel: 'Annuler cette interjection' }) + '><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
   el.querySelector('.ij-text').textContent = item.literal;
   // Copie : la seule voie de récupération quand l'édition est fermée (composer
   // verrouillé d'un agent terminé). Offerte en permanence — un texte tapé se
@@ -4563,11 +4580,11 @@ function attChipHtml(att, thumbSrc, removable, conversationId) {
     ? `<img class="att-thumb" src="${thumbSrc}" alt="">`
     : attIconSvg();
   const removeBtn = removable
-    ? `<button class="att-remove" title="Retirer" onclick="removeComposerAttachment('${att.attId}')">` +
+    ? `<button class="att-remove"${tipAttrs('Retirer')} onclick="removeComposerAttachment('${att.attId}')">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>`
     : '';
   const promoteBtn = (!removable && conversationId)
-    ? `<button class="att-promote" title="Ajouter à la bibliothèque de l'espace" ` +
+    ? `<button class="att-promote"${tipAttrs('Ajouter à la bibliothèque de l\'espace')} ` +
       `onclick="promoteAttachmentToLibrary(this, '${att.attId}', '${conversationId}')">${ICON_PACKAGE}</button>`
     : '';
   // A3-1 : chip cliquable UNIQUEMENT en bulle envoyée (conversationId truthy) —
@@ -4576,13 +4593,13 @@ function attChipHtml(att, thumbSrc, removable, conversationId) {
   // MIAOU absents du fichier exporté).
   const liveAttrs = (!removable && conversationId)
     ? ` onclick="onAttachmentChipClick(event, '${att.attId}', '${conversationId}')" ` +
-      `title="${att.kind === 'image' ? 'Agrandir (Cmd/Ctrl+clic : nouvel onglet)' : 'Télécharger'}"`
+      tipAttrs(att.kind === 'image' ? 'Agrandir (Cmd/Ctrl+clic : nouvel onglet)' : 'Télécharger', { text: att.name || '' })
     : '';
   const chipClass = (!removable && conversationId) ? 'att-chip att-chip-live' : 'att-chip';
   return (
     `<span class="${chipClass}" data-att-id="${att.attId}"${liveAttrs}>` +
     thumb +
-    `<span class="att-name" title="${escHtml(att.name)}">${escHtml(att.name)}</span>` +
+    `<span class="att-name"${tipAttrs(att.name, { text: att.name })}>${escHtml(att.name)}</span>` +
     `<span class="att-size">${humanSize(att.size)}</span>` +
     removeBtn +
     promoteBtn +
@@ -4654,7 +4671,7 @@ async function promoteAttachmentToLibrary(btn, attId, conversationId) {
   );
   if (stored) {
     btn.classList.add('done');
-    btn.title = 'Ajouté à la bibliothèque de l\'espace';
+    setTip(btn, 'Ajouté à la bibliothèque de l\'espace');
     // Trigger de description fire-and-forget : aucun écran Space ouvert ici pour afficher un
     // statut par carte (l'utilisateur est dans une conversation) — la
     // description, si elle aboutit, sera visible à la prochaine ouverture de
@@ -5718,7 +5735,7 @@ function initComposerModelLabelFit() {
     // redimensionnement, pour rien.
     const m = activeModel() || 'modèle';
     compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
-    compLabel.title = m;
+    setTip(compLabel, m);
   });
   _composerSelectorsRO.observe(row);
 }
@@ -5726,14 +5743,14 @@ function initComposerModelLabelFit() {
 function syncModelUI() {
   const m = activeModel() || 'modèle';
   // Pilule topbar : même abréviation que le bouton composer (auteur retiré,
-  // puis fin tronquée), avec le nom complet en title pour rester récupérable.
+  // puis fin tronquée), avec le nom complet en infobulle pour rester récupérable.
   const top = $('model-label');
   if (top) {
     top.textContent = shortenModelLabel(m, TOPBAR_MODEL_MAX_CHARS);
-    top.title = m;
+    setTip(top, m);
   }
   // Bouton composer : nom ABRÉGÉ (auteur retiré, puis fin tronquée) — le nom
-  // complet reste dans la liste déroulée ET en title, pour rester récupérable.
+  // complet reste dans la liste déroulée ET en infobulle, pour rester récupérable.
   // Marque de vision AVANT le libellé : son affichage change la place que le
   // budget de caractères doit lui laisser.
   const cam = $('composer-model-vision');
@@ -5744,7 +5761,7 @@ function syncModelUI() {
   const compLabel = $('composer-model-label');
   if (compLabel) {
     compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
-    compLabel.title = m;
+    setTip(compLabel, m);
   }
   const box = $('composer-model');
   if (box) {
@@ -5861,7 +5878,7 @@ function renderComposerModelOptionsInner() {
       // Marque de vision déclarée (lot AF), même glyphe que la pilule.
       const vs = modelVisionState(s, m);
       const cam = (vs.source === 'declared' && vs.enabled)
-        ? `<span class="model-opt-vision" title="Lit les images (déclaré par le serveur)">${ICON_CAMERA}</span>` : '';
+        ? `<span class="model-opt-vision"${tipAttrs('Lit les images (déclaré par le serveur)')}>${ICON_CAMERA}</span>` : '';
       o.innerHTML = `<span>${escHtml(m)}</span><span class="model-opt-trail">${cam}<span class="check">✓</span></span>`;
       o.onmousedown = (ev) => { ev.preventDefault(); pickComposerModel(m, s.id); };
       menu.appendChild(o);
@@ -6787,7 +6804,7 @@ function syncContextCounter() {
     if (ud.cachedTokens != null && ud.cachedRatio != null) {
       const pct = Math.max(0, Math.min(100, ud.cachedRatio * 100));
       cacheEl.style.width = pct + '%';
-      cacheEl.title = ud.cachedTokens + ' tok servis par le cache (' + Math.round(pct) + '%)';
+      setTip(cacheEl, ud.cachedTokens + ' tok servis par le cache (' + Math.round(pct) + '%)');
       cacheEl.hidden = false;
     } else {
       cacheEl.hidden = true;
@@ -7130,7 +7147,7 @@ function renderContextInspector() {
     bar.innerHTML = m.entries.map(e => {
       const pct = Math.max(0, Math.min(100, (e.tokens / scale) * 100));
       const color = CTX_PALETTE[e.source] || '#888';
-      return `<span class="ctx-bar-seg" style="width:${pct}%;background:${color}" title="${escHtml(e.label)}"></span>`;
+      return `<span class="ctx-bar-seg" style="width:${pct}%;background:${color}"${tipAttrs(e.label)}></span>`;
     }).join('');
   }
 
@@ -7171,7 +7188,7 @@ function renderContextInspector() {
         (share != null ? ` (${share}% de l'entrée)` : '') +
         ' — quantité totale, pas une position dans la liste :' +
         ' le backend aligne sur ses propres blocs.';
-      barCache.innerHTML = `<span class="ctx-bar-seg" style="width:${pct}%" title="${escHtml(title)}"></span>`;
+      barCache.innerHTML = `<span class="ctx-bar-seg" style="width:${pct}%"${tipAttrs(title)}></span>`;
       barCache.hidden = false;
     } else {
       barCache.innerHTML = '';
@@ -7192,17 +7209,17 @@ function renderContextInspector() {
       const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
       const color = CTX_PALETTE[e.source] || '#888';
       const note = e.source === 'attachment_images' ? ' <span class="hint">(très approximatif)</span>' : '';
-      // Explication au survol du libellé. `escHtml` bien que le texte soit une
-      // constante littérale d'ici (aucune origine modèle, hors piège 21) : on
-      // est en position d'ATTRIBUT, et ces phrases portent des apostrophes —
-      // escHtml échappe `'` et `"`. Garder l'échappement inconditionnel pour
-      // qu'un jour où cette valeur deviendrait dynamique, le point d'injection
-      // ne soit pas déjà ouvert.
+      // Explication au survol du libellé. `tipAttrs` échappe bien que le texte
+      // soit une constante littérale d'ici (aucune origine modèle, hors piège
+      // 21) : on est en position d'ATTRIBUT, et ces phrases portent des
+      // apostrophes. L'échappement reste inconditionnel pour qu'un jour où
+      // cette valeur deviendrait dynamique, le point d'injection ne soit pas
+      // déjà ouvert.
       const why = contextExplainFor(e.source, libraryForm);
-      const titleAttr = why ? ` title="${escHtml(why)}"` : '';
+      const tipAttr = why ? tipAttrs(why, { text: e.label }) : '';
       const labelCls = why ? ' class="ctx-label-explained"' : '';
       return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>` +
-        `<span${labelCls}${titleAttr}>${escHtml(e.label)}</span>${note}</td>` +
+        `<span${labelCls}${tipAttr}>${escHtml(e.label)}</span>${note}</td>` +
         `<td>${e.chars}</td><td>≈${e.tokens}</td><td>${pct}%</td></tr>`;
     });
     const totalTokLabel = (m.real ? '' : '≈') + m.totalTokens;
@@ -7583,6 +7600,10 @@ function syncAgentCount() {
   el.hidden = !visible;
   const label = $('agent-count-label');
   if (label) label.textContent = formatAgentCountLabel(agentInventoryCount(inv));
+  // Le libellé est vide au démarrage, quand initTooltips applique la règle ARIA
+  // du `data-tip` statique : elle a alors posé un aria-label qui masquerait le
+  // compte. La ré-appliquer une fois le texte écrit (lot AH).
+  refreshTipAria(el);
   // Une pilule qui disparait pendant que son popover est ouvert emporte le
   // popover : sans ca il resterait affiche, ancre a un element masque.
   if (el.hidden) closeAgentMenu();
@@ -7771,7 +7792,7 @@ function renderSpaceMenu() {
     opt.className = 'model-opt' + (s.id === activeSpaceId ? ' selected' : '');
     opt.innerHTML =
       `<span class="space-opt-name">${escHtml(s.name || '')}</span>` +
-      `<button type="button" class="space-opt-edit" title="Modifier l'espace">` +
+      `<button type="button" class="space-opt-edit"${tipAttrs('Modifier l\'espace')}>` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
       `<span class="check">✓</span>`;
@@ -8074,11 +8095,14 @@ function syncAuthorizationPending() {
   el.classList.remove('is-error', 'is-pending');
   if (pending.severity === 'error') el.classList.add('is-error');
   else if (pending.severity === 'pending') el.classList.add('is-pending');
-  el.title = pending.severity === 'error'
-    ? 'Ouvrir les serveurs MCP — vérifier les serveurs injoignables'
-    : 'Ouvrir les serveurs MCP';
+  // Libellé AVANT l'infobulle : la règle ARIA de setTip lit le texte visible
+  // au moment de l'appel. Le libellé de la pilule dit déjà l'état, donc la
+  // bulle porte le geste, et en erreur un second étage (lot AH).
   const label = $('auth-pending-label');
   if (label) label.textContent = pending.label;
+  setTip(el, pending.severity === 'error'
+    ? { label: 'Ouvrir les serveurs MCP', detail: 'Vérifier les serveurs injoignables' }
+    : 'Ouvrir les serveurs MCP');
   syncWorriedLogo();
   syncHealthToasts();
 }
@@ -8298,8 +8322,8 @@ function buildMcpCard(server, isNew) {
   if (!isNew && server.enabled !== false) {
     const refreshBtn = document.createElement('button');
     refreshBtn.className = 'icon-btn mcp-refresh';
-    refreshBtn.title = 'Reconnecter et relire les outils';
-    refreshBtn.setAttribute('aria-label', 'Reconnecter ce serveur');
+    refreshBtn.setAttribute('aria-label', 'Reconnecter ce serveur');   // d'auteur, AVANT setTip
+    setTip(refreshBtn, 'Reconnecter et relire les outils');
     refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
     refreshBtn.addEventListener('click', () => onRefreshMcpCard(originalName, refreshBtn));
     viewRow.appendChild(refreshBtn);
@@ -8568,8 +8592,8 @@ function buildApiCard(server, isNew, isActive) {
   if (!isNew) {
     const refreshBtn = document.createElement('button');
     refreshBtn.className = 'icon-btn api-refresh';
-    refreshBtn.title = 'Relire les modèles et leurs propriétés';
-    refreshBtn.setAttribute('aria-label', 'Relire ce serveur');
+    refreshBtn.setAttribute('aria-label', 'Relire ce serveur');   // d'auteur, AVANT setTip
+    setTip(refreshBtn, 'Relire les modèles et leurs propriétés');
     refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
     refreshBtn.addEventListener('click', () => onRefreshApiCard(originalId, refreshBtn));
     viewRow.appendChild(refreshBtn);
@@ -9456,7 +9480,7 @@ async function renderSpaceFilesList(spaceId) {
     // information de second plan, et elle coûtait ~25 caractères sur une ligne
     // qui doit aussi porter type, taille et date dans ~210 px utiles.
     const provenanceBadge = e.source
-      ? '<span class="mem-sub" title="Promu depuis une conversation"> · promu</span>'
+      ? '<span class="mem-sub"' + tipAttrs('Promu depuis une conversation', { text: '· promu' }) + '> · promu</span>'
       : '';
     // Date de DÉPÔT sur la ligne méta, à sa place de fait (type · taille ·
     // date · provenance) : elle rejoint la ligne des faits sur le fichier
@@ -9475,7 +9499,7 @@ async function renderSpaceFilesList(spaceId) {
     // de résumés. L'heure exacte reste dans le tooltip.
     const dts = libraryFileDate(e);
     const dateBit = dts
-      ? ` · <span title="${escHtml(formatFullDateFr(dts))}">${escHtml(formatDateRelative(dts, Date.now()))}</span>`
+      ? ` · <span${tipAttrs(formatFullDateFr(dts), { text: formatDateRelative(dts, Date.now()) })}>${escHtml(formatDateRelative(dts, Date.now()))}</span>`
       : '';
     const descriptionLine = `<div class="mem-excerpt file-description-line" id="file-description-${e.id}">${e.description ? escHtml(e.description) : ''}</div>`;
     item.innerHTML =
@@ -9483,7 +9507,7 @@ async function renderSpaceFilesList(spaceId) {
       // Type lisible plutôt que mime brut (`libraryFileTypeLabel`), le mime
       // exact restant accessible en tooltip : il n'est pas perdu, il est
       // rangé là où on le consulte au lieu de le subir.
-      `<div class="mem-sub"><span title="${escHtml(e.mime)}">${escHtml(libraryFileTypeLabel(e.mime))}</span> · ${escHtml(humanSize(e.size))}${dateBit}${provenanceBadge}</div>` +
+      `<div class="mem-sub"><span${tipAttrs(e.mime, { text: libraryFileTypeLabel(e.mime) })}>${escHtml(libraryFileTypeLabel(e.mime))}</span> · ${escHtml(humanSize(e.size))}${dateBit}${provenanceBadge}</div>` +
       `</div>` +
       // Téléchargement en GLYPHE dans l'en-tête (pas un bouton texte) : la
       // colonne latérale fait ~210 px utiles, un troisième bouton texte faisait
@@ -9492,7 +9516,7 @@ async function renderSpaceFilesList(spaceId) {
       // directement le nom ; on ne le pose PAS dans `.mem-content`, qui est en
       // `word-break: break-word` — un nom long y ferait flotter l'icône à une
       // position imprévisible. Même glyphe que l'ack (ICON_DOWNLOAD).
-      `<button class="mem-dl" title="Télécharger" onclick="onDownloadSpaceFile(this,'${e.id}')">${ICON_DOWNLOAD}</button>` +
+      `<button class="mem-dl"${tipAttrs('Télécharger')} onclick="onDownloadSpaceFile(this,'${e.id}')">${ICON_DOWNLOAD}</button>` +
       `</div>` +
       // Nom RENOMMABLE en place, même mécanique que le titre de conversation
       // (contenteditable, Entrée valide, Échap annule, blur persiste, vide
@@ -9500,7 +9524,7 @@ async function renderSpaceFilesList(spaceId) {
       // handlers sont posés après insertion (wireLibraryNameEditing) plutôt
       // qu'en attributs inline : il faut mémoriser le nom d'avant l'édition
       // pour pouvoir le restaurer, ce qu'un attribut ne porte pas.
-      `<div class="mem-content file-name-edit" id="file-name-${e.id}" contenteditable="true" spellcheck="false" title="Renommer le fichier">${escHtml(e.name)}</div>` +
+      `<div class="mem-content file-name-edit" id="file-name-${e.id}" contenteditable="true" spellcheck="false"${tipAttrs('Renommer le fichier', { text: e.name })}>${escHtml(e.name)}</div>` +
       descriptionLine +
       `<div class="drawer-btns" id="file-btns-${e.id}">` +
       `<button class="drawer-btn" onclick="onRegenerateFileDescription(this,'${e.id}','${spaceId}')">${e.description ? 'Régénérer la description' : 'Générer une description'}</button>` +
@@ -9696,7 +9720,7 @@ async function onDownloadSpaceFile(btn, fileId) {
       // seul vocabulaire visuel entre les deux surfaces.
       if (btn) {
         btn.classList.add('unavailable');
-        btn.title = 'Fichier non disponible';
+        setTip(btn, 'Fichier non disponible');
       }
       return;
     }

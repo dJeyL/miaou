@@ -38,7 +38,7 @@ const present = await page.evaluate(() => {
     // Le bouton coexiste avec copier/télécharger, il ne les remplace pas.
     stillHasCopy: !!md.querySelector('.code-copy'),
     stillHasDl: !!md.querySelector('.code-dl'),
-    title: (md.querySelector('.code-md-html') || {}).title || '',
+    title: ((md.querySelector('.code-md-html') || { getAttribute: () => '' }).getAttribute('data-tip')) || '',
   };
   md.remove(); py.remove(); mdNamed.remove();
   return r;

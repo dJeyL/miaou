@@ -142,7 +142,7 @@ l'élague de l'émission — le modèle ne reçoit que le résumé, et ce qu'il
 écrirait serait recollé derrière un texte qu'il n'a pas lu. Le cas est le
 premier atteint, le bouton vivant sur la dernière bulle assistant, qui précède
 une frontière posée en fin de thread. Pur `compactionFollows(thread, idx)`
-(utils.js) : bouton désactivé avec un `title` qui dit pourquoi
+(utils.js) : bouton désactivé avec une infobulle qui dit pourquoi
 (`syncLastAssistantActions`), et même garde au point de mutation
 (`continueTruncated`). Pas de « compaction annulée » ici : il n'y a rien à
 annuler, et la suite se demande par un nouveau message.

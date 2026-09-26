@@ -56,7 +56,7 @@ const view = await page.evaluate(() => {
   const btns = Array.from(v.querySelectorAll('.mermaid-actions .mermaid-btn'));
   return {
     btnCount: btns.length,
-    btnTitles: btns.map(b => b.title),
+    btnTitles: btns.map(b => b.getAttribute('data-tip')),
     svgId: v.querySelector('svg').id,
     hasStyle: !!v.querySelector('svg style'),
   };
@@ -130,10 +130,10 @@ await shot('04-lightbox-reset.png');
 
 // ── 6. Exports : noms de fichier depuis le filename= du fence ──────────────
 const dlSvg = page.waitForEvent('download', { timeout: 5000 });
-await page.click('.mermaid-lightbox-actions .mermaid-lb-btn[title="Télécharger en SVG"]');
+await page.click('.mermaid-lightbox-actions .mermaid-lb-btn[data-tip="Télécharger en SVG"]');
 check('export SVG (lightbox) : flux-oauth.svg', (await dlSvg).suggestedFilename() === 'flux-oauth.svg');
 const dlPng = page.waitForEvent('download', { timeout: 10000 });
-await page.click('.mermaid-lightbox-actions .mermaid-lb-btn[title="Télécharger en PNG"]');
+await page.click('.mermaid-lightbox-actions .mermaid-lb-btn[data-tip="Télécharger en PNG"]');
 const pngDl = await dlPng;
 check('export PNG (lightbox) : flux-oauth.png', pngDl.suggestedFilename() === 'flux-oauth.png');
 const pngPath = path.join(outDir, 'export.png');
@@ -165,7 +165,7 @@ check('lightbox fermée : clone purgé',
 // ── 8. Export SVG depuis la vue (hors lightbox) ─────────────────────────────
 await page.hover('#thread .mermaid-view');
 const dlSvg2 = page.waitForEvent('download', { timeout: 5000 });
-await page.click('#thread .mermaid-actions .mermaid-btn[title="Télécharger en SVG"]');
+await page.click('#thread .mermaid-actions .mermaid-btn[data-tip="Télécharger en SVG"]');
 check('export SVG (vue) : flux-oauth.svg', (await dlSvg2).suggestedFilename() === 'flux-oauth.svg');
 
 await shot('05-final.png');

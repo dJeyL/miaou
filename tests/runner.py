@@ -20,7 +20,7 @@ except ImportError:
 ROOT = Path(__file__).parent
 SRC_JS = ROOT.parent / 'src' / 'js'
 
-JS_ORDER = ['utils.js', 'docs.js', 'sync.js', 'storage.js', 'agents.js', 'resources.js', 'skills.js', 'mcp.js', 'tools.js', 'api.js', 'ui.js', 'toasts.js', 'acks.js', 'export.js', 'multitab.js', 'main.js']
+JS_ORDER = ['utils.js', 'docs.js', 'sync.js', 'storage.js', 'agents.js', 'resources.js', 'skills.js', 'mcp.js', 'tools.js', 'api.js', 'ui.js', 'toasts.js', 'tooltips.js', 'acks.js', 'export.js', 'multitab.js', 'main.js']
 
 # ── Stubs navigateur ──────────────────────────────────────────────────────────
 # On simule juste ce qu'il faut pour que le code source charge sans exploser.
@@ -939,6 +939,77 @@ def run_help_enumerations_check() -> tuple[int, int]:
     return passed, failed
 
 
+def run_native_title_check() -> tuple[int, int]:
+    """Filet du lot AH : aucune infobulle native (`title`) dans l'application.
+
+    Une infobulle se pose par `setTip`/`tipAttrs`/`data-tip` (tooltips.js,
+    utils.js) : c'est le point d'écriture unique qui donne aussi leur nom
+    accessible aux boutons-icônes. Un `title` réintroduit par réflexe ferait
+    revivre une seconde famille d'infobulles (système, jamais au clavier, pas
+    rafraîchie sous le pointeur) et, sur un porteur migré, une DOUBLE infobulle.
+
+    Motifs cherchés dans `src/html/index.html` et `src/js/*.js` : un attribut
+    `title="`/`title='`, `setAttribute('title'`, et toute affectation
+    `.title =`. Exceptions NOMMÉES, chacune avec son motif :
+      - `export.js` en entier : l'export garde le natif ;
+      - `document.title` : le titre de l'onglet, pas une infobulle ;
+      - les écritures de champs de DONNÉES listées dans `DATA_TITLE_WRITES`
+        (un objet de résumé, un cartouche de skill), repérées par la ligne
+        exacte : une nouvelle écriture de donnée s'ajoute ici, en connaissance
+        de cause, plutôt que de passer sous un motif large.
+    """
+    passed = failed = 0
+    print('\nInfobulles : aucun title natif (lot AH)')
+
+    DATA_TITLE_WRITES = {
+        ('main.js', "if (entry) { entry.title = t; saveSummary(currentConvId, entry); }"),
+        ('skills.js', "if (inMetadata && key === 'title' && val) out.title = val;"),
+    }
+    patterns = [
+        re.compile(r"""\btitle=["']"""),
+        re.compile(r"""setAttribute\(\s*['"]title['"]"""),
+        re.compile(r'\.title\s*=(?!=)'),
+    ]
+    files = [ROOT.parent / 'src' / 'html' / 'index.html'] + sorted(SRC_JS.glob('*.js'))
+    hits = []
+    for f in files:
+        if f.name == 'export.js':
+            continue
+        for n, line in enumerate(f.read_text(encoding='utf-8').splitlines(), 1):
+            code = line.strip()
+            if code.startswith('//') or code.startswith('*'):
+                continue
+            if not any(pt.search(line.replace('document.title', '')) for pt in patterns):
+                continue
+            if (f.name, code) in DATA_TITLE_WRITES:
+                continue
+            hits.append(f'{f.name}:{n}: {code[:90]}')
+
+    ok = not hits
+    label = 'aucun title d\'infobulle hors exceptions nommées'
+    if ok:
+        passed += 1
+        print(f'  PASS  {label}')
+    else:
+        failed += 1
+        print(f'  FAIL  {label} — setTip/tipAttrs/data-tip à la place :')
+        for h in hits:
+            print(f'          {h}')
+
+    # Témoin : le motif doit attraper les trois formes, sinon le PASS ci-dessus
+    # ne prouve rien.
+    samples = ['<button title="x">', "btn.title = 'x';", "el.setAttribute('title', 'x')"]
+    caught = all(any(pt.search(x) for pt in patterns) for x in samples)
+    label = 'témoin : les trois formes de title sont reconnues'
+    if caught:
+        passed += 1
+        print(f'  PASS  {label}')
+    else:
+        failed += 1
+        print(f'  FAIL  {label}')
+    return passed, failed
+
+
 def run_idb_schema_check() -> tuple[int, int]:
     """Vérifie que les DEUX points d'ouverture de la base `miaou` restent
     d'accord : même version demandée, et `onupgradeneeded` identiques.
@@ -1032,6 +1103,9 @@ def main(args: list[str]) -> int:
     total_passed += p
     total_failed += fa
     p, fa = run_idb_schema_check()
+    total_passed += p
+    total_failed += fa
+    p, fa = run_native_title_check()
     total_passed += p
     total_failed += fa
     for f in files:

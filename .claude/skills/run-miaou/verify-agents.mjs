@@ -1201,7 +1201,7 @@ s = await page.evaluate((p) => {
     preselected: _moveSelection.has(p),
     disabled: box ? box.disabled : null,
     checked: box ? box.checked : null,
-    title: box ? (box.getAttribute('title') || '') : '',
+    title: box ? (box.getAttribute('data-tip') || '') : '',
     barLabel: ($('move-bar') && $('move-bar').textContent) || '',
   };
 }, parent6);
@@ -1446,7 +1446,7 @@ const eyeState = await page.evaluate((kinds) => {
     // hauteurs mesurees, une affordance qui apparait au survol y changerait la
     // geometrie sous le curseur. Mesure en BOITE, pas sur .hidden.
     opacity: eye ? getComputedStyle(eye).opacity : null,
-    title: eye ? eye.title : null,
+    title: eye ? eye.getAttribute('data-tip') : null,
     eyeBeforeInspect: eyeBeforeInspect,
     inspectPresent: !!insp,
   };
@@ -1502,7 +1502,7 @@ s = await page.evaluate(([p, a]) => ({
   // sur .hidden seul.
   parentBtnHidden: document.querySelector('.conv-parent-btn').hidden,
   parentBtnOpacity: getComputedStyle(document.querySelector('.conv-parent-btn')).opacity,
-  parentBtnTitle: document.querySelector('.conv-parent-btn').title,
+  parentBtnTitle: document.querySelector('.conv-parent-btn').getAttribute('data-tip'),
   parentBtnWired: typeof document.querySelector('.conv-parent-btn').onclick === 'function',
   // Contrôle de NON-VACUITÉ de la persistance : le bouton de retitrage voisin,
   // lui, est bien à opacité 0 hors survol. Sans cette mesure, un « opacity 1 »

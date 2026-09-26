@@ -375,7 +375,7 @@ const exported = await page.evaluate(async ({ convId }) => {
     bytes: html.length,
     liveHasImg: !!document.querySelector('#thread img.tool-block-img'),
     liveHasAck: !!ackNode && /Page 2 rendue en image/.test(ackNode.textContent),
-    liveHasDownload: !!(ackNode && ackNode.querySelector('.ack-dl, [class*="download"], button[title*="élécharg"]')),
+    liveHasDownload: !!(ackNode && ackNode.querySelector('.ack-dl, [class*="download"], button[data-tip*="élécharg"]')),
   };
 }, { convId: rendered.convId });
 

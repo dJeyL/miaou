@@ -95,8 +95,8 @@ function renderIntentTwoLevel(el, intent, detailText, detailBuilder) {
   const chevron = document.createElement('button');
   chevron.className = 'mcp-chevron';
   chevron.type = 'button';
-  chevron.title = 'Détail technique';
   chevron.innerHTML = ICON_CHEVRON_DOWN;
+  setTip(chevron, 'Détail technique');
   const detail = document.createElement('span');
   detail.className = 'mcp-breadcrumb-detail';
   detail.setAttribute('hidden', '');
@@ -806,7 +806,7 @@ function markAckDlUnavailable(btn) {
   if (!btn) return;
   btn.classList.add('unavailable');
   btn.disabled = true;
-  btn.title = 'Ressource non disponible';
+  setTip(btn, 'Ressource non disponible');
 }
 
 // Bouton loupe d'un ack. Extrait de `buildToolAck` (lot Z-2) parce qu'il a un
@@ -831,8 +831,8 @@ function markAckDlUnavailable(btn) {
 function _appendAckInspectBtn(wrap, m) {
   const insp = document.createElement('button');
   insp.className = 'ack-inspect';
-  insp.title = 'Inspecter l\'appel';
   insp.innerHTML = ICON_INSPECT;   // SVG statique author-controlled uniquement
+  setTip(insp, 'Inspecter l\'appel');
   insp.addEventListener('click', ev => {
     // Le bouton est un frère de `.ack-label`, pas un descendant de
     // `.mcp-intent-row` : le listener de groupe (ensureAckGroup) filtre sur
@@ -877,8 +877,8 @@ function _appendAckInspectBtn(wrap, m) {
 function _appendAckOpenAgentBtn(wrap, target) {
   const btn = document.createElement('button');
   btn.className = 'ack-open-agent';
-  btn.title = 'Ouvrir le fil de l\'agent';
   btn.innerHTML = ICON_EYE;   // SVG statique author-controlled uniquement
+  setTip(btn, 'Ouvrir le fil de l\'agent');
   btn.addEventListener('click', ev => {
     ev.stopPropagation();
     if (!loadConversation(target.convId)) { btn.remove(); return; }
@@ -942,9 +942,9 @@ function _appendAckAuthorizeLink(wrap, target) {
   // appendChild, PAS textContent : celui-ci écraserait l'icône insérée juste
   // au-dessus. Nœud texte, donc frontière XSS identique.
   link.appendChild(document.createTextNode('Autoriser'));
-  link.title = target.upstream
+  setTip(link, target.upstream
     ? 'Autoriser l\'accès à ' + target.upstream + ' sur ' + target.origin
-    : 'Autoriser l\'accès sur ' + target.origin;
+    : 'Autoriser l\'accès sur ' + target.origin);
   box.appendChild(link);
 
   const origin = document.createElement('span');
@@ -1135,8 +1135,8 @@ function buildToolAck(m) {
   if (dlTarget) {
     const dl = document.createElement('button');
     dl.className = 'ack-dl';
-    dl.title = 'Télécharger';
     dl.innerHTML = ICON_DOWNLOAD;   // SVG statique author-controlled uniquement
+    setTip(dl, 'Télécharger');
     dl.addEventListener('click', () => downloadAckResource(dlTarget, dl));
     wrap.appendChild(dl);
   }
@@ -1874,7 +1874,7 @@ function _inspectThumbnail(parent, record) {
   img.className = 'inspect-thumb';
   img.src = 'data:' + record.mime + ';base64,' + arrayBufferToBase64(record.data);
   img.alt = record.name || 'ressource image';
-  img.title = 'Agrandir';
+  setTip(img, 'Agrandir');   // après l'alt : c'est lui qui nomme l'image
   img.addEventListener('click', () => {
     const full = document.createElement('img');
     full.src = img.src;
@@ -2112,7 +2112,7 @@ function renderToolBlock(block) {
     img.className = 'tool-block-img';
     img.src = 'data:' + (block.mimeType || 'image/png') + ';base64,' + block.data;
     img.alt = 'Image renvoyée par un outil';
-    img.title = 'Agrandir';
+    setTip(img, 'Agrandir');   // après l'alt : c'est lui qui nomme l'image
     // A3-2 : closure directe (élément créé par createElement) — pas de
     // handler global nécessaire, contrairement aux chips (onclick inline).
     img.onclick = () => openToolImageLightbox(img);
@@ -2127,7 +2127,7 @@ function renderToolBlock(block) {
       img.className = 'tool-block-img';
       img.src = 'data:' + r.mimeType + ';base64,' + r.blob;
       img.alt = 'Image renvoyée par un outil';
-      img.title = 'Agrandir';
+      setTip(img, 'Agrandir');
       img.onclick = () => openToolImageLightbox(img);
       box.appendChild(img);
       return box;

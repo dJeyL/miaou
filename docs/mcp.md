@@ -756,8 +756,10 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       `syncAuthorizationPending` **retire** les deux classes avant de poser celle
       qui vaut : sans le retrait, une pastille passée d'erreur à attente
       resterait rouge — précisément la transition qu'on veut voir se produire.
-      Le `title` a quitté le markup pour la même raison : deux écrivains pour un
-      attribut, dont l'un ne s'exprime qu'au boot.
+      L'infobulle a quitté le markup pour la même raison : deux écrivains pour un
+      attribut, dont l'un ne s'exprime qu'au boot. Elle est posée par `setTip`
+      APRÈS le libellé (la règle ARIA lit le texte visible au moment de
+      l'appel), en deux étages quand un serveur est injoignable (lot AH).
 
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 

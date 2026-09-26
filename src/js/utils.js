@@ -5133,3 +5133,132 @@ function healthFronts(prev, next) {
   });
   return { events: events, snapshot: { backend: nb ? { id: nb.id, name: nb.name, health: nb.health } : null, mcp: nm } };
 }
+
+// ── Tooltips : texte, attributs, placement, délais (lot AH) ──────────────────
+// Le composant (tooltips.js) ne décide de rien : il applique ce que rendent ces
+// purs. Une infobulle se pose par `setTip`/`data-tip`, jamais par `title` : le
+// natif ne se montre pas au clavier et ne se rafraîchit pas quand on le réécrit
+// sous le pointeur.
+
+// Délai à froid avant la première bulle, puis fenêtre pendant laquelle les
+// voisines s'affichent sans attendre. Constantes, pas de clef de config.
+const TIP_COLD_MS = 500;
+const TIP_WARM_WINDOW_MS = 300;
+// Marge minimale entre la bulle et le bord du viewport.
+const TIP_VIEWPORT_MARGIN = 8;
+// La flèche reste à cette distance des bords de la bulle : au-delà, elle
+// sortirait des coins arrondis.
+const TIP_ARROW_INSET = 10;
+
+// Forme canonique d'une infobulle : { label, detail } ou null (pas de bulle).
+// Accepte une chaîne (un étage) ou { label, detail } (deux étages). Un
+// détail sans libellé devient le libellé : un étage seul est toujours un
+// libellé.
+function normalizeTip(tip) {
+  let label = '', detail = '';
+  if (tip && typeof tip === 'object') {
+    label = tip.label == null ? '' : String(tip.label).trim();
+    detail = tip.detail == null ? '' : String(tip.detail).trim();
+  } else if (tip != null) {
+    label = String(tip).trim();
+  }
+  if (!label && detail) { label = detail; detail = ''; }
+  return label ? { label: label, detail: detail } : null;
+}
+
+// Texte plat d'une infobulle (attributs ARIA) : « libellé. détail », sans
+// doubler la ponctuation quand le libellé en porte déjà une.
+function tipFlatText(tip) {
+  const t = normalizeTip(tip);
+  if (!t) return '';
+  if (!t.detail) return t.label;
+  return t.label + (/[.!?…:]$/.test(t.label) ? ' ' : '. ') + t.detail;
+}
+
+function tipNameKey(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// Règle ARIA, seule source de décision pour les trois voies d'entrée (setTip,
+// gabarit, HTML statique). `title` donnait jusqu'ici leur nom aux boutons
+// réduits à une icône : la bulle doit le leur rendre.
+//   opts = { text, ariaLabel } — `text` : texte VISIBLE du porteur ('' pour un
+//   bouton-icône) ; `ariaLabel` : aria-label écrit par l'auteur, jamais écrasé.
+// Rend { kind, text } : kind 'label' (poser aria-label), 'description' (poser
+// aria-description) ou null (rien à poser). Pas de description quand le nom
+// dit déjà l'infobulle (même texte, ou texte contenu dans le nom : « Copier »
+// sous le nom « Copier cette interjection » n'apporterait que du bruit).
+function tipAriaRule(tip, opts) {
+  const flat = tipFlatText(tip);
+  if (!flat) return { kind: null, text: '' };
+  const o = opts || {};
+  const author = o.ariaLabel == null ? '' : String(o.ariaLabel).trim();
+  const visible = o.text == null ? '' : String(o.text).trim();
+  const name = author || visible;
+  if (!name) return { kind: 'label', text: flat };
+  const n = tipNameKey(name), f = tipNameKey(flat);
+  if (n === f || n.indexOf(f) >= 0) return { kind: null, text: '' };
+  return { kind: 'description', text: flat };
+}
+
+// Attributs d'infobulle pour un gabarit (template string d'ui.js), échappés en
+// position d'attribut, précédés d'une espace : `<button${tipAttrs(t)}>`. Même
+// règle que setTip ; l'attribut `data-tip-aria` marque ce que la règle a posé,
+// pour qu'un setTip ultérieur le mette à jour sans toucher à un aria-label
+// d'auteur. Celui-ci se passe en `opts.ariaLabel` et est émis ici, non marqué :
+// une seule source dans le gabarit.
+function tipAttrs(tip, opts) {
+  const o = opts || {};
+  let out = '';
+  if (o.ariaLabel) out += ' aria-label="' + escHtml(o.ariaLabel) + '"';
+  const t = normalizeTip(tip);
+  if (!t) return out;
+  out += ' data-tip="' + escHtml(t.label) + '"';
+  if (t.detail) out += ' data-tip-detail="' + escHtml(t.detail) + '"';
+  const aria = tipAriaRule(t, o);
+  if (aria.kind === 'label') out += ' aria-label="' + escHtml(aria.text) + '" data-tip-aria="label"';
+  else if (aria.kind === 'description') out += ' aria-description="' + escHtml(aria.text) + '" data-tip-aria="description"';
+  return out;
+}
+
+// Placement de la bulle. Toutes les grandeurs sont MESURÉES par l'appelant, en
+// px du viewport, à chaque affichage — jamais déduites d'un breakpoint.
+//   m = { anchor: { top, bottom, left, width }, tipW, tipH, vw, margin, offset,
+//         arrowInset }
+// Au-dessus du porteur par défaut ; retournée au-dessous quand la place manque
+// (cas nominal de toute la topbar, collée en haut du viewport). Décalée
+// horizontalement pour rester dans la fenêtre ; la flèche vise toujours le
+// centre du porteur, bornée à `arrowInset` des bords de la bulle.
+// Rend { side: 'top'|'bottom', top, left, arrowX } (`arrowX` relatif à la bulle).
+function tipPlacement(m) {
+  const a = m.anchor;
+  let side = 'top';
+  let top = a.top - m.offset - m.tipH;
+  if (top < m.margin) { side = 'bottom'; top = a.bottom + m.offset; }
+  const cx = a.left + a.width / 2;
+  const maxLeft = m.vw - m.margin - m.tipW;
+  const left = Math.max(m.margin, Math.min(cx - m.tipW / 2, maxLeft));
+  const inset = m.arrowInset == null ? 0 : m.arrowInset;
+  const arrowX = Math.max(inset, Math.min(cx - left, m.tipW - inset));
+  return { side: side, top: top, left: left, arrowX: arrowX };
+}
+
+// Délai avant d'afficher une bulle : immédiat si une bulle est déjà
+// visible ou vient d'être masquée (fenêtre de réchauffe), sinon délai à froid.
+//   state = { visible, lastHideAt } (lastHideAt : horodatage ms, ou null)
+function tipShowDelay(state, now) {
+  if (state && state.visible) return 0;
+  const last = state ? state.lastHideAt : null;
+  if (last != null && now - last < TIP_WARM_WINDOW_MS) return 0;
+  return TIP_COLD_MS;
+}
+
+// Touches qui masquent une bulle affichée. Toute frappe, SAUF une touche
+// de modification seule : Shift, Ctrl, Alt ou Meta enfoncés ne tapent rien (la
+// lettre d'une majuscule arrive dans son propre keydown, qui masque), et le
+// bouton d'export ajuste sa bulle affichée quand on enfonce Shift — un masquage
+// à ce moment rendrait l'ajustement invisible.
+const TIP_MODIFIER_KEYS = ['Shift', 'Control', 'Alt', 'Meta'];
+function tipKeyHides(key) {
+  return TIP_MODIFIER_KEYS.indexOf(key) < 0;
+}

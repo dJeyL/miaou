@@ -74,7 +74,7 @@ if (window.requestAnimationFrame) {
         </button>
       </div>
       <div class="space-select" id="space-select">
-        <button type="button" class="space-select-btn" id="space-select-btn" onclick="toggleSpaceMenu()" title="Changer d'espace">
+        <button type="button" class="space-select-btn" id="space-select-btn" onclick="toggleSpaceMenu()" data-tip="Changer d'espace">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
           <span id="space-select-label">Général</span>
           <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
@@ -82,20 +82,20 @@ if (window.requestAnimationFrame) {
         <div class="model-menu space-menu" id="space-menu"></div>
       </div>
       <div class="space-tabs" id="space-tabs">
-        <button type="button" class="space-tab-btn active" id="space-tab-conversations" onclick="selectSpaceTab('conversations')" title="Conversations">
+        <button type="button" class="space-tab-btn active" id="space-tab-conversations" onclick="selectSpaceTab('conversations')" data-tip="Conversations">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </button>
-        <button type="button" class="space-tab-btn" id="space-tab-files" onclick="selectSpaceTab('files')" title="Fichiers">
+        <button type="button" class="space-tab-btn" id="space-tab-files" onclick="selectSpaceTab('files')" data-tip="Fichiers">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7"/></svg>
         </button>
-        <button type="button" class="space-tab-btn" id="space-tab-memories" onclick="selectSpaceTab('memories')" title="Souvenirs">
+        <button type="button" class="space-tab-btn" id="space-tab-memories" onclick="selectSpaceTab('memories')" data-tip="Souvenirs">
           <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2 9.2 8.6 2 9.3l5.5 4.7L5.8 21 12 17.3 18.2 21l-1.7-7 5.5-4.7-7.2-.7Z"/></svg>
         </button>
       </div>
       <div class="sidebar-search" id="sidebar-search">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="conv-search" type="text" placeholder="Rechercher…" spellcheck="false" oninput="onConvSearch()" onfocus="onConvSearchFocus()" onblur="onConvSearchBlur()">
-        <button class="search-clear" id="search-clear" title="Effacer" onclick="clearConvSearch()">×</button>
+        <button class="search-clear" id="search-clear" data-tip="Effacer" onclick="clearConvSearch()">×</button>
       </div>
       <div class="conv-list" id="conv-list"></div>
 
@@ -113,7 +113,7 @@ if (window.requestAnimationFrame) {
 
       <div class="banner move-bar" id="move-bar"></div>
     </div>
-    <div class="sidebar-resizer" id="sidebar-resizer" title="Redimensionner"></div>
+    <div class="sidebar-resizer" id="sidebar-resizer" data-tip="Redimensionner"></div>
   </aside>
 
   <!-- backdrop sidebar (mobile overlay) -->
@@ -124,7 +124,7 @@ if (window.requestAnimationFrame) {
     ondragover="onMainDragOver(event)" ondragleave="onMainDragLeave(event)" ondrop="onMainDrop(event)">
     <header class="topbar">
       <div class="topbar-left">
-        <button class="icon-btn" id="sidebar-toggle" onclick="toggleSidebar()" title="Historique">
+        <button class="icon-btn" id="sidebar-toggle" onclick="toggleSidebar()" data-tip="Historique">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         </button>
         <div class="topbar-brand">
@@ -135,7 +135,7 @@ if (window.requestAnimationFrame) {
         <span class="topbar-space-badge" id="topbar-space-badge" hidden></span>
         <!-- Nouvelle conversation sidebar fermée — même fondu que .topbar-brand,
              le bouton « Nouvelle » de la sidebar reste le chemin normal -->
-        <button class="icon-btn topbar-new-btn" onclick="newConversation()" title="Nouvelle conversation">
+        <button class="icon-btn topbar-new-btn" onclick="newConversation()" data-tip="Nouvelle conversation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </button>
       </div>
@@ -160,12 +160,12 @@ if (window.requestAnimationFrame) {
              à la question « ce fil est-il celui d'un agent ? », et deux
              formules divergeraient. Le SVG n'est pas recopié ici : il est
              injecté depuis ICON_AGENT (acks.js), source unique du tracé. -->
-        <span class="conv-agent-mark" id="conv-agent-mark" title="Conversation d'agent" aria-hidden="true" hidden></span>
-        <button class="icon-btn conv-retitle-btn" onclick="regenerateTitle()" title="Régénérer le titre" hidden>
+        <span class="conv-agent-mark" id="conv-agent-mark" data-tip="Conversation d'agent" aria-hidden="true" hidden></span>
+        <button class="icon-btn conv-retitle-btn" onclick="regenerateTitle()" data-tip="Régénérer le titre" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         </button>
         <div class="conv-title-edit" id="conv-title" contenteditable="true" spellcheck="false"></div>
-        <button class="icon-btn conv-dl-btn" onclick="onExportConv(event)" title="Exporter la conversation en HTML — Shift&nbsp;: Markdown" hidden>
+        <button class="icon-btn conv-dl-btn" onclick="onExportConv(event)" data-tip="Exporter la conversation en HTML — Shift&nbsp;: Markdown" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>
       </div>
@@ -178,7 +178,7 @@ if (window.requestAnimationFrame) {
              sortir du bord droit couperait le fil qu'on vient consulter.
              Le bouton porte aria-expanded, tenu par syncAgentCount. -->
         <span class="agent-anchor" id="agent-anchor">
-          <button type="button" class="agent-count" id="agent-count" hidden aria-expanded="false" onclick="toggleAgentMenu()" title="Voir les agents au travail"><span class="waiter-dot activity-dot working"></span><span id="agent-count-label"></span></button>
+          <button type="button" class="agent-count" id="agent-count" hidden aria-expanded="false" onclick="toggleAgentMenu()" data-tip="Voir les agents au travail"><span class="waiter-dot activity-dot working"></span><span id="agent-count-label"></span></button>
           <div class="model-menu agent-menu" id="agent-menu"></div>
         </span>
         <!-- Serveurs MCP en attente d'autorisation (AB-5). Soeur de
@@ -187,7 +187,7 @@ if (window.requestAnimationFrame) {
              permanence se confondraient. Masquee quand tout va bien. -->
         <button class="agent-count auth-pending" id="auth-pending" hidden onclick="openMcpServers()"><span class="auth-pending-dot"></span><span id="auth-pending-label"></span></button>
         <span class="model-pill"><span class="dot" id="conn-dot"></span><span id="model-label">modèle</span></span>
-        <button class="icon-btn" onclick="openSettings()" title="Paramètres">
+        <button class="icon-btn" onclick="openSettings()" data-tip="Paramètres">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
       </div>
@@ -222,7 +222,7 @@ if (window.requestAnimationFrame) {
              réel de la zone occultée. Toutes ces parts étant optionnelles,
              l'ancrage suit leur présence sans offset écrit en dur.
              Affichage piloté par syncScrollBottomBtn (ui.js), jamais en dur. -->
-        <button class="scroll-bottom-btn" id="scroll-bottom-btn" hidden onclick="onScrollBottomBtn()" title="Aller au dernier message" aria-label="Aller au dernier message">
+        <button class="scroll-bottom-btn" id="scroll-bottom-btn" hidden onclick="onScrollBottomBtn()" data-tip="Aller au dernier message">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><polyline points="19 12 12 19 5 12"/></svg>
         </button>
 
@@ -242,7 +242,7 @@ if (window.requestAnimationFrame) {
           <div class="compaction-undone-body">
             <svg class="compaction-undone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/><path d="M3 16v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M3 12h18"/></svg>
             <span id="compaction-undone-text"></span>
-            <button type="button" class="compaction-undone-close" onclick="clearCompactionUndoneBanner()" title="Fermer" aria-label="Fermer">
+            <button type="button" class="compaction-undone-close" onclick="clearCompactionUndoneBanner()" data-tip="Fermer">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
             </button>
           </div>
@@ -268,27 +268,27 @@ if (window.requestAnimationFrame) {
         <!-- Sélecteurs de modèle / niveau de raisonnement (optionnels, réglables) -->
         <div class="composer-selectors" id="composer-selectors">
           <div class="composer-model" id="composer-model" hidden>
-            <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" title="Modèle de cette conversation">
+            <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" data-tip="Modèle de cette conversation">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
               <span id="composer-model-label">modèle</span>
               <!-- Marque « ce modèle voit les images » (lot AF) : posée seulement
                    quand le serveur DÉCLARE la vision (syncModelUI). Appareil
                    photo, pas l'œil : l'œil est pris (aperçu, consultation) —
                    vocabulaire d'icônes, une métaphore = un usage. -->
-              <span class="composer-model-vision" id="composer-model-vision" title="Ce modèle lit les images (déclaré par le serveur)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
+              <span class="composer-model-vision" id="composer-model-vision" data-tip="Ce modèle lit les images (déclaré par le serveur)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
               <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
             <div class="model-menu" id="composer-model-menu"></div>
           </div>
           <div class="pill-select" id="composer-reasoning" hidden>
-            <button type="button" class="pill-select-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" title="Niveau de raisonnement de cette conversation">
+            <button type="button" class="pill-select-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" data-tip="Niveau de raisonnement de cette conversation">
               <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.2" cy="7.1" r="0.8" fill="black"/><circle cx="8" cy="7.1" r="0.8" fill="black"/><circle cx="10.8" cy="7.1" r="0.8" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
               <span id="composer-reasoning-label">raisonnement</span>
               <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
             <div class="model-menu" id="composer-reasoning-menu"></div>
           </div>
-          <button type="button" class="ctx-counter" id="ctx-counter" onclick="openContextInspector()" title="Inspecteur de contexte">
+          <button type="button" class="ctx-counter" id="ctx-counter" onclick="openContextInspector()" data-tip="Inspecteur de contexte">
             <!-- Glyphe de compaction (lot AE) : signale le seuil de 50 % par la
                  FORME, la couleur restant réservée aux états de saturation
                  (warn 80 %, over 100 %). Deux grammaires distinctes pour deux
@@ -319,10 +319,10 @@ if (window.requestAnimationFrame) {
                du bouton d'envoi/stop. Ordre DOM = ordre visuel et ordre de
                tabulation. -->
           <div class="composer-btn-col">
-            <button class="attach-btn" id="attach-btn" onclick="onAttachClick()" title="Joindre un fichier">
+            <button class="attach-btn" id="attach-btn" onclick="onAttachClick()" data-tip="Joindre un fichier">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
             </button>
-            <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
+            <button class="send-btn" id="send-btn" onclick="onSendBtn()" data-tip="Envoyer">
               <svg class="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
               <svg class="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
             </button>
@@ -338,10 +338,10 @@ if (window.requestAnimationFrame) {
           <!-- Segmented control « – / + » : même gabarit que les onglets
                d'espace (sidebar.css), en plus petit. -->
           <div class="col-width-ctl">
-            <button class="col-width-btn" id="col-width-dec" onclick="nudgeColWidth(-1)" title="Resserrer la colonne" aria-label="Resserrer la colonne">
+            <button class="col-width-btn" id="col-width-dec" onclick="nudgeColWidth(-1)" data-tip="Resserrer la colonne">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 12h12"/></svg>
             </button>
-            <button class="col-width-btn" id="col-width-inc" onclick="nudgeColWidth(1)" title="Élargir la colonne" aria-label="Élargir la colonne">
+            <button class="col-width-btn" id="col-width-inc" onclick="nudgeColWidth(1)" data-tip="Élargir la colonne">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
             </button>
           </div>

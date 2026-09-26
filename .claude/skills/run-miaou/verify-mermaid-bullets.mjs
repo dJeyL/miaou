@@ -124,7 +124,7 @@ if (first) await first.screenshot({ path: path.join(outDir, '02-first-diagram.pn
 await page.hover('#mmd-bullets pre .mermaid-view');
 const [dl] = await Promise.all([
   page.waitForEvent('download', { timeout: 10000 }),
-  page.click('#mmd-bullets pre .mermaid-view .mermaid-btn[title="Télécharger en PNG"]'),
+  page.click('#mmd-bullets pre .mermaid-view .mermaid-btn[data-tip="Télécharger en PNG"]'),
 ]);
 const pngPath = path.join(outDir, '03-export.png');
 await dl.saveAs(pngPath);

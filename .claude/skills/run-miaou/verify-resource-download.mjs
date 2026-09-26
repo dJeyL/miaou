@@ -158,13 +158,13 @@ const libBtns = await page.evaluate(() => {
     // Le glyphe vit dans l'EN-TÊTE, pas dans la rangée de boutons texte.
     dlInHeader: !!it.querySelector('.mem-header .mem-dl'),
     dlHasSvg: !!it.querySelector('.mem-header .mem-dl svg'),
-    dlTitle: (it.querySelector('.mem-header .mem-dl') || {}).title,
+    dlTitle: (it.querySelector('.mem-header .mem-dl') || { getAttribute: () => null }).getAttribute('data-tip'),
   }));
 });
 check('A : 2 fichiers listés dans la bibliothèque', libBtns.length === 2);
 check('A : chaque carte porte le glyphe de téléchargement dans son en-tête',
   libBtns.length === 2 && libBtns.every(c => c.dlInHeader && c.dlHasSvg));
-check('A : glyphe intitulé « Télécharger » (seule affordance textuelle : le title)',
+check('A : glyphe intitulé « Télécharger » (seule affordance textuelle : l\'infobulle)',
   libBtns.every(c => c.dlTitle === 'Télécharger'));
 // La rangée de boutons texte revient à DEUX entrées : c'est tout l'objet du
 // passage au glyphe (trois boutons texte wrappaient sur deux lignes).
@@ -341,7 +341,7 @@ await page.waitForTimeout(600);
 const unavail = await page.evaluate(() => {
   const b = document.querySelector('#thread .tool-ack.ack-resource_presented .ack-dl');
   return { present: !!b, cls: b ? b.className : '', disabled: b ? b.disabled : null,
-           title: b ? b.title : '' };
+           title: b ? b.getAttribute('data-tip') : '' };
 });
 check('B : ressource supprimée → bouton TOUJOURS présent (l\'ack reste vrai)', unavail.present);
 check('B : ressource supprimée → bouton inerte et explicite',

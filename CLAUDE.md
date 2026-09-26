@@ -229,6 +229,14 @@ de slugs y vont, le contenu des sections arrive en tool result à la demande.
     — le thème est exclu : auto-persisté par `selectTheme`).
   - Le bouton du composer appelle `onSendBtn()` (envoi **ou** stop selon
     `sending`), jamais `sendMessage()` directement.
+- **Infobulle = `setTip(el, …)` / `tipAttrs(…)` dans un gabarit / `data-tip`
+  dans `index.html`, jamais `title`** (lot AH). Le point d'écriture unique donne
+  aussi leur nom accessible aux boutons-icônes : il lit le porteur au moment de
+  l'appel, donc l'infobulle se pose APRÈS le contenu et l'`aria-label` d'auteur ;
+  dans un gabarit, passer `{ text }` pour un porteur qui affiche du texte, et
+  l'`aria-label` d'auteur en `{ ariaLabel }` plutôt qu'à côté. Lire une infobulle
+  = `getTip`. Filet : `run_native_title_check` (runner.py). L'export garde le
+  natif. Cf. `docs/tooltips.md`.
 
 ## Coût en contexte (tout ajout de texte adressé au modèle se pèse)
 
@@ -870,6 +878,19 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   droite suffit, au-dessus sinon ; à côté d'un drawer ou par-dessus ; mesuré), a11y (rôle par niveau,
   jamais de vol de focus, pause au survol/focus, hors pile d'Échap) et jetons à
   deux étages `--float-*` / `--toast-*`.
+- **`docs/tooltips.md`** — infobulles MIAOU (lot AH), qui remplacent le `title`
+  natif : point d'écriture unique `setTip`/`getTip`, `tipAttrs` pour les
+  gabarits, `data-tip` statique repris par `initTooltips`, règle ARIA pure
+  `tipAriaRule` (nom pour un bouton-icône, description sinon, marque
+  `data-tip-aria` qui protège l'`aria-label` d'auteur, `alt` d'une image compté
+  comme texte, `refreshTipAria` pour un texte rempli après coup), deux étages,
+  délais purs (`tipShowDelay`), masquage (frappe en capture sauf touche de
+  modification seule — `tipKeyHides` —, Échap consommé, défilement du seul
+  conteneur du porteur, porteur détruit), réaffichage sous le pointeur quand le
+  texte change (armement), infobulle d'export qui suit Shift si affichée
+  (`wireExportShiftTip`), placement pur (`tipPlacement`), exclusions (export
+  natif via `exportNativeTip`, `title` d'origine modèle, tactile), filet
+  `run_native_title_check` et `verify-tooltips.mjs`.
 - **`docs/generations.md`** — générations en vol / multitâche (lot T) : objet
   génération et registre `_activeGenerations` (clé `convId`), deux chemins de
   persistance (`persistCurrent` écran vs `persistGeneration`), projection pure

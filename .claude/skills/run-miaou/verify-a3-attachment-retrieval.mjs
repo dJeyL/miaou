@@ -98,9 +98,9 @@ const lbImg = await page.evaluate(() => {
   const el = document.querySelector('.mermaid-lightbox');
   const canvas = el.querySelector('.mermaid-lightbox-canvas');
   const img = canvas.querySelector('img');
-  const svgBtn = el._svgBtnRef || Array.from(el.querySelectorAll('.mermaid-lb-btn')).find(b => b.title === 'Télécharger en SVG');
-  const pngBtn = Array.from(el.querySelectorAll('.mermaid-lb-btn')).find(b => b.title === 'Télécharger en PNG');
-  const dlBtn = Array.from(el.querySelectorAll('.mermaid-lb-btn')).find(b => b.title === 'Télécharger');
+  const svgBtn = el._svgBtnRef || Array.from(el.querySelectorAll('.mermaid-lb-btn')).find(b => b.getAttribute('data-tip') === 'Télécharger en SVG');
+  const pngBtn = Array.from(el.querySelectorAll('.mermaid-lb-btn')).find(b => b.getAttribute('data-tip') === 'Télécharger en PNG');
+  const dlBtn = Array.from(el.querySelectorAll('.mermaid-lb-btn')).find(b => b.getAttribute('data-tip') === 'Télécharger');
   return {
     hasImg: !!img,
     imgSrc: img && img.src.slice(0, 20),
@@ -127,7 +127,7 @@ page.off('download', strayHandler);
 
 // ── 6. Bouton Télécharger de la lightbox → download de l'image ─────────────
 const dlImg = page.waitForEvent('download', { timeout: 5000 });
-await page.click('.mermaid-lightbox-actions .mermaid-lb-btn[title="Télécharger"]');
+await page.click('.mermaid-lightbox-actions .mermaid-lb-btn[data-tip="Télécharger"]');
 const imgDl = await dlImg;
 check('A3-2 : bouton Télécharger → download avec le nom d\'origine', imgDl.suggestedFilename() === 'erreur-503.png');
 const imgPath = path.join(outDir, 'erreur-503.png');
@@ -179,13 +179,13 @@ await page.click('.tool-block-img');
 await page.waitForSelector('.mermaid-lightbox.show', { timeout: 5000 });
 const lbTool = await page.evaluate(() => {
   const el = document.querySelector('.mermaid-lightbox');
-  const dlBtn = Array.from(el.querySelectorAll('.mermaid-lb-btn')).find(b => b.title === 'Télécharger');
+  const dlBtn = Array.from(el.querySelectorAll('.mermaid-lb-btn')).find(b => b.getAttribute('data-tip') === 'Télécharger');
   return { hasImg: !!el.querySelector('.mermaid-lightbox-canvas img'), dlHidden: dlBtn.hidden };
 });
 check('A3-2 : lightbox depuis .tool-block-img → <img> affiché, bouton Télécharger visible', lbTool.hasImg && lbTool.dlHidden === false);
 await shot('03-lightbox-tool-image.png');
 const dlToolImg = page.waitForEvent('download', { timeout: 5000 });
-await page.click('.mermaid-lightbox-actions .mermaid-lb-btn[title="Télécharger"]');
+await page.click('.mermaid-lightbox-actions .mermaid-lb-btn[data-tip="Télécharger"]');
 const toolImgDl = await dlToolImg;
 check('A3-2 : download depuis .tool-block-img fonctionne (nom dérivé du mime)', /\.png$/.test(toolImgDl.suggestedFilename()));
 await page.keyboard.press('Escape');

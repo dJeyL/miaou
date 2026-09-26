@@ -667,8 +667,8 @@
    compaction) partagent `.ctx-compact` et `runReclaimGesture` ; un sélecteur
    par id laissait le refus d'évacuation dans la couleur nominale. */
 .ctx-compact.is-refused .hint { color: var(--err-soft); }
-/* Libellé porteur d'une explication au survol (title natif, CTX_EXPLAIN dans
-   ui.js). Le pointillé est le SIGNAL AU REPOS : sans lui, rien n'indique qu'il
+/* Libellé porteur d'une explication au survol (infobulle `data-tip`, CTX_EXPLAIN
+   dans ui.js). Le pointillé est le SIGNAL AU REPOS : sans lui, rien n'indique qu'il
    y a quelque chose à survoler et la tooltip n'est jamais découverte. Discret
    (border-2, sous-ligne seule) pour ne pas se lire comme un lien cliquable —
    le libellé n'ouvre rien. */

@@ -122,9 +122,10 @@ Le conteneur `#toasts` vit hors de la topbar (qui isole les z-index), à
 
 Deux étages dans `:root` (base.css). `--float-*` est la matière d'un élément
 flottant — surface, bordure, rayon, ombre (celle du `.model-menu`), typo — que
-partageront les futurs tooltips : c'est le point d'harmonie. `--toast-*` porte
-ce qui n'appartient qu'au toast (largeur, marges, filet, glyphe, couleurs de
-niveau) : c'est le point de dissemblance, le tooltip n'en reprendra rien.
+partagent toasts et infobulles (lot AH, `docs/tooltips.md`) : c'est le point
+d'harmonie. `--toast-*` porte ce qui n'appartient qu'au toast (largeur, marges,
+filet, glyphe, couleurs de niveau) : c'est le point de dissemblance,
+l'infobulle n'en reprend rien et porte son propre étage `--tip-*`.
 Niveaux : `--toast-info` vaut `--ok` (les seuls toasts info sont des
 « rétabli »), `--toast-warn` a sa propre valeur par luminosité (plus saturée en
 clair que `--pending`, jugé terne), `--toast-err` vaut `--err`.

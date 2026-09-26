@@ -130,6 +130,19 @@
   --toast-info:   var(--ok);
   --toast-warn:   #d9a441;
   --toast-err:    var(--err);
+
+  --tip-bg:       var(--float-bg);
+  --tip-bd:       var(--float-bd);
+  --tip-r:        var(--r-sm);
+  --tip-font:     var(--float-font);
+  --tip-text:     var(--float-text);
+  --tip-text-2:   var(--text-2);
+  --tip-shadow:   var(--float-shadow);
+  --tip-size:     12.5px;
+  --tip-pad:      5px 9px;
+  --tip-max-w:    280px;
+  --tip-arrow:    5px;
+  --tip-offset:   8px;
 }
 
 :root[data-palette="encre"] {
@@ -547,7 +560,8 @@ html[data-motion="reduced"] *::after {
 }
 
 .conv-title.provisional { font-style: italic; }
-.conv-date { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+
+.conv-date { font-size: 11px; color: var(--text-3); margin-top: 1px; width: fit-content; max-width: 100%; }
 
 .conv-excerpt {
   margin-top: 3px;
@@ -4072,6 +4086,55 @@ textarea.skill-content {
 .toast-x:focus-visible { outline: 2px solid var(--accent-bd); outline-offset: 0; }
 .toast-x svg { width: 12px; height: 12px; }
 
+.tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(var(--tip-max-w), calc(100vw - 16px));
+  padding: var(--tip-pad);
+  background: var(--tip-bg);
+  border: 1px solid var(--tip-bd);
+  border-radius: var(--tip-r);
+  box-shadow: var(--tip-shadow);
+  color: var(--tip-text);
+  font-family: var(--tip-font);
+  font-size: var(--tip-size);
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 120ms var(--ease), visibility 0s linear 120ms;
+}
+.tip.tip-shown {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 120ms var(--ease), visibility 0s;
+}
+
+.tip .tip-label { display: block; font-weight: 600; }
+.tip .tip-detail { display: block; margin-top: 2px; color: var(--tip-text-2); }
+
+.tip::before,
+.tip::after {
+  content: '';
+  position: absolute;
+  left: var(--arrow-x, 50%);
+  width: 0;
+  height: 0;
+  border: var(--tip-arrow) solid transparent;
+  transform: translateX(-50%);
+}
+.tip[data-side="top"]::before    { top: 100%; border-top-color: var(--tip-bd); }
+.tip[data-side="top"]::after     { top: calc(100% - 1px); border-top-color: var(--tip-bg); }
+.tip[data-side="bottom"]::before { bottom: 100%; border-bottom-color: var(--tip-bd); }
+.tip[data-side="bottom"]::after  { bottom: calc(100% - 1px); border-bottom-color: var(--tip-bg); }
+
 .messages { min-height: 0; }
 
 .body pre,
@@ -4292,7 +4355,7 @@ if (window.requestAnimationFrame) {
         </button>
       </div>
       <div class="space-select" id="space-select">
-        <button type="button" class="space-select-btn" id="space-select-btn" onclick="toggleSpaceMenu()" title="Changer d'espace">
+        <button type="button" class="space-select-btn" id="space-select-btn" onclick="toggleSpaceMenu()" data-tip="Changer d'espace">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
           <span id="space-select-label">Général</span>
           <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
@@ -4300,20 +4363,20 @@ if (window.requestAnimationFrame) {
         <div class="model-menu space-menu" id="space-menu"></div>
       </div>
       <div class="space-tabs" id="space-tabs">
-        <button type="button" class="space-tab-btn active" id="space-tab-conversations" onclick="selectSpaceTab('conversations')" title="Conversations">
+        <button type="button" class="space-tab-btn active" id="space-tab-conversations" onclick="selectSpaceTab('conversations')" data-tip="Conversations">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </button>
-        <button type="button" class="space-tab-btn" id="space-tab-files" onclick="selectSpaceTab('files')" title="Fichiers">
+        <button type="button" class="space-tab-btn" id="space-tab-files" onclick="selectSpaceTab('files')" data-tip="Fichiers">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7"/></svg>
         </button>
-        <button type="button" class="space-tab-btn" id="space-tab-memories" onclick="selectSpaceTab('memories')" title="Souvenirs">
+        <button type="button" class="space-tab-btn" id="space-tab-memories" onclick="selectSpaceTab('memories')" data-tip="Souvenirs">
           <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2 9.2 8.6 2 9.3l5.5 4.7L5.8 21 12 17.3 18.2 21l-1.7-7 5.5-4.7-7.2-.7Z"/></svg>
         </button>
       </div>
       <div class="sidebar-search" id="sidebar-search">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="conv-search" type="text" placeholder="Rechercher…" spellcheck="false" oninput="onConvSearch()" onfocus="onConvSearchFocus()" onblur="onConvSearchBlur()">
-        <button class="search-clear" id="search-clear" title="Effacer" onclick="clearConvSearch()">×</button>
+        <button class="search-clear" id="search-clear" data-tip="Effacer" onclick="clearConvSearch()">×</button>
       </div>
       <div class="conv-list" id="conv-list"></div>
 
@@ -4331,7 +4394,7 @@ if (window.requestAnimationFrame) {
 
       <div class="banner move-bar" id="move-bar"></div>
     </div>
-    <div class="sidebar-resizer" id="sidebar-resizer" title="Redimensionner"></div>
+    <div class="sidebar-resizer" id="sidebar-resizer" data-tip="Redimensionner"></div>
   </aside>
 
   <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebarMobile()"></div>
@@ -4340,7 +4403,7 @@ if (window.requestAnimationFrame) {
     ondragover="onMainDragOver(event)" ondragleave="onMainDragLeave(event)" ondrop="onMainDrop(event)">
     <header class="topbar">
       <div class="topbar-left">
-        <button class="icon-btn" id="sidebar-toggle" onclick="toggleSidebar()" title="Historique">
+        <button class="icon-btn" id="sidebar-toggle" onclick="toggleSidebar()" data-tip="Historique">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         </button>
         <div class="topbar-brand">
@@ -4350,7 +4413,7 @@ if (window.requestAnimationFrame) {
 
         <span class="topbar-space-badge" id="topbar-space-badge" hidden></span>
 
-        <button class="icon-btn topbar-new-btn" onclick="newConversation()" title="Nouvelle conversation">
+        <button class="icon-btn topbar-new-btn" onclick="newConversation()" data-tip="Nouvelle conversation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </button>
       </div>
@@ -4360,12 +4423,12 @@ if (window.requestAnimationFrame) {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
 
-        <span class="conv-agent-mark" id="conv-agent-mark" title="Conversation d'agent" aria-hidden="true" hidden></span>
-        <button class="icon-btn conv-retitle-btn" onclick="regenerateTitle()" title="Régénérer le titre" hidden>
+        <span class="conv-agent-mark" id="conv-agent-mark" data-tip="Conversation d'agent" aria-hidden="true" hidden></span>
+        <button class="icon-btn conv-retitle-btn" onclick="regenerateTitle()" data-tip="Régénérer le titre" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         </button>
         <div class="conv-title-edit" id="conv-title" contenteditable="true" spellcheck="false"></div>
-        <button class="icon-btn conv-dl-btn" onclick="onExportConv(event)" title="Exporter la conversation en HTML — Shift&nbsp;: Markdown" hidden>
+        <button class="icon-btn conv-dl-btn" onclick="onExportConv(event)" data-tip="Exporter la conversation en HTML — Shift&nbsp;: Markdown" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>
       </div>
@@ -4373,13 +4436,13 @@ if (window.requestAnimationFrame) {
         <span class="bg-activity" id="bg-activity"><span class="spin"></span><span id="bg-label"></span></span>
 
         <span class="agent-anchor" id="agent-anchor">
-          <button type="button" class="agent-count" id="agent-count" hidden aria-expanded="false" onclick="toggleAgentMenu()" title="Voir les agents au travail"><span class="waiter-dot activity-dot working"></span><span id="agent-count-label"></span></button>
+          <button type="button" class="agent-count" id="agent-count" hidden aria-expanded="false" onclick="toggleAgentMenu()" data-tip="Voir les agents au travail"><span class="waiter-dot activity-dot working"></span><span id="agent-count-label"></span></button>
           <div class="model-menu agent-menu" id="agent-menu"></div>
         </span>
 
         <button class="agent-count auth-pending" id="auth-pending" hidden onclick="openMcpServers()"><span class="auth-pending-dot"></span><span id="auth-pending-label"></span></button>
         <span class="model-pill"><span class="dot" id="conn-dot"></span><span id="model-label">modèle</span></span>
-        <button class="icon-btn" onclick="openSettings()" title="Paramètres">
+        <button class="icon-btn" onclick="openSettings()" data-tip="Paramètres">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
       </div>
@@ -4399,7 +4462,7 @@ if (window.requestAnimationFrame) {
     <div class="composer">
       <div class="composer-inner">
 
-        <button class="scroll-bottom-btn" id="scroll-bottom-btn" hidden onclick="onScrollBottomBtn()" title="Aller au dernier message" aria-label="Aller au dernier message">
+        <button class="scroll-bottom-btn" id="scroll-bottom-btn" hidden onclick="onScrollBottomBtn()" data-tip="Aller au dernier message">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><polyline points="19 12 12 19 5 12"/></svg>
         </button>
 
@@ -4414,7 +4477,7 @@ if (window.requestAnimationFrame) {
           <div class="compaction-undone-body">
             <svg class="compaction-undone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/><path d="M3 16v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M3 12h18"/></svg>
             <span id="compaction-undone-text"></span>
-            <button type="button" class="compaction-undone-close" onclick="clearCompactionUndoneBanner()" title="Fermer" aria-label="Fermer">
+            <button type="button" class="compaction-undone-close" onclick="clearCompactionUndoneBanner()" data-tip="Fermer">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
             </button>
           </div>
@@ -4438,24 +4501,24 @@ if (window.requestAnimationFrame) {
 
         <div class="composer-selectors" id="composer-selectors">
           <div class="composer-model" id="composer-model" hidden>
-            <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" title="Modèle de cette conversation">
+            <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" data-tip="Modèle de cette conversation">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
               <span id="composer-model-label">modèle</span>
 
-              <span class="composer-model-vision" id="composer-model-vision" title="Ce modèle lit les images (déclaré par le serveur)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
+              <span class="composer-model-vision" id="composer-model-vision" data-tip="Ce modèle lit les images (déclaré par le serveur)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
               <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
             <div class="model-menu" id="composer-model-menu"></div>
           </div>
           <div class="pill-select" id="composer-reasoning" hidden>
-            <button type="button" class="pill-select-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" title="Niveau de raisonnement de cette conversation">
+            <button type="button" class="pill-select-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" data-tip="Niveau de raisonnement de cette conversation">
               <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.2" cy="7.1" r="0.8" fill="black"/><circle cx="8" cy="7.1" r="0.8" fill="black"/><circle cx="10.8" cy="7.1" r="0.8" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
               <span id="composer-reasoning-label">raisonnement</span>
               <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </button>
             <div class="model-menu" id="composer-reasoning-menu"></div>
           </div>
-          <button type="button" class="ctx-counter" id="ctx-counter" onclick="openContextInspector()" title="Inspecteur de contexte">
+          <button type="button" class="ctx-counter" id="ctx-counter" onclick="openContextInspector()" data-tip="Inspecteur de contexte">
 
             <svg class="ctx-counter-compact" id="ctx-counter-compact" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/><path d="M3 16v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M3 12h18"/></svg>
             <span id="ctx-counter-label">≈ 0 tok</span>
@@ -4477,10 +4540,10 @@ if (window.requestAnimationFrame) {
             onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()" onpaste="onComposerPaste(event)"></textarea>
 
           <div class="composer-btn-col">
-            <button class="attach-btn" id="attach-btn" onclick="onAttachClick()" title="Joindre un fichier">
+            <button class="attach-btn" id="attach-btn" onclick="onAttachClick()" data-tip="Joindre un fichier">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
             </button>
-            <button class="send-btn" id="send-btn" onclick="onSendBtn()" title="Envoyer">
+            <button class="send-btn" id="send-btn" onclick="onSendBtn()" data-tip="Envoyer">
               <svg class="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
               <svg class="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
             </button>
@@ -4493,10 +4556,10 @@ if (window.requestAnimationFrame) {
           <div class="composer-hint"><kbd>Entrée</kbd> pour envoyer<span class="inline-sep">·</span><kbd>Maj+Entrée</kbd> nouvelle ligne<span id="composer-hint-skill" hidden><span class="inline-sep">·</span><kbd>/</kbd> <span class="composer-hint-slash-label">pour une commande</span></span><span class="inline-sep">·</span><kbd id="composer-hint-cmdk-key">Ctrl+K</kbd> palette de commandes</div>
 
           <div class="col-width-ctl">
-            <button class="col-width-btn" id="col-width-dec" onclick="nudgeColWidth(-1)" title="Resserrer la colonne" aria-label="Resserrer la colonne">
+            <button class="col-width-btn" id="col-width-dec" onclick="nudgeColWidth(-1)" data-tip="Resserrer la colonne">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 12h12"/></svg>
             </button>
-            <button class="col-width-btn" id="col-width-inc" onclick="nudgeColWidth(1)" title="Élargir la colonne" aria-label="Élargir la colonne">
+            <button class="col-width-btn" id="col-width-inc" onclick="nudgeColWidth(1)" data-tip="Élargir la colonne">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
             </button>
           </div>
@@ -5064,7 +5127,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-25 23:31 UTC */
+/* miaou — built: 2026-09-26 10:13 UTC */
 
 /* ── utils.js ── */
 
@@ -7827,6 +7890,88 @@ function healthFronts(prev, next) {
   return { events: events, snapshot: { backend: nb ? { id: nb.id, name: nb.name, health: nb.health } : null, mcp: nm } };
 }
 
+const TIP_COLD_MS = 500;
+const TIP_WARM_WINDOW_MS = 300;
+
+const TIP_VIEWPORT_MARGIN = 8;
+
+const TIP_ARROW_INSET = 10;
+
+function normalizeTip(tip) {
+  let label = '', detail = '';
+  if (tip && typeof tip === 'object') {
+    label = tip.label == null ? '' : String(tip.label).trim();
+    detail = tip.detail == null ? '' : String(tip.detail).trim();
+  } else if (tip != null) {
+    label = String(tip).trim();
+  }
+  if (!label && detail) { label = detail; detail = ''; }
+  return label ? { label: label, detail: detail } : null;
+}
+
+function tipFlatText(tip) {
+  const t = normalizeTip(tip);
+  if (!t) return '';
+  if (!t.detail) return t.label;
+  return t.label + (/[.!?…:]$/.test(t.label) ? ' ' : '. ') + t.detail;
+}
+
+function tipNameKey(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function tipAriaRule(tip, opts) {
+  const flat = tipFlatText(tip);
+  if (!flat) return { kind: null, text: '' };
+  const o = opts || {};
+  const author = o.ariaLabel == null ? '' : String(o.ariaLabel).trim();
+  const visible = o.text == null ? '' : String(o.text).trim();
+  const name = author || visible;
+  if (!name) return { kind: 'label', text: flat };
+  const n = tipNameKey(name), f = tipNameKey(flat);
+  if (n === f || n.indexOf(f) >= 0) return { kind: null, text: '' };
+  return { kind: 'description', text: flat };
+}
+
+function tipAttrs(tip, opts) {
+  const o = opts || {};
+  let out = '';
+  if (o.ariaLabel) out += ' aria-label="' + escHtml(o.ariaLabel) + '"';
+  const t = normalizeTip(tip);
+  if (!t) return out;
+  out += ' data-tip="' + escHtml(t.label) + '"';
+  if (t.detail) out += ' data-tip-detail="' + escHtml(t.detail) + '"';
+  const aria = tipAriaRule(t, o);
+  if (aria.kind === 'label') out += ' aria-label="' + escHtml(aria.text) + '" data-tip-aria="label"';
+  else if (aria.kind === 'description') out += ' aria-description="' + escHtml(aria.text) + '" data-tip-aria="description"';
+  return out;
+}
+
+function tipPlacement(m) {
+  const a = m.anchor;
+  let side = 'top';
+  let top = a.top - m.offset - m.tipH;
+  if (top < m.margin) { side = 'bottom'; top = a.bottom + m.offset; }
+  const cx = a.left + a.width / 2;
+  const maxLeft = m.vw - m.margin - m.tipW;
+  const left = Math.max(m.margin, Math.min(cx - m.tipW / 2, maxLeft));
+  const inset = m.arrowInset == null ? 0 : m.arrowInset;
+  const arrowX = Math.max(inset, Math.min(cx - left, m.tipW - inset));
+  return { side: side, top: top, left: left, arrowX: arrowX };
+}
+
+function tipShowDelay(state, now) {
+  if (state && state.visible) return 0;
+  const last = state ? state.lastHideAt : null;
+  if (last != null && now - last < TIP_WARM_WINDOW_MS) return 0;
+  return TIP_COLD_MS;
+}
+
+const TIP_MODIFIER_KEYS = ['Shift', 'Control', 'Alt', 'Meta'];
+function tipKeyHides(key) {
+  return TIP_MODIFIER_KEYS.indexOf(key) < 0;
+}
+
 /* ── docs.js ── */
 
 function sniffZipOfficeKind(names) {
@@ -9896,7 +10041,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790379090}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790417584}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -17284,7 +17429,7 @@ function renderDidYouKnow(hostEl, tip) {
     '</span>' +
     '<span class="welcome-tip-body">' + lines + '</span>';
 
-  el.title = 'Demander à développer';
+  setTip(el, 'Demander à développer');
   el.addEventListener('click', () => askToDevelopWelcomeTip(hostEl));
   hostEl.appendChild(el);
 }
@@ -17806,8 +17951,8 @@ function attachDiagramActions(view, code) {
   const mk = (cls, title, html, fn) => {
     const b = document.createElement('button');
     b.className = cls;
-    b.title = title;
     b.innerHTML = html;
+    setTip(b, title);
     b.onclick = fn;
     bar.appendChild(b);
   };
@@ -17858,8 +18003,8 @@ function ensureLightbox() {
   const mk = (title, html, fn) => {
     const b = document.createElement('button');
     b.className = 'mermaid-lb-btn';
-    b.title = title;
     b.innerHTML = html;
+    setTip(b, title);
     b.onclick = fn;
     bar.appendChild(b);
     return b;
@@ -18235,16 +18380,16 @@ function assistantHead(model, reasoning, ts, server) {
     `<span class="msg-ts-sep inline-sep"${tsText ? '' : ' hidden'}>·</span>` +
     `<span class="msg-ts"${tsText ? '' : ' hidden'}>${escHtml(tsText)}</span>` +
     `<div class="meta-actions">` +
-      `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)" title="Raisonnement" aria-label="Raisonnement">` +
+      `<button class="reasoning-toggle"${has ? '' : ' hidden'} onclick="toggleReasoning(this)"${tipAttrs('Raisonnement')}>` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M11 2.5l1.5 3.8 3.8 1.5-3.8 1.5L11 13.1 9.5 9.3 5.7 7.8l3.8-1.5z"/><path d="M17.5 13l.9 2.2 2.2.9-2.2.9-.9 2.2-.9-2.2-2.2-.9 2.2-.9z"/></svg>` +
       `</button>` +
-      `<button class="msg-copy" hidden title="Copier" onclick="copyMsg(this)">` +
+      `<button class="msg-copy" hidden${tipAttrs('Copier')} onclick="copyMsg(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
       `</button>` +
-      `<button class="msg-dl" hidden title="Télécharger en .md" onclick="downloadMsgMd(this)">` +
+      `<button class="msg-dl" hidden${tipAttrs('Télécharger en .md')} onclick="downloadMsgMd(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>` +
       `</button>` +
-      `<button class="msg-regen" hidden title="Régénérer la réponse" onclick="onRegenBtn(this)">` +
+      `<button class="msg-regen" hidden${tipAttrs('Régénérer la réponse')} onclick="onRegenBtn(this)">` +
         `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>` +
       `</button>` +
     `</div>` +
@@ -18285,7 +18430,7 @@ function agentOpenButtonHtml(agentResult) {
   const id = (agentResult && agentResult.id) || '';
   if (!id || !loadConversation(id)) return '';
   return (
-    `<button class="msg-open-agent" title="Ouvrir le fil de l'agent" onclick="onOpenAgentConv(this)" data-agent-conv="${escHtml(id)}">` +
+    `<button class="msg-open-agent"${tipAttrs('Ouvrir le fil de l\'agent')} onclick="onOpenAgentConv(this)" data-agent-conv="${escHtml(id)}">` +
     ICON_EYE +
     `</button>`
   );
@@ -18307,10 +18452,10 @@ function buildMsg(role, content, model, reasoning, ts, server, truncated, attach
       `<div class="msg-user-footer">` +
       `<div class="msg-user-actions">` +
       (agentResult ? agentOpenButtonHtml(agentResult) :
-      `<button class="msg-edit" title="Éditer" onclick="onEditMsg(this)">` +
+      `<button class="msg-edit"${tipAttrs('Éditer')} onclick="onEditMsg(this)">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>`) +
-      `<button class="msg-copy-user" title="Copier" onclick="copyMsg(this)">` +
+      `<button class="msg-copy-user"${tipAttrs('Copier')} onclick="copyMsg(this)">` +
       `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
       `</button>` +
       `</div>` +
@@ -18422,13 +18567,13 @@ function decoratePre(scope) {
       `<span class="code-lang">${escHtml(lang)}</span>` +
       `<div class="code-actions">` +
 
-      (isMermaidLang(lang) ? `<button class="code-mmd-toggle" title="Diagramme / source" hidden>${svgDiagram}</button>` : '') +
+      (isMermaidLang(lang) ? `<button class="code-mmd-toggle"${tipAttrs('Diagramme / source')} hidden>${svgDiagram}</button>` : '') +
 
-      (isPreviewableLang(lang) ? `<button class="code-preview-btn" title="Aperçu">${svgEye}</button>` : '') +
+      (isPreviewableLang(lang) ? `<button class="code-preview-btn"${tipAttrs('Aperçu')}>${svgEye}</button>` : '') +
 
-      (isMarkdownLang(lang) ? `<button class="code-md-html" title="Convertir en page HTML">${svgPage}</button>` : '') +
-      `<button class="code-copy" title="Copier">${svgCopy}</button>` +
-      `<button class="code-dl" title="Télécharger">${svgDl}</button>` +
+      (isMarkdownLang(lang) ? `<button class="code-md-html"${tipAttrs('Convertir en page HTML')}>${svgPage}</button>` : '') +
+      `<button class="code-copy"${tipAttrs('Copier')}>${svgCopy}</button>` +
+      `<button class="code-dl"${tipAttrs('Télécharger')}>${svgDl}</button>` +
       `</div>`;
     const mmdToggle = head.querySelector('.code-mmd-toggle');
     if (mmdToggle) mmdToggle.onclick = () => {
@@ -18444,8 +18589,8 @@ function decoratePre(scope) {
         box.className = 'code-preview';
         const close = document.createElement('button');
         close.className = 'code-preview-close';
-        close.title = "Fermer l'aperçu";
         close.textContent = '×';
+        setTip(close, "Fermer l'aperçu");
         close.onclick = () => { box.remove(); pre.classList.remove('preview-open'); };
         const frame = document.createElement('iframe');
         frame.setAttribute('sandbox', 'allow-scripts');
@@ -18603,9 +18748,9 @@ function syncLastAssistantActions() {
 
       const cut = b === last && compactionFollows(currentThread, msgIndex(b));
       continueBtn.disabled = sending || b !== last || cut;
-      continueBtn.title = cut
+      setTip(continueBtn, cut
         ? 'Cette réponse n\'est plus transmise au modèle depuis la compaction : elle ne peut plus être continuée.'
-        : '';
+        : '');
     }
   }
   syncAgentBusyAffordances();
@@ -18618,11 +18763,11 @@ function syncAgentBusyAffordances() {
     ? 'Un agent de cette conversation travaille : l\'historique ne peut pas être réécrit pour l\'instant.'
     : '';
   for (const btn of document.querySelectorAll('#thread .msg-edit')) {
-    if (busy) btn.title = hint; else btn.title = 'Éditer';
+    setTip(btn, busy ? hint : 'Éditer');
   }
 
   for (const btn of document.querySelectorAll('#thread .msg-regen')) {
-    if (busy) btn.title = hint; else btn.title = 'Régénérer la réponse';
+    setTip(btn, busy ? hint : 'Régénérer la réponse');
   }
 }
 
@@ -19159,13 +19304,14 @@ function armThenRun(btn, onConfirm, armedLabel, armedTitle) {
     return;
   }
   btn.classList.add('armed');
-  btn._origTitle = btn.title;
-  btn.title = armedTitle || 'Cliquer à nouveau pour confirmer';
+
+  btn._origTitle = getTip(btn);
   if (armedLabel != null) { btn._origLabel = btn.textContent; btn.textContent = armedLabel; }
+  setTip(btn, armedTitle || 'Cliquer à nouveau pour confirmer');
   btn._disarmTimer = setTimeout(() => {
     btn.classList.remove('armed');
-    btn.title = btn._origTitle || '';
     if (armedLabel != null && btn._origLabel != null) btn.textContent = btn._origLabel;
+    setTip(btn, btn._origTitle || '');
   }, ARM_DELETE_MS);
 }
 
@@ -19243,7 +19389,7 @@ function convItemEl(c, convs) {
 
   const agentBusy = hasWorkingAgent(c.id, convs);
   const lockAttrs = agentBusy
-    ? ' disabled title="Un agent de cette conversation travaille : elle ne peut pas être déplacée pour l\'instant."'
+    ? ' disabled' + tipAttrs('Un agent de cette conversation travaille : elle ne peut pas être déplacée pour l\'instant.')
     : '';
 
   const lbl = convLabel(c);
@@ -19252,11 +19398,11 @@ function convItemEl(c, convs) {
     `<input type="checkbox" class="conv-select" onclick="event.stopPropagation();toggleConvSelection('${c.id}',this.checked)"${checked}${lockAttrs}>
      <div class="conv-body">
        <div class="${titleCls}">${escHtml(lbl.text || 'Nouvelle conversation')}</div>
-       <div class="conv-date" title="${escHtml(formatFullDateFr(c.updatedAt || c.timestamp))}">${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
+       <div class="conv-date"${tipAttrs(formatFullDateFr(c.updatedAt || c.timestamp), { text: relativeWhen(c.updatedAt || c.timestamp) })}>${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
      </div>
      <div class="conv-actions">
-       <button class="conv-pin" title="${c.pinned ? 'Désépingler' : 'Épingler'}" onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
-       <button class="conv-del" title="Supprimer" onclick="event.stopPropagation();onConvDel(this,'${c.id}')">
+       <button class="conv-pin"${tipAttrs(c.pinned ? 'Désépingler' : 'Épingler')} onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
+       <button class="conv-del"${tipAttrs('Supprimer')} onclick="event.stopPropagation();onConvDel(this,'${c.id}')">
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
        </button>
      </div>`;
@@ -19364,17 +19510,17 @@ function renderMoveBar() {
   const moveBtn = document.createElement('button');
   moveBtn.type = 'button';
   moveBtn.className = 'move-bar-go';
-  moveBtn.title = 'Déplacer';
   moveBtn.disabled = n === 0 || !pill;
   moveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  setTip(moveBtn, 'Déplacer');
   if (pill) moveBtn.onclick = () => moveSelectedConversations(pill.input.value);
   actions.appendChild(moveBtn);
 
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'move-bar-cancel';
-  cancelBtn.title = 'Annuler';
   cancelBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+  setTip(cancelBtn, 'Annuler');
   cancelBtn.onclick = () => exitMoveMode();
   actions.appendChild(cancelBtn);
 
@@ -19540,6 +19686,8 @@ function setTitle(label) {
   el.textContent = o.text || '';
   el.classList.toggle('provisional', !!o.provisional);
 
+  refreshTipAria(el);
+
   document.title = documentTitleFor(o.text);
 }
 
@@ -19549,9 +19697,13 @@ function documentTitleFor(text) {
 }
 
 function setTitleEditableForConv(conv) {
-  const el = $('conv-title');
+  applyConvTitleEditable($('conv-title'), !isAgentConversation(conv));
+}
+
+function applyConvTitleEditable(el, editable) {
   if (!el) return;
-  el.contentEditable = isAgentConversation(conv) ? 'false' : 'true';
+  el.contentEditable = editable ? 'true' : 'false';
+  setTip(el, editable ? 'Renommer la conversation' : '');
 }
 
 function syncAgentBanner(conv) {
@@ -19590,8 +19742,7 @@ function syncAgentBanner(conv) {
     if (btn) {
       btn.hidden = false;
 
-      btn.title = 'Retour à « ' + label + ' »';
-      btn.setAttribute('aria-label', btn.title);
+      setTip(btn, 'Retour à « ' + label + ' »');
 
       btn.onclick = () => selectConv(parent.id, true);
     }
@@ -19727,7 +19878,7 @@ function setComposerStreaming(on, phase, variant) {
   const send = $('send-btn');
   if (!send) return;
   send.classList.toggle('streaming', on);
-  send.title = on ? 'Arrêter' : 'Envoyer';
+  setTip(send, on ? 'Arrêter' : 'Envoyer');
 
   const ta = $('composer-text');
   if (ta) ta.placeholder = on ? composerBusyPlaceholder(phase, variant) : COMPOSER_IDLE_PLACEHOLDER;
@@ -19747,10 +19898,10 @@ function setStopping(on) {
   send.classList.toggle('stopping', on);
   if (on) {
     send.disabled = true;
-    send.title = 'Arrêt en cours…';
+    setTip(send, 'Arrêt en cours…');
   } else if (send.classList.contains('streaming')) {
     send.disabled = false;
-    send.title = 'Arrêter';
+    setTip(send, 'Arrêter');
   }
 }
 
@@ -19778,13 +19929,13 @@ function syncConnDot() {
 
   if (health === 'ok') {
     dot.className = 'dot ok';
-    dot.title = 'Backend joignable';
+    setTip(dot, 'Backend joignable');
   } else if (health === 'unconfigured') {
     dot.className = 'dot err';
-    dot.title = 'API non configurée — ouvrir les paramètres';
+    setTip(dot, { label: 'API non configurée', detail: 'Ouvrir les paramètres' });
   } else {
     dot.className = 'dot err';
-    dot.title = 'Backend injoignable';
+    setTip(dot, 'Backend injoignable');
   }
   syncWorriedLogo();
   syncHealthToasts();
@@ -19882,8 +20033,8 @@ function buildInterjectionChip(item) {
     '<span class="ij-glyph"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 20l1.1-4.1a8.3 8.3 0 0 1-1-4A8.4 8.4 0 0 1 12 3.5a8.4 8.4 0 0 1 9 8z"/><path d="M12 8v4l2.5 1.5"/></svg></span>' +
     '<span class="ij-text"></span>' +
     '<span class="ij-hint">cliquer pour éditer</span>' +
-    '<button class="ij-copy" title="Copier" aria-label="Copier cette interjection"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>' +
-    '<button class="ij-x" title="Annuler" aria-label="Annuler cette interjection"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+    '<button class="ij-copy"' + tipAttrs('Copier', { ariaLabel: 'Copier cette interjection' }) + '><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>' +
+    '<button class="ij-x"' + tipAttrs('Annuler', { ariaLabel: 'Annuler cette interjection' }) + '><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
   el.querySelector('.ij-text').textContent = item.literal;
 
   el.querySelector('.ij-copy').addEventListener('click', (e) => {
@@ -19975,23 +20126,23 @@ function attChipHtml(att, thumbSrc, removable, conversationId) {
     ? `<img class="att-thumb" src="${thumbSrc}" alt="">`
     : attIconSvg();
   const removeBtn = removable
-    ? `<button class="att-remove" title="Retirer" onclick="removeComposerAttachment('${att.attId}')">` +
+    ? `<button class="att-remove"${tipAttrs('Retirer')} onclick="removeComposerAttachment('${att.attId}')">` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>`
     : '';
   const promoteBtn = (!removable && conversationId)
-    ? `<button class="att-promote" title="Ajouter à la bibliothèque de l'espace" ` +
+    ? `<button class="att-promote"${tipAttrs('Ajouter à la bibliothèque de l\'espace')} ` +
       `onclick="promoteAttachmentToLibrary(this, '${att.attId}', '${conversationId}')">${ICON_PACKAGE}</button>`
     : '';
 
   const liveAttrs = (!removable && conversationId)
     ? ` onclick="onAttachmentChipClick(event, '${att.attId}', '${conversationId}')" ` +
-      `title="${att.kind === 'image' ? 'Agrandir (Cmd/Ctrl+clic : nouvel onglet)' : 'Télécharger'}"`
+      tipAttrs(att.kind === 'image' ? 'Agrandir (Cmd/Ctrl+clic : nouvel onglet)' : 'Télécharger', { text: att.name || '' })
     : '';
   const chipClass = (!removable && conversationId) ? 'att-chip att-chip-live' : 'att-chip';
   return (
     `<span class="${chipClass}" data-att-id="${att.attId}"${liveAttrs}>` +
     thumb +
-    `<span class="att-name" title="${escHtml(att.name)}">${escHtml(att.name)}</span>` +
+    `<span class="att-name"${tipAttrs(att.name, { text: att.name })}>${escHtml(att.name)}</span>` +
     `<span class="att-size">${humanSize(att.size)}</span>` +
     removeBtn +
     promoteBtn +
@@ -20039,7 +20190,7 @@ async function promoteAttachmentToLibrary(btn, attId, conversationId) {
   );
   if (stored) {
     btn.classList.add('done');
-    btn.title = 'Ajouté à la bibliothèque de l\'espace';
+    setTip(btn, 'Ajouté à la bibliothèque de l\'espace');
 
     describeFileIfNeeded(stored.id);
   } else {
@@ -20822,7 +20973,7 @@ function initComposerModelLabelFit() {
 
     const m = activeModel() || 'modèle';
     compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
-    compLabel.title = m;
+    setTip(compLabel, m);
   });
   _composerSelectorsRO.observe(row);
 }
@@ -20833,7 +20984,7 @@ function syncModelUI() {
   const top = $('model-label');
   if (top) {
     top.textContent = shortenModelLabel(m, TOPBAR_MODEL_MAX_CHARS);
-    top.title = m;
+    setTip(top, m);
   }
 
   const cam = $('composer-model-vision');
@@ -20844,7 +20995,7 @@ function syncModelUI() {
   const compLabel = $('composer-model-label');
   if (compLabel) {
     compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
-    compLabel.title = m;
+    setTip(compLabel, m);
   }
   const box = $('composer-model');
   if (box) {
@@ -20931,7 +21082,7 @@ function renderComposerModelOptionsInner() {
 
       const vs = modelVisionState(s, m);
       const cam = (vs.source === 'declared' && vs.enabled)
-        ? `<span class="model-opt-vision" title="Lit les images (déclaré par le serveur)">${ICON_CAMERA}</span>` : '';
+        ? `<span class="model-opt-vision"${tipAttrs('Lit les images (déclaré par le serveur)')}>${ICON_CAMERA}</span>` : '';
       o.innerHTML = `<span>${escHtml(m)}</span><span class="model-opt-trail">${cam}<span class="check">✓</span></span>`;
       o.onmousedown = (ev) => { ev.preventDefault(); pickComposerModel(m, s.id); };
       menu.appendChild(o);
@@ -21629,7 +21780,7 @@ function syncContextCounter() {
     if (ud.cachedTokens != null && ud.cachedRatio != null) {
       const pct = Math.max(0, Math.min(100, ud.cachedRatio * 100));
       cacheEl.style.width = pct + '%';
-      cacheEl.title = ud.cachedTokens + ' tok servis par le cache (' + Math.round(pct) + '%)';
+      setTip(cacheEl, ud.cachedTokens + ' tok servis par le cache (' + Math.round(pct) + '%)');
       cacheEl.hidden = false;
     } else {
       cacheEl.hidden = true;
@@ -21853,7 +22004,7 @@ function renderContextInspector() {
     bar.innerHTML = m.entries.map(e => {
       const pct = Math.max(0, Math.min(100, (e.tokens / scale) * 100));
       const color = CTX_PALETTE[e.source] || '#888';
-      return `<span class="ctx-bar-seg" style="width:${pct}%;background:${color}" title="${escHtml(e.label)}"></span>`;
+      return `<span class="ctx-bar-seg" style="width:${pct}%;background:${color}"${tipAttrs(e.label)}></span>`;
     }).join('');
   }
 
@@ -21867,7 +22018,7 @@ function renderContextInspector() {
         (share != null ? ` (${share}% de l'entrée)` : '') +
         ' — quantité totale, pas une position dans la liste :' +
         ' le backend aligne sur ses propres blocs.';
-      barCache.innerHTML = `<span class="ctx-bar-seg" style="width:${pct}%" title="${escHtml(title)}"></span>`;
+      barCache.innerHTML = `<span class="ctx-bar-seg" style="width:${pct}%"${tipAttrs(title)}></span>`;
       barCache.hidden = false;
     } else {
       barCache.innerHTML = '';
@@ -21885,10 +22036,10 @@ function renderContextInspector() {
       const note = e.source === 'attachment_images' ? ' <span class="hint">(très approximatif)</span>' : '';
 
       const why = contextExplainFor(e.source, libraryForm);
-      const titleAttr = why ? ` title="${escHtml(why)}"` : '';
+      const tipAttr = why ? tipAttrs(why, { text: e.label }) : '';
       const labelCls = why ? ' class="ctx-label-explained"' : '';
       return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>` +
-        `<span${labelCls}${titleAttr}>${escHtml(e.label)}</span>${note}</td>` +
+        `<span${labelCls}${tipAttr}>${escHtml(e.label)}</span>${note}</td>` +
         `<td>${e.chars}</td><td>≈${e.tokens}</td><td>${pct}%</td></tr>`;
     });
     const totalTokLabel = (m.real ? '' : '≈') + m.totalTokens;
@@ -22178,6 +22329,8 @@ function syncAgentCount() {
   const label = $('agent-count-label');
   if (label) label.textContent = formatAgentCountLabel(agentInventoryCount(inv));
 
+  refreshTipAria(el);
+
   if (el.hidden) closeAgentMenu();
   else if (isAgentMenuOpen()) renderAgentMenu();
 }
@@ -22312,7 +22465,7 @@ function renderSpaceMenu() {
     opt.className = 'model-opt' + (s.id === activeSpaceId ? ' selected' : '');
     opt.innerHTML =
       `<span class="space-opt-name">${escHtml(s.name || '')}</span>` +
-      `<button type="button" class="space-opt-edit" title="Modifier l'espace">` +
+      `<button type="button" class="space-opt-edit"${tipAttrs('Modifier l\'espace')}>` +
       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
       `</button>` +
       `<span class="check">✓</span>`;
@@ -22537,11 +22690,12 @@ function syncAuthorizationPending() {
   el.classList.remove('is-error', 'is-pending');
   if (pending.severity === 'error') el.classList.add('is-error');
   else if (pending.severity === 'pending') el.classList.add('is-pending');
-  el.title = pending.severity === 'error'
-    ? 'Ouvrir les serveurs MCP — vérifier les serveurs injoignables'
-    : 'Ouvrir les serveurs MCP';
+
   const label = $('auth-pending-label');
   if (label) label.textContent = pending.label;
+  setTip(el, pending.severity === 'error'
+    ? { label: 'Ouvrir les serveurs MCP', detail: 'Vérifier les serveurs injoignables' }
+    : 'Ouvrir les serveurs MCP');
   syncWorriedLogo();
   syncHealthToasts();
 }
@@ -22722,8 +22876,8 @@ function buildMcpCard(server, isNew) {
   if (!isNew && server.enabled !== false) {
     const refreshBtn = document.createElement('button');
     refreshBtn.className = 'icon-btn mcp-refresh';
-    refreshBtn.title = 'Reconnecter et relire les outils';
     refreshBtn.setAttribute('aria-label', 'Reconnecter ce serveur');
+    setTip(refreshBtn, 'Reconnecter et relire les outils');
     refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
     refreshBtn.addEventListener('click', () => onRefreshMcpCard(originalName, refreshBtn));
     viewRow.appendChild(refreshBtn);
@@ -22955,8 +23109,8 @@ function buildApiCard(server, isNew, isActive) {
   if (!isNew) {
     const refreshBtn = document.createElement('button');
     refreshBtn.className = 'icon-btn api-refresh';
-    refreshBtn.title = 'Relire les modèles et leurs propriétés';
     refreshBtn.setAttribute('aria-label', 'Relire ce serveur');
+    setTip(refreshBtn, 'Relire les modèles et leurs propriétés');
     refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
     refreshBtn.addEventListener('click', () => onRefreshApiCard(originalId, refreshBtn));
     viewRow.appendChild(refreshBtn);
@@ -23649,24 +23803,24 @@ async function renderSpaceFilesList(spaceId) {
     item.dataset.id = e.id;
 
     const provenanceBadge = e.source
-      ? '<span class="mem-sub" title="Promu depuis une conversation"> · promu</span>'
+      ? '<span class="mem-sub"' + tipAttrs('Promu depuis une conversation', { text: '· promu' }) + '> · promu</span>'
       : '';
 
     const dts = libraryFileDate(e);
     const dateBit = dts
-      ? ` · <span title="${escHtml(formatFullDateFr(dts))}">${escHtml(formatDateRelative(dts, Date.now()))}</span>`
+      ? ` · <span${tipAttrs(formatFullDateFr(dts), { text: formatDateRelative(dts, Date.now()) })}>${escHtml(formatDateRelative(dts, Date.now()))}</span>`
       : '';
     const descriptionLine = `<div class="mem-excerpt file-description-line" id="file-description-${e.id}">${e.description ? escHtml(e.description) : ''}</div>`;
     item.innerHTML =
       `<div class="mem-header"><div class="mem-meta">` +
 
-      `<div class="mem-sub"><span title="${escHtml(e.mime)}">${escHtml(libraryFileTypeLabel(e.mime))}</span> · ${escHtml(humanSize(e.size))}${dateBit}${provenanceBadge}</div>` +
+      `<div class="mem-sub"><span${tipAttrs(e.mime, { text: libraryFileTypeLabel(e.mime) })}>${escHtml(libraryFileTypeLabel(e.mime))}</span> · ${escHtml(humanSize(e.size))}${dateBit}${provenanceBadge}</div>` +
       `</div>` +
 
-      `<button class="mem-dl" title="Télécharger" onclick="onDownloadSpaceFile(this,'${e.id}')">${ICON_DOWNLOAD}</button>` +
+      `<button class="mem-dl"${tipAttrs('Télécharger')} onclick="onDownloadSpaceFile(this,'${e.id}')">${ICON_DOWNLOAD}</button>` +
       `</div>` +
 
-      `<div class="mem-content file-name-edit" id="file-name-${e.id}" contenteditable="true" spellcheck="false" title="Renommer le fichier">${escHtml(e.name)}</div>` +
+      `<div class="mem-content file-name-edit" id="file-name-${e.id}" contenteditable="true" spellcheck="false"${tipAttrs('Renommer le fichier', { text: e.name })}>${escHtml(e.name)}</div>` +
       descriptionLine +
       `<div class="drawer-btns" id="file-btns-${e.id}">` +
       `<button class="drawer-btn" onclick="onRegenerateFileDescription(this,'${e.id}','${spaceId}')">${e.description ? 'Régénérer la description' : 'Générer une description'}</button>` +
@@ -23783,7 +23937,7 @@ async function onDownloadSpaceFile(btn, fileId) {
 
       if (btn) {
         btn.classList.add('unavailable');
-        btn.title = 'Fichier non disponible';
+        setTip(btn, 'Fichier non disponible');
       }
       return;
     }
@@ -24032,9 +24186,9 @@ function buildToastEl(item, opts) {
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'toast-x';
-  close.title = 'Fermer';
   close.setAttribute('aria-label', 'Fermer la notification');
   close.innerHTML = TOAST_CLOSE_SVG;
+  setTip(close, 'Fermer');
   close.addEventListener('click', function() { dismissToast(item.key); });
   el.appendChild(body);
   el.appendChild(close);
@@ -24234,6 +24388,240 @@ function syncHealthToasts() {
   });
 }
 
+/* ── tooltips.js ── */
+
+const TIP_WATCH_MS = 150;
+
+let _tipEl = null;
+let _tipOwner = null;
+let _tipHover = null;
+let _tipShowTimer = null;
+let _tipPending = null;
+let _tipWatchTimer = null;
+let _tipLastHideAt = null;
+let _tipWired = false;
+
+function getTip(el) {
+  if (!el || typeof el.getAttribute !== 'function') return '';
+  const label = el.getAttribute('data-tip') || '';
+  const detail = el.getAttribute('data-tip-detail') || '';
+  if (!label) return '';
+  return detail ? { label: label, detail: detail } : label;
+}
+
+function setTip(el, tip) {
+  if (!el || typeof el.setAttribute !== 'function') return;
+  applyTipAttributes(el, tip);
+  if (!normalizeTip(tip)) {
+    if (el === _tipOwner) hideTip();
+    return;
+  }
+  if (el === _tipOwner && tipIsVisible()) { renderTip(); return; }
+  if (el === _tipHover && el.isConnected) {
+    cancelTipTimer();
+    showTipNow(el);
+  }
+}
+
+function refreshTipAria(el) {
+  if (!el || typeof el.getAttribute !== 'function') return;
+  const tip = getTip(el);
+  if (tip) applyTipAttributes(el, tip);
+}
+
+function tipCarrierText(el) {
+  if (el.tagName === 'IMG') return String(el.getAttribute('alt') || '').trim();
+  return String(el.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function applyTipAttributes(el, tip) {
+  const t = normalizeTip(tip);
+  const mark = el.getAttribute('data-tip-aria');
+  if (mark === 'label') el.removeAttribute('aria-label');
+  else if (mark === 'description') el.removeAttribute('aria-description');
+  el.removeAttribute('data-tip-aria');
+  if (!t) {
+    el.removeAttribute('data-tip');
+    el.removeAttribute('data-tip-detail');
+    return;
+  }
+  el.setAttribute('data-tip', t.label);
+  if (t.detail) el.setAttribute('data-tip-detail', t.detail);
+  else el.removeAttribute('data-tip-detail');
+  const aria = tipAriaRule(t, { text: tipCarrierText(el), ariaLabel: el.getAttribute('aria-label') || '' });
+  if (aria.kind === 'label') el.setAttribute('aria-label', aria.text);
+  else if (aria.kind === 'description') el.setAttribute('aria-description', aria.text);
+  if (aria.kind) el.setAttribute('data-tip-aria', aria.kind);
+}
+
+function tipIsVisible() {
+  return !!(_tipEl && _tipEl.classList.contains('tip-shown'));
+}
+
+function tipShownOn(el) {
+  return !!el && el === _tipOwner && tipIsVisible();
+}
+
+function tipOwnerOf(target) {
+  const el = target && target.closest ? target.closest('[data-tip]') : null;
+  return el && el.getAttribute('data-tip') ? el : null;
+}
+
+function ensureTipEl() {
+  if (_tipEl) return _tipEl;
+  _tipEl = document.createElement('div');
+  _tipEl.className = 'tip';
+  _tipEl.setAttribute('role', 'tooltip');
+  document.body.appendChild(_tipEl);
+  return _tipEl;
+}
+
+function renderTip() {
+  const owner = _tipOwner;
+  const t = normalizeTip(getTip(owner));
+  if (!owner || !t) { hideTip(); return; }
+  const el = ensureTipEl();
+  el.textContent = '';
+  if (t.detail) {
+    const label = document.createElement('span');
+    label.className = 'tip-label';
+    label.textContent = t.label;
+    const detail = document.createElement('span');
+    detail.className = 'tip-detail';
+    detail.textContent = t.detail;
+    el.appendChild(label);
+    el.appendChild(detail);
+  } else {
+    el.textContent = t.label;
+  }
+  el.style.left = '0px';
+  el.style.top = '0px';
+  const r = owner.getBoundingClientRect();
+  const offset = parseFloat(getComputedStyle(el).getPropertyValue('--tip-offset')) || 8;
+  const p = tipPlacement({
+    anchor: { top: r.top, bottom: r.bottom, left: r.left, width: r.width },
+    tipW: el.offsetWidth,
+    tipH: el.offsetHeight,
+    vw: document.documentElement.clientWidth,
+    margin: TIP_VIEWPORT_MARGIN,
+    offset: offset,
+    arrowInset: TIP_ARROW_INSET,
+  });
+  el.dataset.side = p.side;
+  el.style.left = Math.round(p.left) + 'px';
+  el.style.top = Math.round(p.top) + 'px';
+  el.style.setProperty('--arrow-x', Math.round(p.arrowX) + 'px');
+  el.classList.add('tip-shown');
+  armTipWatch();
+}
+
+function showTipNow(owner) {
+  _tipOwner = owner;
+  renderTip();
+}
+
+function scheduleTip(owner) {
+  if (owner === _tipOwner && tipIsVisible()) return;
+  if (owner === _tipPending) return;
+  cancelTipTimer();
+  const delay = tipShowDelay({ visible: tipIsVisible(), lastHideAt: _tipLastHideAt }, Date.now());
+  if (delay <= 0) { showTipNow(owner); return; }
+  _tipPending = owner;
+  _tipShowTimer = setTimeout(function() {
+    _tipShowTimer = null;
+    _tipPending = null;
+    if (owner.isConnected) showTipNow(owner);
+  }, delay);
+}
+
+function cancelTipTimer() {
+  clearTimeout(_tipShowTimer);
+  _tipShowTimer = null;
+  _tipPending = null;
+}
+
+function hideTip() {
+  cancelTipTimer();
+  clearInterval(_tipWatchTimer);
+  _tipWatchTimer = null;
+  if (tipIsVisible()) {
+    _tipEl.classList.remove('tip-shown');
+    _tipLastHideAt = Date.now();
+  }
+  _tipOwner = null;
+}
+
+function armTipWatch() {
+  if (_tipWatchTimer) return;
+  _tipWatchTimer = setInterval(function() {
+    if (_tipHover && !_tipHover.isConnected) _tipHover = null;
+    const o = _tipOwner;
+    if (!o || !o.isConnected || !o.getAttribute('data-tip') || !o.getClientRects().length) hideTip();
+  }, TIP_WATCH_MS);
+}
+
+function onTipPointerOver(e) {
+  if (e.pointerType === 'touch') return;
+  const owner = tipOwnerOf(e.target);
+  if (!owner) return;
+  _tipHover = owner;
+  scheduleTip(owner);
+}
+
+function onTipPointerOut(e) {
+  const owner = tipOwnerOf(e.target);
+  if (!owner) return;
+  if (e.relatedTarget && owner.contains(e.relatedTarget)) return;
+  if (_tipHover === owner) _tipHover = null;
+  if (owner === _tipPending) cancelTipTimer();
+  if (owner !== _tipOwner) return;
+
+  if (document.activeElement === owner && owner.matches(':focus-visible')) return;
+  hideTip();
+}
+
+function onTipFocusIn(e) {
+  const owner = tipOwnerOf(e.target);
+  if (!owner || owner !== e.target || !owner.matches(':focus-visible')) return;
+  if (owner.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(owner.tagName)) return;
+  scheduleTip(owner);
+}
+
+function onTipFocusOut(e) {
+  if (e.target !== _tipOwner || e.target === _tipHover) return;
+  hideTip();
+}
+
+function onTipKeyDown(e) {
+  if (!tipKeyHides(e.key)) return;
+  if (!tipIsVisible()) { cancelTipTimer(); return; }
+  hideTip();
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}
+
+function onTipScroll(e) {
+  const owner = _tipOwner || _tipPending;
+  if (!owner) return;
+  const target = e.target;
+  if (target === document || target === document.documentElement || (target.contains && target.contains(owner))) hideTip();
+}
+
+function initTooltips() {
+  if (_tipWired || typeof document.querySelectorAll !== 'function') return;
+  _tipWired = true;
+  document.querySelectorAll('[data-tip]').forEach(function(el) { applyTipAttributes(el, getTip(el)); });
+  document.addEventListener('pointerover', onTipPointerOver);
+  document.addEventListener('pointerout', onTipPointerOut);
+  document.addEventListener('focusin', onTipFocusIn);
+  document.addEventListener('focusout', onTipFocusOut);
+  document.addEventListener('keydown', onTipKeyDown, true);
+  document.addEventListener('pointerdown', function() { hideTip(); }, true);
+  document.addEventListener('scroll', onTipScroll, { capture: true, passive: true });
+}
+
 /* ── acks.js ── */
 
 const ICON_MEMORY = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
@@ -24279,8 +24667,8 @@ function renderIntentTwoLevel(el, intent, detailText, detailBuilder) {
   const chevron = document.createElement('button');
   chevron.className = 'mcp-chevron';
   chevron.type = 'button';
-  chevron.title = 'Détail technique';
   chevron.innerHTML = ICON_CHEVRON_DOWN;
+  setTip(chevron, 'Détail technique');
   const detail = document.createElement('span');
   detail.className = 'mcp-breadcrumb-detail';
   detail.setAttribute('hidden', '');
@@ -24864,14 +25252,14 @@ function markAckDlUnavailable(btn) {
   if (!btn) return;
   btn.classList.add('unavailable');
   btn.disabled = true;
-  btn.title = 'Ressource non disponible';
+  setTip(btn, 'Ressource non disponible');
 }
 
 function _appendAckInspectBtn(wrap, m) {
   const insp = document.createElement('button');
   insp.className = 'ack-inspect';
-  insp.title = 'Inspecter l\'appel';
   insp.innerHTML = ICON_INSPECT;
+  setTip(insp, 'Inspecter l\'appel');
   insp.addEventListener('click', ev => {
 
     ev.stopPropagation();
@@ -24887,8 +25275,8 @@ function _appendAckInspectBtn(wrap, m) {
 function _appendAckOpenAgentBtn(wrap, target) {
   const btn = document.createElement('button');
   btn.className = 'ack-open-agent';
-  btn.title = 'Ouvrir le fil de l\'agent';
   btn.innerHTML = ICON_EYE;
+  setTip(btn, 'Ouvrir le fil de l\'agent');
   btn.addEventListener('click', ev => {
     ev.stopPropagation();
     if (!loadConversation(target.convId)) { btn.remove(); return; }
@@ -24921,9 +25309,9 @@ function _appendAckAuthorizeLink(wrap, target) {
   link.rel = 'noopener noreferrer';
 
   link.appendChild(document.createTextNode('Autoriser'));
-  link.title = target.upstream
+  setTip(link, target.upstream
     ? 'Autoriser l\'accès à ' + target.upstream + ' sur ' + target.origin
-    : 'Autoriser l\'accès sur ' + target.origin;
+    : 'Autoriser l\'accès sur ' + target.origin);
   box.appendChild(link);
 
   const origin = document.createElement('span');
@@ -25052,8 +25440,8 @@ function buildToolAck(m) {
   if (dlTarget) {
     const dl = document.createElement('button');
     dl.className = 'ack-dl';
-    dl.title = 'Télécharger';
     dl.innerHTML = ICON_DOWNLOAD;
+    setTip(dl, 'Télécharger');
     dl.addEventListener('click', () => downloadAckResource(dlTarget, dl));
     wrap.appendChild(dl);
   }
@@ -25537,7 +25925,7 @@ function _inspectThumbnail(parent, record) {
   img.className = 'inspect-thumb';
   img.src = 'data:' + record.mime + ';base64,' + arrayBufferToBase64(record.data);
   img.alt = record.name || 'ressource image';
-  img.title = 'Agrandir';
+  setTip(img, 'Agrandir');
   img.addEventListener('click', () => {
     const full = document.createElement('img');
     full.src = img.src;
@@ -25707,7 +26095,7 @@ function renderToolBlock(block) {
     img.className = 'tool-block-img';
     img.src = 'data:' + (block.mimeType || 'image/png') + ';base64,' + block.data;
     img.alt = 'Image renvoyée par un outil';
-    img.title = 'Agrandir';
+    setTip(img, 'Agrandir');
 
     img.onclick = () => openToolImageLightbox(img);
     box.appendChild(img);
@@ -25721,7 +26109,7 @@ function renderToolBlock(block) {
       img.className = 'tool-block-img';
       img.src = 'data:' + r.mimeType + ';base64,' + r.blob;
       img.alt = 'Image renvoyée par un outil';
-      img.title = 'Agrandir';
+      setTip(img, 'Agrandir');
       img.onclick = () => openToolImageLightbox(img);
       box.appendChild(img);
       return box;
@@ -26199,6 +26587,10 @@ function brandHtmlFor(url) {
 }
 function exportBrandHtml() { return brandHtmlFor(BUILD_REPO_URL); }
 
+function exportNativeTip(html) {
+  return String(html).replace(/ data-tip="/g, ' title="');
+}
+
 function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind, wideTables }) {
   const hasHeader = !!(title && String(title).trim());
   const docTitle = hasHeader ? title : 'Document';
@@ -26267,7 +26659,7 @@ async function renderExportBody(thread, convId) {
       const shown = m.displayText != null ? m.displayText : m.content;
       const attHtml = (m.attachments && m.attachments.length)
         ? '<div class="msg-attachments">' + m.attachments.map(att =>
-            attChipHtml(att, resolveAttachmentThumb(att, convId), false, null)).join('') + '</div>'
+            exportNativeTip(attChipHtml(att, resolveAttachmentThumb(att, convId), false, null))).join('') + '</div>'
         : '';
       const tsHtml = m.ts ? '<div class="msg-ts">' + escHtml(formatMessageTime(m.ts, Date.now())) + '</div>' : '';
 
@@ -27653,6 +28045,26 @@ function togglePin(id) {
 function onExportConv(ev) {
   if (ev && ev.shiftKey) downloadConvMd();
   else exportConvHtml();
+}
+
+const EXPORT_TIP_SHIFT = 'Exporter la conversation en Markdown';
+let _exportTipRest = null;
+
+function wireExportShiftTip() {
+  const btn = document.querySelector('.conv-dl-btn');
+  if (!btn) return;
+  _exportTipRest = getTip(btn);
+  const restore = () => {
+    if (getTip(btn) !== _exportTipRest) setTip(btn, _exportTipRest);
+  };
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Shift' && tipShownOn(btn) && getTip(btn) !== EXPORT_TIP_SHIFT) setTip(btn, EXPORT_TIP_SHIFT);
+  });
+  btn.addEventListener('pointerover', (e) => {
+    if (e.shiftKey && getTip(btn) !== EXPORT_TIP_SHIFT) setTip(btn, EXPORT_TIP_SHIFT);
+  });
+  document.addEventListener('keyup', (e) => { if (e.key === 'Shift') restore(); });
+  window.addEventListener('blur', restore);
 }
 
 function downloadConvMd() {
@@ -29299,8 +29711,7 @@ async function regenerateTitle() {
 
 function setTitleEditable(convId, editable) {
   if (convId !== currentConvId) return;
-  const titleEl = $('conv-title');
-  if (titleEl) titleEl.contentEditable = editable ? 'true' : 'false';
+  applyConvTitleEditable($('conv-title'), editable);
 }
 
 async function summarizeIfNeeded(id) {
@@ -29609,6 +30020,8 @@ async function runBackfill() {
 async function init() {
   applyLogo();
   syncPaletteHintUI();
+  initTooltips();
+  wireExportShiftTip();
 
   try {
     await migrateConversationsToIdbIfNeeded();

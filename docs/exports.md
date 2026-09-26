@@ -462,11 +462,13 @@ ultérieures du même lot).
   repli pour réintégrer le texte ailleurs. `syncConvDownloadBtn()` et
   `setSending` ne gèrent plus qu'un bouton (affichage conditionné au contenu,
   désactivation pendant l'envoi).
-  **L'affordance Shift vit dans le `title` STATIQUE** (« Exporter la
-  conversation en HTML — Shift : Markdown ») : pas de mise à jour au
-  `keydown`/`keyup`, parce qu'une tooltip native déjà affichée ne se rafraîchit
-  pas tant que le curseur n'a pas quitté l'élément — un `title` dynamique
-  mentirait une fois sur deux. Pas non plus de swap d'icône sous Shift : à 14px
+  **L'affordance Shift vit dans l'infobulle du bouton** (« Exporter la
+  conversation en HTML — Shift : Markdown », `data-tip` statique). Jusqu'au lot
+  AH elle restait figée : une infobulle native déjà affichée ne se rafraîchit
+  pas sous le pointeur. L'infobulle MIAOU passe à « Exporter la conversation en
+  Markdown » tant que Shift est enfoncé, seulement si elle est affichée
+  (`wireExportShiftTip`, main.js ; cf. `docs/tooltips.md`). C'est le clic qui
+  décide du format (`ev.shiftKey`). Pas de swap d'icône sous Shift : à 14px
   c'est plus perturbant qu'informatif, et « document `<>` » porte la métaphore
   HTML, pas Markdown (une métaphore = un usage).
   **Corollaire assumé** : sans clavier (tactile), la topbar n'atteint que

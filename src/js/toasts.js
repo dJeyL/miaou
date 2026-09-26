@@ -128,9 +128,9 @@ function buildToastEl(item, opts) {
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'toast-x';
-  close.title = 'Fermer';
-  close.setAttribute('aria-label', 'Fermer la notification');
+  close.setAttribute('aria-label', 'Fermer la notification');   // d'auteur, AVANT setTip
   close.innerHTML = TOAST_CLOSE_SVG;
+  setTip(close, 'Fermer');
   close.addEventListener('click', function() { dismissToast(item.key); });
   el.appendChild(body);
   el.appendChild(close);

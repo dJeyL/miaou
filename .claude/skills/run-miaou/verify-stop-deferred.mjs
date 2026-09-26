@@ -172,7 +172,7 @@ s = await page.evaluate((id) => {
     genStillAlive: _activeGenerations.has(id),
     btnDisabled: btn.disabled,
     btnStoppingClass: btn.classList.contains('stopping'),
-    btnTitle: btn.title,
+    btnTitle: btn.getAttribute('data-tip'),
   };
 }, convId);
 check('le clic pose gen.stopRequested (pris en compte tout de suite)', s.stopRequested === true);
@@ -256,7 +256,7 @@ await page.evaluate((id) => selectConv(id), convId2);
 await page.waitForTimeout(200);
 s = await page.evaluate(() => {
   const b = document.getElementById('send-btn');
-  return { disabled: b.disabled, stopping: b.classList.contains('stopping'), title: b.title };
+  return { disabled: b.disabled, stopping: b.classList.contains('stopping'), title: b.getAttribute('data-tip') };
 });
 check('retour sur la conv : bouton toujours désactivé (rematérialisé)', s.disabled === true);
 check('retour sur la conv : classe .stopping rematérialisée', s.stopping === true);

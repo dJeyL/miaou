@@ -295,7 +295,10 @@
    composant, jamais regroupée ailleurs — un `.provisional` tiers dépendrait de
    l'ordre de CSS_ORDER pour gagner. */
 .conv-title.provisional { font-style: italic; }
-.conv-date { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+/* Largeur de son texte, pas de la ligne : la date porte une infobulle (lot AH),
+   centrée sur la boîte du porteur. Étirée, la bulle et sa flèche visaient le
+   milieu de la ligne, et le vide à droite de la date l'affichait aussi. */
+.conv-date { font-size: 11px; color: var(--text-3); margin-top: 1px; width: fit-content; max-width: 100%; }
 /* Extrait du passage matché, sous l'horodatage — présent uniquement pendant une
    recherche, et seulement quand c'est le CONTENU qui a matché (un match de titre
    se surligne dans le titre, sans ligne supplémentaire).

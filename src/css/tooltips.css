@@ -1,0 +1,67 @@
+/* ── tooltips.css ──────────────────────────────────────────────────────────
+   Infobulles (lot AH) : une bulle unique montée sur body, placée par
+   tooltips.js (renderTip, qui applique le pur tipPlacement). Jetons dans
+   base.css (--float-*, --tip-*). Même matière que le toast, forme distincte :
+   ni filet de niveau, ni glyphe, ni largeur fixe.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Position fixe sur body : la topbar isole les z-index (backdrop-filter) et un
+   contain: paint couperait une bulle montée dans son porteur. z-index 100 :
+   au-dessus des drawers (50), des toasts (55), de la lightbox (60) et de la
+   palette (70), sous l'écran de démarrage (200).
+   Jamais de clic intercepté, même quand elle couvre le bouton voisin.
+   Masquée par visibility et non par display : elle reste mesurable, donc
+   placée AVANT de devenir visible. Le masquage ne dépend d'aucun
+   transitionend (tooltips.js) ; le fondu passe sous le kill-switch global. */
+.tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(var(--tip-max-w), calc(100vw - 16px));
+  padding: var(--tip-pad);
+  background: var(--tip-bg);
+  border: 1px solid var(--tip-bd);
+  border-radius: var(--tip-r);
+  box-shadow: var(--tip-shadow);
+  color: var(--tip-text);
+  font-family: var(--tip-font);
+  font-size: var(--tip-size);
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 120ms var(--ease), visibility 0s linear 120ms;
+}
+.tip.tip-shown {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 120ms var(--ease), visibility 0s;
+}
+
+/* Deux étages : un libellé, puis un détail. */
+.tip .tip-label { display: block; font-weight: 600; }
+.tip .tip-detail { display: block; margin-top: 2px; color: var(--tip-text-2); }
+
+/* Flèche en deux triangles (bordure, puis fond par-dessus), qui vise le
+   centre du porteur : --arrow-x, posé par tooltips.js. data-side="top" : bulle
+   AU-DESSUS du porteur, flèche en bas. */
+.tip::before,
+.tip::after {
+  content: '';
+  position: absolute;
+  left: var(--arrow-x, 50%);
+  width: 0;
+  height: 0;
+  border: var(--tip-arrow) solid transparent;
+  transform: translateX(-50%);
+}
+.tip[data-side="top"]::before    { top: 100%; border-top-color: var(--tip-bd); }
+.tip[data-side="top"]::after     { top: calc(100% - 1px); border-top-color: var(--tip-bg); }
+.tip[data-side="bottom"]::before { bottom: 100%; border-bottom-color: var(--tip-bd); }
+.tip[data-side="bottom"]::after  { bottom: calc(100% - 1px); border-bottom-color: var(--tip-bg); }

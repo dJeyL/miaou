@@ -373,7 +373,8 @@ nommé quand c'est lui qui décide.
 
 ## Explication des parts
 
-Chaque libellé de la table porte une explication en `title` natif, servie par
+Chaque libellé de la table porte une explication en infobulle (`tipAttrs`,
+cf. `docs/tooltips.md`), servie par
 `CTX_EXPLAIN` (ui.js) : une clé par `source` produite par
 `buildContextManifest`, qui reste LA source de la liste — une entrée sans clé
 correspondante s'affiche simplement sans explication (pas de placeholder, pas

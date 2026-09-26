@@ -242,7 +242,7 @@ const glyphState = (sel) => page.evaluate((s) => {
   return {
     opacity: parseFloat(cs.opacity),
     cursor: cs.cursor,
-    title: btn.title || '',
+    title: btn.getAttribute('data-tip') || '',
     visible: !btn.hidden && btn.offsetParent !== null,
   };
 }, sel);

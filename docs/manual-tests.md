@@ -1445,3 +1445,33 @@ bornée), sur un modèle assez lent pour avoir le temps d'agir.
    (titres, tableau, liste, bloc de code coloré, lien).
 6. **Raisonnement.** Sur un modèle à raisonnement, déplier le panneau et
    sélectionner une ligne pendant qu'il s'écrit : la sélection tient.
+
+## Infobulles (lot AH)
+
+Purs et couche DOM sont couverts (`tests/test-utils.js`, `verify-tooltips.mjs`) ;
+ce qui suit demande un lecteur d'écran, des préférences système ou l'œil.
+
+1. **VoiceOver.** Activer VoiceOver (⌘F5), tabuler sur quelques boutons-icônes
+   (paramètres, nouvelle conversation, trombone, envoi, loupe d'un ack) : chacun
+   est annoncé par son nom (« Paramètres »…), pas par « bouton » seul. Sur la
+   pilule du modèle, le nom lu est le modèle, suivi de l'infobulle en
+   description ; sur la pilule d'agents, le compte (« 2 agents »).
+2. **Bouton désactivé.** Lancer un agent, ouvrir le mode déplacement dans la
+   sidebar : survoler la case grisée de la conversation mère affiche la raison.
+3. **Mouvement réduit.** Activer « Réduire les animations » (réglages système) :
+   la bulle apparaît et disparaît sans fondu, et ne reste jamais affichée.
+4. **Bords.** Survoler le bouton de la sidebar (bord gauche) et les paramètres
+   (bord droit) : la bulle reste dans la fenêtre, sa flèche vise le bouton.
+5. **Topbar.** Toute bulle de la topbar s'ouvre sous son bouton, au-dessus du
+   fil, sans être coupée.
+6. **Drawer ouvert.** Réglages ouverts, survoler un bouton du drawer puis Échap :
+   la bulle se ferme, le drawer reste ; un second Échap le ferme.
+7. **Export sous Shift.** Survoler le bouton d'export jusqu'à la bulle, enfoncer
+   Shift : le texte passe à « Markdown », relâcher : il revient. Arriver sur
+   le bouton en tenant déjà Shift : la bulle s'ouvre directement en
+   « Markdown », après le délai habituel. Taper une
+   majuscule dans le composer, pointeur posé sur ce bouton sans bulle : rien
+   n'apparaît.
+8. **Armement.** Cliquer la poubelle d'une conversation sans bouger : la bulle
+   réapparaît aussitôt avec « Cliquer à nouveau pour confirmer », puis revient
+   à « Supprimer » au désarmement.

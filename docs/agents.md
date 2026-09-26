@@ -703,7 +703,7 @@ la fenêtre au lieu de la garder sous une garde subtile.
 Trois points d'UI :
 
 1. La case d'une conversation à enfant actif est **grisée** (`convItemEl`), avec
-   la **raison dans son `title`** — une case inerte sans explication se lit comme
+   la **raison dans son infobulle** — une case inerte sans explication se lit comme
    un bug.
 2. Elle est **exclue de la présélection**, et **dans cet ordre** : `enterMoveMode`
    présélectionne la conversation affichée, donc griser sans exclure produirait
@@ -749,7 +749,7 @@ Trois niveaux, qui ne se remplacent pas :
    inatteignable dans cet état (même raisonnement que la double vérification de
    `continueTruncated`).
 2. **L'apparence** — les deux glyphes **grisés**, `cursor: not-allowed`, et la
-   **raison dans leur `title`** : exactement le vocabulaire de la case de
+   **raison dans leur infobulle** : exactement le vocabulaire de la case de
    déplacement ci-dessus, pour la même raison. Grisé et **non masqué** : un
    bouton qui disparaît puis revient se lit comme un bug d'affichage.
 3. **Le refus au clic** (`enterEditMode`) — ouvrir la zone d'édition
@@ -762,8 +762,8 @@ Deux points d'implémentation qui ne vont pas de soi :
   à chaque tour, la condition non — et la même classe couvre du même coup les
   bulles créées **pendant** que la garde tient.
 - **`pointer-events` reste actif**, contrairement à `body.conv-readonly` qui le
-  coupe. Le couper empêcherait `cursor: not-allowed` de s'afficher et le `title`
-  de paraître — or on veut ici **dire pourquoi**, pas seulement interdire. Le
+  coupe. Le couper empêcherait `cursor: not-allowed` de s'afficher et
+  l'infobulle de paraître — or on veut ici **dire pourquoi**, pas seulement interdire. Le
   clic est neutralisé côté JS, où vit la seule garde qui compte.
 
 **Les deux rappels de `syncLastAssistantActions`** (dans `registerGeneration` et

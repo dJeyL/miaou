@@ -21,8 +21,8 @@ est joignable. Trois états, portés par un prédicat pur unique
 
 | État | Condition | Rendu |
 |---|---|---|
-| `unconfigured` | pas d'URL, ou pas de clef alors que `REQUIRE_API_KEY` | rouge, titre « API non configurée » |
-| `down` | configuré, dernier verdict observé en échec | rouge, titre « Backend injoignable » |
+| `unconfigured` | pas d'URL, ou pas de clef alors que `REQUIRE_API_KEY` | rouge, infobulle « API non configurée » puis « Ouvrir les paramètres » (deux étages) |
+| `down` | configuré, dernier verdict observé en échec | rouge, infobulle « Backend injoignable » |
 | `ok` | configuré, et rien d'observé en échec | vert |
 
 **« Pas configuré » n'est pas « ne répond pas », et c'est le cœur du prédicat.**

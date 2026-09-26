@@ -634,6 +634,16 @@ function exportBrandHtml() { return brandHtmlFor(BUILD_REPO_URL); }
 // <body> et non <html>, dont l'absence d'attribut est un contrat (cf. plus bas,
 // la case de thème est la seule source de vérité). Absent/undefined → élargi,
 // c'est le défaut du réglage, et ça garde les appelants de test inchangés.
+// L'export garde l'infobulle NATIVE (lot AH) : le module de tooltips n'y
+// est pas embarqué. Un gabarit partagé avec l'écran (attChipHtml, dont le nom
+// de pièce jointe porte son infobulle) émet `data-tip` : on le rend en `title`.
+// Seul `data-tip` est converti — un gabarit qui émettrait aussi un second étage
+// ou un aria-label de règle devrait être traité ici, ce qui n'est pas le cas
+// du nom de pièce jointe (texte visible = infobulle, la règle ne pose rien).
+function exportNativeTip(html) {
+  return String(html).replace(/ data-tip="/g, ' title="');
+}
+
 function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind, wideTables }) {
   const hasHeader = !!(title && String(title).trim());
   const docTitle = hasHeader ? title : 'Document';
@@ -735,7 +745,7 @@ async function renderExportBody(thread, convId) {
       const shown = m.displayText != null ? m.displayText : m.content;
       const attHtml = (m.attachments && m.attachments.length)
         ? '<div class="msg-attachments">' + m.attachments.map(att =>
-            attChipHtml(att, resolveAttachmentThumb(att, convId), false, null)).join('') + '</div>'
+            exportNativeTip(attChipHtml(att, resolveAttachmentThumb(att, convId), false, null))).join('') + '</div>'
         : '';
       const tsHtml = m.ts ? '<div class="msg-ts">' + escHtml(formatMessageTime(m.ts, Date.now())) + '</div>' : '';
       // Réponse d'agent (X-1e) : même repli qu'à l'écran, et il fonctionne dans

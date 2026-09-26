@@ -145,7 +145,7 @@ try {
   ).catch(() => {});
   const downDot = await page.evaluate(dotState);
   check('backend arrêté : la pastille passe au ROUGE', downDot.indexOf('err') >= 0, downDot);
-  const downTitle = await page.evaluate(() => document.getElementById('conn-dot').title);
+  const downTitle = await page.evaluate(() => document.getElementById('conn-dot').getAttribute('data-tip'));
   check('le titre dit « injoignable », pas « non configurée »',
     downTitle.indexOf('injoignable') >= 0, downTitle);
 
@@ -190,7 +190,7 @@ try {
   });
   await page.evaluate(() => { syncConfigured(); });
   const unconfDot = await page.evaluate(dotState);
-  const unconfTitle = await page.evaluate(() => document.getElementById('conn-dot').title);
+  const unconfTitle = await page.evaluate(() => document.getElementById('conn-dot').getAttribute('data-tip'));
   check('sans URL : pastille rouge', unconfDot.indexOf('err') >= 0, unconfDot);
   check('sans URL : le titre envoie aux PARAMÈTRES, pas vers un serveur à attendre',
     unconfTitle.indexOf('configur') >= 0, unconfTitle);
@@ -224,7 +224,7 @@ try {
   const bootDot = await page2.evaluate(dotState);
   check('backend mort AVANT l\'ouverture : pastille rouge sans focus préalable',
     bootDot.indexOf('err') >= 0, bootDot);
-  const bootTitle = await page2.evaluate(() => document.getElementById('conn-dot').title);
+  const bootTitle = await page2.evaluate(() => document.getElementById('conn-dot').getAttribute('data-tip'));
   check('et le titre dit « injoignable » (le serveur est configuré, il ne répond pas)',
     bootTitle.indexOf('injoignable') >= 0, bootTitle);
   await page2.close();

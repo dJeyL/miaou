@@ -1393,7 +1393,7 @@ const regen = await page.evaluate(async (bannerShownSrc) => {
     out.afterFirst = {
       armed: btn.classList.contains('armed'),
       bg: getComputedStyle(btn).backgroundColor, accent, err,
-      title: btn.title,
+      title: btn.getAttribute('data-tip'),
       boundary: currentThread.some(e => e.role === 'compaction'),
       runs,
       banner: bannerShown(),
@@ -1481,7 +1481,7 @@ const cont = await page.evaluate(() => {
   let calls = 0;
   dispatchSend = function () { calls++; };
   try { continueTruncated(btn); } finally { dispatchSend = real; }
-  return { present: !!btn, disabled: btn && btn.disabled, title: btn && btn.title, calls };
+  return { present: !!btn, disabled: btn && btn.disabled, title: btn && btn.getAttribute('data-tip'), calls };
 });
 check('témoin : la réponse tronquée porte son bouton « Continuer »', cont.present);
 check('il est DÉSACTIVÉ, avec un title qui dit pourquoi',

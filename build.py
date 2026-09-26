@@ -30,6 +30,7 @@ JS_ORDER = [
     'api.js',
     'ui.js',
     'toasts.js',
+    'tooltips.js',
     'acks.js',
     'export.js',
     'multitab.js',
@@ -48,6 +49,7 @@ CSS_ORDER = [
     'tools.css',
     'palette.css',
     'toasts.css',
+    'tooltips.css',
     'responsive.css',
     'theme-light.css',
 ]

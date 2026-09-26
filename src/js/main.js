@@ -1924,15 +1924,53 @@ function togglePin(id) {
 
 // Bouton d'export unique de la topbar (onclick="onExportConv(event)").
 // Un seul bouton pour deux formats : HTML par défaut (autonome, embarque les
-// traces d'outils), Markdown avec Shift. L'affordance vit dans le `title`
-// STATIQUE du bouton — pas de mise à jour au keydown : une tooltip native déjà
-// affichée ne se rafraîchit pas tant que le curseur n'a pas quitté l'élément,
-// le feedback serait donc trompeur une fois sur deux. Corollaire assumé : sans
-// clavier (tactile), seul l'export HTML est atteignable depuis la topbar, le
-// Markdown restant accessible par la palette de commandes.
+// traces d'outils), Markdown avec Shift. L'affordance vit dans l'infobulle du
+// bouton (`data-tip` statique d'index.html), qui suit Shift pendant qu'on la
+// lit (wireExportShiftTip). C'est le clic qui décide du format (`ev.shiftKey`),
+// jamais l'état de l'infobulle. Corollaire assumé : sans clavier (tactile), seul
+// l'export HTML est atteignable depuis la topbar, le Markdown restant
+// accessible par la palette de commandes.
 function onExportConv(ev) {
   if (ev && ev.shiftKey) downloadConvMd();
   else exportConvHtml();
+}
+
+// Infobulle du bouton d'export sous Shift (lot AH). Avant le lot, l'infobulle
+// native ne se rafraîchissait pas sous le pointeur : l'affordance restait
+// statique. La bulle MIAOU suit `setTip` en place, d'où l'ajustement.
+//
+// N'ajuste QUE la bulle AFFICHÉE sur le bouton (`tipShownOn`) : un Shift tapé
+// ailleurs (une majuscule dans le composer, pointeur posé sur la topbar) ne
+// fait rien apparaître. Tient parce que Shift seul ne masque pas la bulle
+// (`tipKeyHides`) : sans cette exemption, la règle « toute frappe masque » l'aurait masquée
+// avant ce handler.
+// Au relâchement (ou à la perte de focus de la fenêtre, qui avale le keyup), le
+// texte de repos est TOUJOURS rétabli, affiché ou non — sans quoi un Shift
+// relâché hors du bouton laisserait « Markdown » au prochain survol.
+// Shift DÉJÀ enfoncé quand le pointeur arrive : `pointerover` porte `shiftKey`.
+// Écouté sur le bouton lui-même, il passe AVANT le listener délégué du module
+// (sur document, en bulle) : le module ne tient pas encore le bouton pour
+// « sous le pointeur », donc ce setTip change le texte sans rien afficher, et
+// la bulle suit son délai normal. Sur document, le même setTip déclencherait
+// le réaffichage immédiat sous le pointeur et sauterait le délai à froid.
+const EXPORT_TIP_SHIFT = 'Exporter la conversation en Markdown';
+let _exportTipRest = null;   // texte de repos, lu une fois sur le data-tip statique
+
+function wireExportShiftTip() {
+  const btn = document.querySelector('.conv-dl-btn');
+  if (!btn) return;
+  _exportTipRest = getTip(btn);
+  const restore = () => {
+    if (getTip(btn) !== _exportTipRest) setTip(btn, _exportTipRest);
+  };
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Shift' && tipShownOn(btn) && getTip(btn) !== EXPORT_TIP_SHIFT) setTip(btn, EXPORT_TIP_SHIFT);
+  });
+  btn.addEventListener('pointerover', (e) => {
+    if (e.shiftKey && getTip(btn) !== EXPORT_TIP_SHIFT) setTip(btn, EXPORT_TIP_SHIFT);
+  });
+  document.addEventListener('keyup', (e) => { if (e.key === 'Shift') restore(); });
+  window.addEventListener('blur', restore);
 }
 
 // Exporte la conversation courante en Markdown. Messages visibles (user +
@@ -4722,8 +4760,7 @@ async function regenerateTitle() {
 // currentConvId courant), pour ne pas rendre éditable le titre d'une autre conv.
 function setTitleEditable(convId, editable) {
   if (convId !== currentConvId) return;
-  const titleEl = $('conv-title');
-  if (titleEl) titleEl.contentEditable = editable ? 'true' : 'false';
+  applyConvTitleEditable($('conv-title'), editable);   // attribut + infobulle (ui.js)
 }
 
 // ── Résumé / mots-clés à la sortie d'une conversation ───────────────────────
@@ -5389,6 +5426,8 @@ async function runBackfill() {
 async function init() {
   applyLogo();
   syncPaletteHintUI();   // libellé Cmd+K / Ctrl+K selon la plateforme (statique, une fois)
+  initTooltips();        // listeners délégués + règle ARIA des data-tip statiques (lot AH)
+  wireExportShiftTip();  // infobulle d'export qui suit Shift (lot AH)
 
   // Hydratation du cache conversations/résumés (lot U-1) AVANT tout rendu et
   // avant migrateSpacesIfNeeded (qui lit loadConversations) : les lecteurs sont

@@ -159,10 +159,12 @@
 
   /* ─── Éléments flottants et toasts (lot AG) ───────────────────────────
      Deux étages. --float-* : la matière d'un élément FLOTTANT (surface,
-     bordure, rayon, ombre, typo), que partageront toasts et futurs tooltips —
-     c'est le point d'harmonie. --toast-* : ce qui n'appartient qu'au toast
-     (géométrie, filet de niveau, glyphe), que le tooltip ne reprendra pas —
-     c'est le point de dissemblance. L'ombre est celle du .model-menu.
+     bordure, rayon, ombre, typo), que partagent toasts et tooltips — c'est le
+     point d'harmonie. --toast-* : ce qui n'appartient qu'au toast
+     (géométrie, filet de niveau, glyphe), que le tooltip ne reprend pas —
+     c'est le point de dissemblance ; le tooltip a son propre étage --tip-*
+     (plus bas, lot AH), adossé lui aussi à --float-*. L'ombre est celle
+     du .model-menu.
      Niveaux : jetons PROPRES et non réemplois (--pending est scopé à l'attente
      d'autorisation) ; info = --ok, les seuls toasts de ce niveau étant les
      « rétabli » (D5). */
@@ -188,6 +190,22 @@
   --toast-info:   var(--ok);
   --toast-warn:   #d9a441;
   --toast-err:    var(--err);
+  /* --tip-* (lot AH) : ce qui n'appartient qu'à l'infobulle, adossé à
+     --float-* comme --toast-* : géométrie plus serrée que le toast, rayon
+     --r-sm, typo d'un cran en dessous, flèche. Aucun pendant clair : seule
+     l'ombre change de thème, et elle vient de --float-shadow. */
+  --tip-bg:       var(--float-bg);
+  --tip-bd:       var(--float-bd);
+  --tip-r:        var(--r-sm);
+  --tip-font:     var(--float-font);
+  --tip-text:     var(--float-text);
+  --tip-text-2:   var(--text-2);
+  --tip-shadow:   var(--float-shadow);
+  --tip-size:     12.5px;
+  --tip-pad:      5px 9px;
+  --tip-max-w:    280px;
+  --tip-arrow:    5px;
+  --tip-offset:   8px;
 }
 
 /* ═══ Palettes (axe orthogonal au thème clair/sombre) ═══ */

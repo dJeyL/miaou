@@ -4900,3 +4900,140 @@ describe('healthFronts — fronts de santé des services (lot AG)', function() {
     expect(ops(healthFronts(snap(null, { f: 'ok' }), snap(null, {})))).toEqual([]);
   });
 });
+
+describe('normalizeTip / tipFlatText — texte d\'infobulle (lot AH)', function() {
+  it('chaîne : un étage ; vide ou blanc : pas de bulle', function() {
+    expect(normalizeTip('Paramètres')).toEqual({ label: 'Paramètres', detail: '' });
+    expect(normalizeTip('')).toBe(null);
+    expect(normalizeTip('   ')).toBe(null);
+    expect(normalizeTip(null)).toBe(null);
+    expect(normalizeTip({ label: '', detail: '' })).toBe(null);
+  });
+  it('deux étages ; un détail seul devient le libellé', function() {
+    expect(normalizeTip({ label: 'Autorisation requise', detail: 'Cliquer pour ouvrir.' }))
+      .toEqual({ label: 'Autorisation requise', detail: 'Cliquer pour ouvrir.' });
+    expect(normalizeTip({ detail: 'Seul' })).toEqual({ label: 'Seul', detail: '' });
+  });
+  it('texte plat : « libellé. détail », sans doubler la ponctuation', function() {
+    expect(tipFlatText({ label: 'Backend injoignable', detail: 'Cliquer pour ouvrir les serveurs API.' }))
+      .toBe('Backend injoignable. Cliquer pour ouvrir les serveurs API.');
+    expect(tipFlatText({ label: 'Hors ligne !', detail: 'Réessayer.' })).toBe('Hors ligne ! Réessayer.');
+    expect(tipFlatText('Envoyer')).toBe('Envoyer');
+    expect(tipFlatText('')).toBe('');
+  });
+});
+
+describe('tipAriaRule — nom et description accessibles (lot AH)', function() {
+  it('texte vide : rien à poser', function() {
+    expect(tipAriaRule('', { text: '', ariaLabel: '' })).toEqual({ kind: null, text: '' });
+  });
+  it('bouton-icône sans aria-label d\'auteur : l\'infobulle devient son nom', function() {
+    expect(tipAriaRule('Paramètres', { text: '' })).toEqual({ kind: 'label', text: 'Paramètres' });
+    expect(tipAriaRule({ label: 'Backend injoignable', detail: 'Cliquer.' }, {}))
+      .toEqual({ kind: 'label', text: 'Backend injoignable. Cliquer.' });
+  });
+  it('porteur à texte visible : description si l\'infobulle dit autre chose', function() {
+    expect(tipAriaRule('Le bloc d\'identité.', { text: 'Identité' }))
+      .toEqual({ kind: 'description', text: 'Le bloc d\'identité.' });
+  });
+  it('aria-label d\'auteur : jamais remplacé, l\'infobulle passe en description', function() {
+    expect(tipAriaRule('Reconnecter', { ariaLabel: 'Relire la liste des outils' }))
+      .toEqual({ kind: 'description', text: 'Reconnecter' });
+  });
+  it('infobulle identique au nom, ou contenue dans lui : rien', function() {
+    expect(tipAriaRule('Envoyer', { text: ' envoyer ' }).kind).toBe(null);
+    expect(tipAriaRule('Copier', { ariaLabel: 'Copier cette interjection' }).kind).toBe(null);
+    expect(tipAriaRule('Fermer', { ariaLabel: 'Fermer la notification' }).kind).toBe(null);
+  });
+});
+
+describe('tipAttrs — attributs de gabarit échappés (lot AH)', function() {
+  it('bouton-icône : data-tip, aria-label marqué', function() {
+    expect(tipAttrs('Paramètres')).toBe(' data-tip="Paramètres" aria-label="Paramètres" data-tip-aria="label"');
+  });
+  it('guillemets, apostrophes et < échappés en position d\'attribut', function() {
+    var s = tipAttrs('Renommer « a"b\'c<d> »', { text: 'x' });
+    expect(s).toBe(' data-tip="Renommer « a&quot;b&#39;c&lt;d&gt; »" aria-description="Renommer « a&quot;b&#39;c&lt;d&gt; »" data-tip-aria="description"');
+  });
+  it('deux étages : data-tip-detail, texte plat en ARIA', function() {
+    expect(tipAttrs({ label: 'A', detail: 'B' }))
+      .toBe(' data-tip="A" data-tip-detail="B" aria-label="A. B" data-tip-aria="label"');
+  });
+  it('aria-label d\'auteur émis NON marqué ; infobulle vide : lui seul reste', function() {
+    expect(tipAttrs('Copier', { ariaLabel: 'Copier cette interjection' }))
+      .toBe(' aria-label="Copier cette interjection" data-tip="Copier"');
+    expect(tipAttrs('', { ariaLabel: 'Nom' })).toBe(' aria-label="Nom"');
+    expect(tipAttrs('')).toBe('');
+  });
+});
+
+describe('tipPlacement — placement de la bulle (lot AH)', function() {
+  var base = { anchor: { top: 400, bottom: 432, left: 500, width: 32 }, tipW: 100, tipH: 26, vw: 1200, margin: 8, offset: 8, arrowInset: 10 };
+  function m(o) { return Object.assign({}, base, o || {}); }
+  it('place suffisante : au-dessus, centrée, flèche au milieu', function() {
+    expect(tipPlacement(m())).toEqual({ side: 'top', top: 400 - 8 - 26, left: 516 - 50, arrowX: 50 });
+  });
+  it('porteur de topbar collé en haut : retournée au-dessous', function() {
+    var p = tipPlacement(m({ anchor: { top: 8, bottom: 40, left: 500, width: 32 } }));
+    expect(p.side).toBe('bottom');
+    expect(p.top).toBe(48);
+  });
+  it('limite exacte : la marge suffit encore au-dessus', function() {
+    expect(tipPlacement(m({ anchor: { top: 8 + 8 + 26, bottom: 74, left: 500, width: 32 } })).side).toBe('top');
+    expect(tipPlacement(m({ anchor: { top: 8 + 8 + 25, bottom: 73, left: 500, width: 32 } })).side).toBe('bottom');
+  });
+  it('bord gauche : décalée dans la fenêtre, la flèche vise toujours le porteur', function() {
+    var p = tipPlacement(m({ anchor: { top: 400, bottom: 432, left: 10, width: 32 } }));
+    expect(p.left).toBe(8);
+    expect(p.arrowX).toBe(26 - 8);
+  });
+  it('bord droit : décalée, flèche vers le porteur', function() {
+    var p = tipPlacement(m({ anchor: { top: 400, bottom: 432, left: 1160, width: 32 } }));
+    expect(p.left).toBe(1200 - 8 - 100);
+    expect(p.arrowX).toBe(1176 - 1092);
+  });
+  it('porteur dans un coin : flèche bornée hors des coins arrondis', function() {
+    var p = tipPlacement(m({ anchor: { top: 400, bottom: 432, left: 0, width: 8 } }));
+    expect(p.left).toBe(8);
+    expect(p.arrowX).toBe(10);
+    var q = tipPlacement(m({ anchor: { top: 400, bottom: 432, left: 1195, width: 5 } }));
+    expect(q.arrowX).toBe(90);
+  });
+  it('porteur plus large que la bulle : centrée, flèche au milieu', function() {
+    var p = tipPlacement(m({ anchor: { top: 400, bottom: 432, left: 300, width: 400 } }));
+    expect(p.left).toBe(450);
+    expect(p.arrowX).toBe(50);
+  });
+  it('bulle plus large que la fenêtre : collée à la marge gauche', function() {
+    expect(tipPlacement(m({ vw: 90 })).left).toBe(8);
+  });
+});
+
+describe('tipShowDelay — délais (lot AH)', function() {
+  it('froid : délai plein', function() {
+    expect(tipShowDelay({ visible: false, lastHideAt: null }, 1000)).toBe(TIP_COLD_MS);
+  });
+  it('chaud : une bulle visible, ou masquée il y a moins que la fenêtre', function() {
+    expect(tipShowDelay({ visible: true, lastHideAt: null }, 1000)).toBe(0);
+    expect(tipShowDelay({ visible: false, lastHideAt: 1000 }, 1000 + TIP_WARM_WINDOW_MS - 1)).toBe(0);
+  });
+  it('fenêtre expirée : de nouveau à froid', function() {
+    expect(tipShowDelay({ visible: false, lastHideAt: 1000 }, 1000 + TIP_WARM_WINDOW_MS)).toBe(TIP_COLD_MS);
+  });
+});
+
+describe('tipKeyHides — frappe qui masque la bulle (lot AH)', function() {
+  it('une touche de modification seule ne masque pas', function() {
+    expect(tipKeyHides('Shift')).toBe(false);
+    expect(tipKeyHides('Control')).toBe(false);
+    expect(tipKeyHides('Alt')).toBe(false);
+    expect(tipKeyHides('Meta')).toBe(false);
+  });
+  it('toute autre touche masque, Échap compris', function() {
+    expect(tipKeyHides('a')).toBe(true);
+    expect(tipKeyHides('A')).toBe(true);
+    expect(tipKeyHides('Escape')).toBe(true);
+    expect(tipKeyHides('Tab')).toBe(true);
+    expect(tipKeyHides('Enter')).toBe(true);
+  });
+});

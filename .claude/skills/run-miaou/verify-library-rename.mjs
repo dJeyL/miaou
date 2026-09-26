@@ -307,7 +307,7 @@ const meta = await page.evaluate(() => {
   return {
     text: sub.textContent,
     lines: Math.round(sub.getBoundingClientRect().height / one),
-    mimeTip: sub.querySelector('span[title]') ? sub.querySelector('span[title]').title : null,
+    mimeTip: sub.querySelector('span[data-tip]') ? sub.querySelector('span[data-tip]').getAttribute('data-tip') : null,
     // Ce que le formateur rend pour le createdAt réel de la fixture (1) :
     // l'attendu est calculé depuis la MÊME source que l'affichage, sinon le
     // contrôle rejouerait la logique de formatage au lieu de la vérifier.

@@ -223,7 +223,7 @@ HTML, ou à la synchro multi-onglets.
     office de stop pendant le stream (`onSendBtn()` → `abortStream()`,
     `setComposerStreaming(on)` bascule `.streaming`/icônes `.ic-send`/
     `.ic-stop`) ; pendant l'attente d'un stop différé, `setStopping(true)`
-    **désactive** le bouton et pulse `.ic-stop` (`title` : « Arrêt en cours… »)
+    **désactive** le bouton et pulse `.ic-stop` (infobulle : « Arrêt en cours… »)
     — un reclic ne doit pas sembler sans effet, il doit être impossible.
 
     **Chien de garde d'inactivité (2026-09-01).** Le même `AbortController`
