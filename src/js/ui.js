@@ -412,10 +412,10 @@ if (window.marked) {
 }
 
 // ── Rendu markdown / coloration ─────────────────────────────────────────────
-// Résout les [conv_ref:ID] / [conv_ref:ID|Titre] (CONV_REF_DOCTRINE, tools.js)
-// en lien Markdown standard AVANT marked.parse — jamais après : une fois passés
-// par le parseur, les crochets bruts seraient déjà interprétés (syntaxe de lien
-// incomplète) et donc invisibles/imprévisibles à ce stade. Le href pointe vers un
+// Résout les [conv_ref:ID] / [conv_ref:ID|Titre] (REFS_DOCTRINE, tools.js)
+// en lien — HTML inline porteur d'infobulle depuis le lot AI — AVANT
+// marked.parse, jamais après : une fois passés par le parseur, les crochets
+// bruts seraient déjà interprétés (syntaxe de lien incomplète) et donc invisibles/imprévisibles à ce stade. Le href pointe vers un
 // pseudo-schéma `#miaou-conv:ID` intercepté par délégation de clic (listener
 // anonyme posé une fois sur `#messages` dans init(), main.js — greper le
 // sélecteur `a[href^="#miaou-conv:"]`), jamais une vraie navigation. Titre :
@@ -443,8 +443,103 @@ function resolveConvRefs(text, opts) {
       return '~~' + safeLabel + ' (supprimée)~~';
     }
     if (asPlainText) return safeLabel;
-    return '[' + safeLabel + '](#miaou-conv:' + encodeURIComponent(id) + ')';
+    // HTML inline plutôt qu'un lien Markdown depuis le lot AI : c'est ce qui
+    // lui donne une infobulle, comme au lien de fichier. Libellé échappé par le
+    // même refLabelHtml (utils.js), qui garde marked hors du titre.
+    return '<a class="conv-ref" href="#miaou-conv:' + escHtml(encodeURIComponent(id)) + '"' +
+      tipAttrs('Ouvrir la conversation', { text: label.replace(/\s+/g, ' ').trim() }) + '>' +
+      refLabelHtml(label) + '</a>';
   });
+}
+
+// Point UNIQUE de résolution des marqueurs de référence (lot AI), appelé par
+// les deux chemins de rendu du texte assistant : renderMd et le rendu par blocs
+// du streaming. La forme déviante « lien Markdown vers le marqueur » est d'abord
+// ramenée au marqueur (normalizeRefLinkForms, utils.js). conv_ref et file_ref
+// se résolvent en HTML inline
+// (resolveFileRefMarkers, utils.js — le glyphe et l'infobulle demandent une
+// structure que le Markdown ne donne pas ; DOMPurify passe dessus ensuite).
+// `opts.refCtx` ({ convId, spaceId }) : la conversation dont le texte est rendu,
+// pour le libellé et le glyphe d'un file_ref ; par défaut celle affichée —
+// seule à être peinte (piège 28 : une génération sans écran ne rend rien).
+// L'export la passe explicitement.
+// `opts.webSources` : le registre des sources web (webSourceRegistry, utils.js)
+// de cette même conversation, pour l'état et le libellé des pastilles. Même
+// défaut que `refCtx` et pour la même raison : le fil affiché, dont le thread
+// EST `currentThread` quand une génération le peint (openConversation adopte
+// `gen.thread`). L'export passe le sien.
+function resolveRefMarkers(text, opts) {
+  const ctx = (opts && opts.refCtx) || null;
+  const withFiles = resolveFileRefMarkers(resolveConvRefs(normalizeRefLinkForms(text), opts), function(h) {
+    return fileRefRecord(h, ctx);
+  }, opts);
+  if (withFiles.indexOf('[web_ref:') < 0) return withFiles;
+  const reg = (opts && opts.webSources) || displayedWebSources();
+  return resolveWebRefMarkers(withFiles, reg, opts);
+}
+
+// Registre des sources web du fil affiché, recalculé seulement quand ce qu'il
+// lit a changé (webSourceRegistrySignature) : le rendu par blocs du streaming
+// passe ici à chaque delta, alors que le registre ne bouge qu'à l'arrivée d'un
+// ack. Mémo de VUE, jamais persisté.
+let _webSourcesMemo = { thread: null, sig: '', reg: null };
+function displayedWebSources() {
+  const t = currentThread;
+  const sig = webSourceRegistrySignature(t);
+  if (_webSourcesMemo.thread !== t || _webSourcesMemo.sig !== sig || !_webSourcesMemo.reg) {
+    _webSourcesMemo = { thread: t, sig: sig, reg: webSourceRegistry(t) };
+  }
+  return _webSourcesMemo.reg;
+}
+
+// Record derrière un [file_ref:…], ou null : la résolution de tous les outils
+// (resolveHandleRecord, tools.js — dérogation d'agent comprise), SANS lecture
+// IDB en repli (le cache est ce qu'on a le droit de voir), puis le filtre de
+// conversation que le cache ne fait pas pour un res_… (fileRefRecordInScope).
+function fileRefRecord(handle, ctx) {
+  if (typeof resolveHandleRecord !== 'function') return null;
+  const c = toolCtx(ctx || undefined);
+  const record = resolveHandleRecord(handle, c);
+  return fileRefRecordInScope(handle, record, c.convId) ? record : null;
+}
+
+// Libellés de repli pour neutralizeRefMarkers (utils.js). `ctx` null : pas de
+// nom de fichier (appelant qui ne sait pas quelle conversation il traite —
+// résumé et titrage), le handle reste.
+function refMarkerLookups(ctx) {
+  return {
+    convTitle: function(id) {
+      const e = typeof getSummaryEntry === 'function' ? getSummaryEntry(id) : null;
+      return e && e.title ? e.title : '';
+    },
+    fileName: ctx ? function(h) { const r = fileRefRecord(h, ctx); return r ? r.name : ''; } : null,
+  };
+}
+
+// Clic sur un lien de fichier (délégation dans init, main.js). Résolu dans la
+// conversation AFFICHÉE, au moment du clic. Image → lightbox (qui porte le
+// téléchargement), sinon téléchargement direct, nommé comme celui d'un ack.
+function openFileRef(handle) {
+  const record = fileRefRecord(handle, { convId: currentConvId, spaceId: activeSpaceId });
+  if (!record || !record.data) { toastFileRefMissing(); return; }
+  const mime = record.mime || 'application/octet-stream';
+  if (mime.indexOf('image/') === 0) { openImageRecordLightbox(record); return; }
+  downloadFile(resourceDownloadName(record.name, mime), record.data, mime);
+}
+
+// Lightbox d'un record image. Un res_… produit par un outil (_storeBlock) n'a
+// pas les dimensions figées d'une pièce jointe (`w`/`h`, storeAttachment) : on
+// les mesure en décodant l'image plutôt que d'ouvrir un cadre 800×600 qui la
+// déformerait. Décodage raté : la lightbox s'ouvre quand même, au format par
+// défaut.
+function openImageRecordLightbox(record) {
+  if (record.w && record.h) { openAttachmentLightbox(record); return; }
+  const probe = new Image();
+  probe.onload = function() {
+    openAttachmentLightbox(Object.assign({}, record, { w: probe.naturalWidth, h: probe.naturalHeight }));
+  };
+  probe.onerror = function() { openAttachmentLightbox(record); };
+  probe.src = 'data:' + record.mime + ';base64,' + arrayBufferToBase64(record.data);
 }
 
 // Ouverture des liens du markdown rendu dans un nouvel onglet. Posé en hook
@@ -459,7 +554,8 @@ function resolveConvRefs(text, opts) {
 //   - `#miaou-conv:` — pseudo-schéma résolu par resolveConvRefs, intercepté en
 //     délégation de clic (main.js) qui fait preventDefault + selectConv. Un
 //     `target` y ouvrirait un second MIAOU sur l'ancre au lieu de changer de
-//     conversation.
+//     conversation. Idem `#miaou-file:` (resolveFileRefMarkers → openFileRef).
+//     Les deux sont couverts par le test d'ancre ci-dessous.
 //   - toute autre ancre pure (`#…`) — navigation interne au document, pertinente
 //     surtout dans l'export standalone (sommaire de document converti).
 // `rel="noopener noreferrer"` systématique avec `target` : sans lui, la page
@@ -486,8 +582,12 @@ if (window.DOMPurify) {
 function sanitizeHtml(html) {
   return window.DOMPurify ? DOMPurify.sanitize(html) : html;
 }
+// `opts.refs === false` : aucun marqueur résolu. Pour les textes qui ne sont
+// pas une réponse dans une conversation (prompt racine affiché, consignes MCP,
+// contenu de skill) : la doctrine y cite les marqueurs en exemple, et un
+// `[file_ref:HANDLE]` n'y désigne rien.
 function renderMd(text, opts) {
-  const resolved = resolveConvRefs(text, opts);
+  const resolved = (opts && opts.refs === false) ? String(text) : resolveRefMarkers(text, opts);
   if (!window.marked) return escHtml(resolved).replace(/\n/g, '<br>');
   return sanitizeHtml(marked.parse(resolved, { breaks: true }));
 }
@@ -2363,7 +2463,8 @@ function downloadMsgMd(btn) {
   const msg = idx >= 0 ? currentThread[idx] : null;
   const modelStr = (msg && msg.model) ? ' (' + msg.model + ')' : '';
   const header = '### MIAOU' + modelStr + '\n\n';
-  downloadFile('miaou-message.md', header + trace + raw, 'text/markdown');
+  const text = neutralizeRefMarkers(raw, 'md', refMarkerLookups({ convId: currentConvId, spaceId: activeSpaceId }));
+  downloadFile('miaou-message.md', header + trace + text, 'text/markdown');
 }
 
 // Copie le markdown source d'un message (bulle assistant ou user) dans le
@@ -2376,8 +2477,12 @@ function copyMsg(btn) {
   if (!wrap) return;
   let text;
   if (wrap.classList.contains('assistant')) {
+    // Marqueurs de référence neutralisés : collé ailleurs, un [file_ref:…]
+    // ne se résout plus (le texte affiché, lui, en a fait un lien).
     const body = wrap.querySelector('.body');
-    text = body && body.dataset.raw;
+    text = body && body.dataset.raw
+      ? neutralizeRefMarkers(body.dataset.raw, 'copy', refMarkerLookups({ convId: currentConvId, spaceId: activeSpaceId }))
+      : null;
   } else {
     const idx = msgIndex(wrap);
     const m = idx >= 0 ? currentThread[idx] : null;
@@ -2699,6 +2804,10 @@ const _streamBlocks = new WeakMap();
 function renderStreamBlocks(wrap, body, full, opts) {
   const o = opts || {};
   const caretHtml = '<span class="cursor-blink"></span>';
+  // Streaming (caret) : un marqueur de référence encore ouvert en queue est
+  // masqué le temps qu'il se referme (maskOpenRefMarker, utils.js). Jamais au
+  // rendu final.
+  if (o.caret) full = maskOpenRefMarker(full);
   const fullRender = () => {
     _streamBlocks.delete(body);
     body.innerHTML = renderMd(full) + (o.caret ? caretHtml : '');
@@ -2712,7 +2821,7 @@ function renderStreamBlocks(wrap, body, full, opts) {
   // quelles — `{ breaks: true }` seul perdrait GFM (tableaux) et le renderer de
   // code posé par marked.use.
   const mdOpts = Object.assign({}, marked.defaults, { breaks: true });
-  const tokens = marked.lexer(resolveConvRefs(full), mdOpts);
+  const tokens = marked.lexer(resolveRefMarkers(full), mdOpts);
   // Un bloc HTML brut peut ouvrir une balise qu'un bloc suivant referme :
   // assaini seul, il ne se recolle pas comme dans un rendu d'un seul tenant.
   // Toléré pendant le streaming (transitoire), jamais pour le rendu définitif.
@@ -6203,7 +6312,7 @@ function openSettings() {
   $('set-wide-tables').checked = s.wideTables !== false;
   const pre = $('root-prompt-pre');
   if (pre && !pre.dataset.loaded) {
-    pre.innerHTML = renderMd(rootSystemPromptDisplay());
+    pre.innerHTML = renderMd(rootSystemPromptDisplay(), { refs: false });
     pre.dataset.loaded = '1';
   }
   const lbl = $('build-ts-label');
@@ -7482,7 +7591,7 @@ function buildToolNsInstructions(markdown) {
 
   const body = document.createElement('div');
   body.className = 'tool-ns-instructions-body body';
-  body.innerHTML = renderMd(markdown);
+  body.innerHTML = renderMd(markdown, { refs: false });
   box.appendChild(body);
 
   return box;
@@ -8943,7 +9052,7 @@ function toggleSystemSkillContent(card, slug, btn) {
   if (btn) btn.textContent = 'Fermer';
   if (el.dataset.loaded === '1') return;
   getSkillRecord(slug).then(rec => {
-    el.innerHTML = renderMd(rec ? (rec.content || '') : '');
+    el.innerHTML = renderMd(rec ? (rec.content || '') : '', { refs: false });
     el.dataset.loaded = '1';
   }).catch(() => {});
 }

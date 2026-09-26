@@ -129,8 +129,35 @@ assumé). `tipPlacement` (pur) reçoit des grandeurs MESURÉES à chaque afficha
 au-dessus du porteur par défaut, retournée au-dessous quand la place manque (cas
 nominal de toute la topbar), décalée pour rester dans la fenêtre, flèche visant
 le centre du porteur, bornée hors des coins arrondis (`TIP_ARROW_INSET`).
+Le porteur mesuré est sa **boîte de ligne**, pas sa boîte englobante
+(`tipAnchorRect`, pur, sur `getClientRects()`) : un porteur EN LIGNE coupé sur
+deux lignes (lien de fichier ou de conversation dans un paragraphe, lot AI) a
+une boîte englobante qui couvre les deux, et la bulle visait le milieu du
+paragraphe. Ancrage sur la ligne sous le pointeur (coordonnées retenues par
+`onTipPointerOver` à l'ENTRÉE sur le porteur, `_tipPoint`), la plus proche
+verticalement dans l'interligne, la première au focus clavier. Un porteur boîte
+n'a qu'une boîte : rien ne change pour lui.
+**Icône (lot AI, seule extension du module).** Un champ `icon` facultatif pose
+une image à côté du libellé, comme la favicon d'un onglet (`data-tip-icon`,
+classe `has-icon`, le détail aligné sur le libellé). Deux valeurs seulement :
+une data-URL matricielle validée par `isSafeIconSrc` (PNG, ICO, GIF, JPEG,
+WebP en base64 — SVG exclu), posée en `src` par propriété ; ou
+`TIP_GENERIC_ICON`, un globe dessiné en CSS (`--globe-glyph`, base.css). Toute
+autre valeur est abandonnée par `normalizeTip`, avant d'atteindre un attribut.
+Emploi : les pastilles de source web (`webSourceTip`, utils.js), dont
+l'infobulle porte toujours une icône — le globe quand le site n'a pas fourni
+de favicon.
+
 Fondu sous le kill-switch global ; le masquage ne dépend d'aucun
 `transitionend`.
+
+## Porteurs nés dans du contenu rendu
+
+Les liens `conv_ref` et `file_ref` et les pastilles `web_ref` du texte
+assistant (`docs/tools.md`) sont émis en HTML inline AVANT marked, avec leurs
+attributs posés par `tipAttrs` (sauts de ligne du détail en `&#10;`) —
+la même règle ARIA que tout gabarit. DOMPurify garde `data-*` et `aria-*` :
+aucune passe sur le DOM rendu, donc pas de second écrivain de l'infobulle.
 
 ## Hors du module
 

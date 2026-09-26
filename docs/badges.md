@@ -276,6 +276,14 @@ passe** (`dispatchSend` ne l'appelle jamais). Deux objets, deux natures, deux
 pilules voisines ; les fusionner serait une erreur de catégorie. Leur
 cohabitation est rare (les tâches de fond durent < 1 s).
 
+Les deux pilules sont identiques sauf leur glyphe, et **la différence de glyphe
+est voulue** (Julien, 2026-09-26) : le spinner de `.bg-activity` appartient à la
+famille des opérations techniques courtes (menu des modèles, souvenir en
+traitement), la pastille pulsante à celle des générations (patienteur, badges).
+Sur une tâche < 1 s, la pulsation ne montrerait qu'un scintillement terne ; et
+deux pastilles côte à côte se liraient « encore un agent ». Le raisonnement
+complet est en commentaire de `.bg-activity` (chat.css).
+
 **Le mot « agent » est un choix produit assumé** (Julien, 2026-08-23), contre
 une réserve initiale de l'implémenteur. Deux raisons l'ont invalidée : `A` sera
 le raccourci de la palette en T-3a (le terme est déjà engagé ailleurs, l'éviter

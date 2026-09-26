@@ -425,7 +425,13 @@ async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
       delete ackEntry.error;              // rejeu réussi : échec transitoire effacé
       clearAuthorizationRefusal(ackEntry);   // les marqueurs d'autorisation suivent `error`
     }
-    return { content, isError: !!(result && result.isError), ackEntry };
+    // `_meta` du résultat (lot AI) : canal HORS MODÈLE d'un outil vers
+    // l'application — seul `fetch_url` l'emploie aujourd'hui, sous la clé
+    // `miaou/web`. Relayé tel quel ; api.js en extrait ce qu'il sait lire
+    // (webMetaFromResult, utils.js), l'ack le porte, `content` n'en voit rien.
+    const out = { content, isError: !!(result && result.isError), ackEntry };
+    if (result && result._meta && typeof result._meta === 'object') out._meta = result._meta;
+    return out;
   } catch (e) {
     ackEntry.error = true;
     // errorCode porte le code machine brut (ex. REF_UNKNOWN) depuis err.data.code

@@ -1568,13 +1568,19 @@ désignée par un `[resource_ref:…]`, proportions de la lightbox) et
 génération — un stub MCP suspendu sur `tools/call` seul y ouvre la fenêtre
 « ack peint, pas encore enrichi », que rien d'autre ne peut reproduire).
 
-## Références de conversation dans le texte du modèle (`conv_ref`)
+## Références dans le texte du modèle (`conv_ref`, `file_ref`, `web_ref`)
 
-Le modèle peut citer une conversation passée (obtenue via `conv__get`/
-`conv__list`) pour que l'utilisateur puisse l'ouvrir d'un clic — sans
-jamais exposer son ID technique en clair dans le texte affiché.
+Le modèle écrit un **marqueur**, l'application le résout en lien : jamais un
+lien construit par le modèle. Trois marqueurs, même mécanique :
+`[conv_ref:ID]` cite une conversation passée (l'ouvrir d'un clic, sans exposer
+son ID), `[file_ref:HANDLE]` un fichier que l'utilisateur doit pouvoir
+récupérer (le télécharger, ou ouvrir l'image), `[web_ref:URL]` la source web
+d'une affirmation (pastille au nom du site, qui dit si la page a été lue dans
+la conversation). Les points 1 à 4 décrivent `conv_ref`, les suivants ce qui
+s'y ajoute.
 
-1. **Doctrine `CONV_REF_DOCTRINE`** (tools.js), **toujours injectée** dès que
+1. **Doctrine `REFS_DOCTRINE`** (tools.js, qui a remplacé `CONV_REF_DOCTRINE`
+   à la même position), **toujours injectée** dès que
    des outils existent (même statut que `BINARY_DOCTRINE`, partie de
    `ROOT_SYSTEM_PROMPT`, constante build-time). Demande au modèle d'utiliser le
    marqueur `[conv_ref:ID]` ou `[conv_ref:ID|Titre]` (titre optionnel, connu du
@@ -1588,8 +1594,12 @@ jamais exposer son ID technique en clair dans le texte affiché.
    que les tests QuickJS exercent la regex partagée, `resolveConvRefs` dépendant
    de l'index des résumés.
 3. **Résolution = AVANT `marked.parse`, jamais après.** `resolveConvRefs(text)`
-   (ui.js, testée) remplace chaque marqueur par un lien Markdown standard
-   `[Titre](#miaou-conv:ID)` avant le rendu Markdown — traiter ça en
+   (ui.js, testée) remplace chaque marqueur par un lien en HTML inline
+   `<a class="conv-ref" href="#miaou-conv:ID">Titre</a>` porteur d'une infobulle
+   (« Ouvrir la conversation », `tipAttrs`) — un lien Markdown jusqu'au lot AI,
+   qui ne pouvait pas porter d'infobulle ; libellé échappé par `refLabelHtml`
+   (utils.js), qui passe aussi en entités ce que marked interpréterait —
+   avant le rendu Markdown — traiter ça en
    post-traitement HTML casserait, les crochets bruts auraient déjà été
    interprétés par le parseur Markdown comme une syntaxe de lien incomplète.
    Titre : celui du marqueur si fourni, sinon lookup dans l'index des résumés
@@ -1605,7 +1615,8 @@ jamais exposer son ID technique en clair dans le texte affiché.
    Dans ce cas, rendu en **texte barré NON cliquable** `~~Titre (supprimée)~~`
    (Markdown GFM standard, `marked` le rend en `<del>` sans configuration)
    plutôt qu'un lien mort — pas de post-traitement DOM. `renderMd`
-   appelle `resolveConvRefs` en tête, avant `marked.parse` — pas `renderUserMd`
+   appelle `resolveRefMarkers` (point unique des marqueurs, qui appelle
+   `resolveConvRefs`) en tête, avant `marked.parse` — pas `renderUserMd`
    (les messages utilisateur ne contiennent jamais ce marqueur).
 4. **Navigation = délégation de clic unique**, posée une fois dans `init()`
    (main.js) sur `#messages` (pas un `onclick` par lien reconstruit à chaque
@@ -1617,6 +1628,139 @@ jamais exposer son ID technique en clair dans le texte affiché.
    supprimée) est un no-op silencieux (`openConversation` retourne tôt si
    `loadConversation` échoue) — pas de fonction de navigation dédiée créée,
    pas de duplication du chemin existant.
+5. **Deux points de résolution, une fonction.** `resolveRefMarkers` (ui.js) est
+   appelée par `renderMd` ET par le rendu par blocs du streaming
+   (`renderStreamBlocks`). Elle ramène d'abord au marqueur la **forme
+   déviante** où le modèle l'emballe dans un lien Markdown,
+   `[test.txt](file_ref:file-…)` ou `[Titre](conv_ref:ID)`
+   (`normalizeRefLinkForms`, utils.js — observée sur un modèle de 9B pour une
+   liste de fichiers ; sans elle, marked en fait un lien vers un schéma
+   inexistant). Tolérance sans ambiguïté, `file_ref:` n'étant un schéma d'URL
+   nulle part : c'est pourquoi elle se règle dans le parseur et non par la
+   doctrine. La neutralisation et le masquage en streaming la reconnaissent
+   aussi. `renderMd(text, { refs: false })` ne résout rien :
+   prompt racine affiché, consignes MCP et contenu de skill citent les
+   marqueurs en exemple et ne désignent rien. `renderUserMd` ne résout rien non
+   plus : une bulle utilisateur n'a pas de marqueur.
+6. **`file_ref`.** `[file_ref:HANDLE]` ou `[file_ref:HANDLE|Libellé]`, HANDLE
+   étant un `att-N`, un `file-<id>` ou un `res_<id>` (`FILE_REF_MARKER_RE`,
+   utils.js — nom distinct du `FILE_REF_RE` de tools.js, qui valide un handle
+   `file-`). `resolveFileRefMarkers(text, lookup, opts)` (utils.js, pure)
+   émet `<a class="file-ref" data-file-kind="image|file"
+   href="#miaou-file:HANDLE">` : **rendu synchrone, sans vérification** ; le
+   record en cache au rendu ne sert qu'au libellé de repli (libellé > nom du
+   record > handle), au glyphe (`::after` en CSS selon `data-file-kind`,
+   chat.css : flèche de téléchargement, cadre d'image) et à l'infobulle
+   (« Télécharger » / « Ouvrir l'image », nom du fichier en second étage).
+   Le texte du lien reste le seul libellé, ce que lit la règle ARIA.
+   **Résolution au clic** (`openFileRef`, ui.js), délégation sur `#messages`
+   dans `init()` à côté de celle de `#miaou-conv:`, **sans** le blocage sur
+   `sending`. `fileRefRecord` passe par `resolveHandleRecord` (dérogation
+   d'agent comprise) **sans lecture IDB en repli**, puis par
+   `fileRefRecordInScope` (utils.js, pure) : **le cache session n'est PAS
+   scopé** — il accumule les records de toutes les conversations ouvertes depuis
+   le chargement, et `resolveHandleRecord` ne filtre que `att-` (convId) et
+   `file-` (Space). Un `res_…` d'une autre conversation y résoudrait selon ce
+   qu'on a ouvert avant : un oracle (piège 18). Seul l'alias d'un fichier
+   délégué à un agent (id réel ≠ handle) passe. Rien ne résout : toast
+   « Fichier introuvable dans cette conversation. » (`toastFileRefMissing`).
+   Image : `openImageRecordLightbox`, qui mesure l'image quand le record n'a pas
+   de `w`/`h` (un `res_…` de `_storeBlock` n'en a pas, contrairement à une pièce
+   jointe) avant `openAttachmentLightbox` ; sinon `downloadFile` nommé par
+   `resourceDownloadName`, comme le bouton d'un ack. Conséquence connue : un
+   `res_…` produit par un agent et cité par le PARENT ne se résout pas (record
+   d'une autre conversation) — mesuré, non corrigé.
+7. **Neutralisation hors écran.** `neutralizeRefMarkers(text, mode, lookups)`
+   (utils.js, pure) sert les surfaces où rien ne résoudrait un marqueur :
+   `copy` (`copyMsg`, bulle assistant), `md` (`downloadConvMd`,
+   `downloadMsgMd`) — libellés, `web_ref` en `[domaine](url)` — et `summary`
+   (`projectThreadForRecap`, texte assistant et résumé de compaction ; le texte
+   utilisateur, qui alimente aussi l'extrait de secours, reste intact) —
+   libellés, `web_ref` retiré. `lookups` (`refMarkerLookups`, ui.js) retrouve
+   le titre d'une conversation et le nom d'un fichier. L'export HTML garde
+   `renderMd(…, { asPlainText: true, refCtx, webSources })` : libellés nus, et
+   `web_ref` en lien externe ordinaire (cf. point 9).
+8. **Masquage en streaming.** `maskOpenRefMarker` (utils.js, pure) retire un
+   marqueur ouvert en queue (ou son nom en cours d'écriture) sur le SEUL chemin
+   de streaming (`renderStreamBlocks` avec `caret`). Le rendu final ne masque
+   rien : un marqueur resté ouvert est une faute du modèle, qui doit se voir.
+9. **`web_ref` : registre et pastilles.** `[web_ref:URL]`, une source par
+   marqueur, URL en clair ; `WEB_REF_MARKER_RE` (utils.js) se restreint à
+   `https?://` sans espace ni `]`, ce qui est AUSSI la garde contre
+   `javascript:`/`data:` — ne pas l'assouplir. La consigne est dans la branche
+   `<ACCES_WEB>` de `WEB_DOCTRINE` (conditionnée aux outils web), pas dans
+   `REFS_DOCTRINE`.
+   - **Provenance** — `webSourceRegistry(thread)` (utils.js, pure) rend
+     `Map(urlNormalisée → { consulted, relayed, title, site, favicon })`,
+     dérivé du thread ENTIER et jamais de la projection émise (il survit à une
+     compaction), jamais persisté. **Consultée** = l'`args.url` d'un ack qui
+     n'est pas en erreur (`ackIsError`), quel que soit l'outil — la forme, pas
+     une liste de noms —, plus l'URL finale (`canonical_url`) de son `webMeta`,
+     issue du même appel. **Jamais depuis `result`** : l'évacuation et
+     `resource__from_result` le réécrivent en place, `args` jamais — une
+     pastille passerait sinon de « consultée » à « non consultée » après une
+     évacuation. Une URL vue seulement en résultat de recherche n'est pas
+     consultée. **Relayée** : un `[web_ref:…]` écrit par un agent, lu dans le
+     compte rendu que reçoit le parent (message `user` à `agentResult`, jamais
+     évacué) ou dans le `result` d'un `agent__result` (évacuable, d'où la
+     première source) ; une consultation directe l'emporte. Comparaison sur
+     `normalizeWebUrl` : fragment retiré, slash final ignoré, schéma et hôte
+     en minuscules, rien d'autre.
+   - **Titre et libellé** — `webMeta` (cf. `docs/mcp.md`) fait foi ; sinon le
+     titre d'un résultat de recherche encore inline (`searchResultItems` :
+     tableau JSON `{title, url|page_url}`). N'alimente que le libellé et
+     l'infobulle, jamais la provenance. Libellé : nom de site > titre >
+     domaine sans `www.` (`webSourceLabel`).
+   - **Notes numérotées** — habitude plus tenace que le lien Markdown, observée
+     jusque sur un 26B malgré la doctrine : des `[1]` dans le texte, renvoyant à
+     une liste « Sources » en fin de réponse. `convertSourceFootnotes` (utils.js,
+     pure, premier temps de `normalizeRefLinkForms`) remplace chaque renvoi par
+     `[web_ref:URL]` et retire la liste, avec son intitulé et son filet. Elle
+     ne convertit RIEN sans une liste de définitions en fin de réponse, hors
+     code, dont chaque entrée porte une URL http(s) et est citée au moins une
+     fois : un `[1]` d'indice ou de renvoi juridique reste intact, et retirer la
+     liste ne perd jamais un lien. Formes reconnues : `[1] [Titre](url)`,
+     `[1]: url`, `[1] url`, `[1] Titre — url`, `1. [Titre](url)`, `[^1]: url`.
+     La provenance reste celle du registre : une note vers une page non lue
+     donne une pastille en pointillé.
+   - **Ponctuation** — la plupart des petits modèles posent la source AVANT le
+     point qui clôt la phrase, malgré la doctrine. `moveWebRefsAfterPunctuation`
+     (utils.js, pure, appelée par `normalizeRefLinkForms`, donc au rendu comme
+     à la copie et au `.md`) remonte la ponctuation qui suit immédiatement un
+     groupe (`.`, `,`, `;`, `:`, `!`, `?`, `…`, avec son blanc insécable)
+     devant lui. C'est de la typographie : la citation reste dans la même
+     phrase, l'application ne déplace pas une source d'un paragraphe à un
+     autre. Parenthèses et guillemets fermants ne bougent pas.
+   - **Rendu** — `resolveWebRefMarkers(text, registry, opts)` (utils.js, pure),
+     dernier temps de `resolveRefMarkers`. Les marqueurs contigus, séparés
+     seulement par des espaces, forment un groupe `<span class="web-refs">`
+     (`webRefGroups`) ; trois pastilles visibles, au-delà un bouton « +N » s'il
+     en masque au moins deux (`WEB_REF_GROUP_VISIBLE`), déplié par délégation
+     sur `#messages` (main.js — un `onclick` inline serait retiré par
+     DOMPurify). Pastille : `<a class="web-ref">` avec favicon (`<img>` dont le
+     `src` a passé `isSafeIconSrc`) ou globe CSS, classe `unverified` (bordure
+     pointillée) ou `relayed` (aspect normal) ; `target`/`rel` posés par le
+     hook DOMPurify. Infobulle à deux étages avec icône (`webSourceTip` : titre,
+     puis site · domaine, puis « Consultée par un agent » ou « Page absente des
+     outils de cette conversation » — un constat, pas une accusation : l'URL a
+     pu venir de l'utilisateur). Le registre arrive par `opts.webSources`, par
+     défaut celui du fil affiché (`displayedWebSources`, ui.js), mémoïsé sur
+     `webSourceRegistrySignature` : le streaming passe à chaque delta, le
+     registre ne change qu'à l'arrivée d'un ack. Export HTML : lien externe
+     ordinaire entre parenthèses, au libellé de la pastille, sans style
+     (`EXPORT_CSS` figé, piège 22).
+
+Couche DOM (marked et DOMPurify réels, clic, lightbox, téléchargement, toast,
+infobulle d'un lien coupé sur deux lignes, copie et export `.md`) :
+`.claude/skills/run-miaou/verify-refs.mjs`. Il rougit si l'on retire le filtre
+`fileRefRecordInScope` ou l'ancrage par ligne (`tipAnchorRect`), vérifié par
+mutation. Pastilles de source (HTML inline gardé par marked en paragraphe et
+en liste, favicon et `data-tip-icon` gardés par DOMPurify, pointillé calculé,
+dépli du « +N », infobulle à icône, largeur fixe au survol, stabilité après
+évacuation, export, relais du `_meta` par `callRemoteTool`) :
+`verify-web-refs.mjs`. Il rougit si `webMeta` sort d'`ACK_COPY_FIELDS`, si le
+mémo du registre n'est plus invalidé, ou si la provenance lit `result`,
+vérifié par mutation.
 
 ## Nom de fichier proposé par le modèle pour un bloc de code (`filename=`)
 
@@ -1692,7 +1836,7 @@ Le modèle peut fournir un nom explicite sur la ligne d'ouverture de la fence.
    L'étiquette de langage du même bloc vient de `mimeToLang` (acks.js), qui
    connaît `csv` : un `text/csv` s'affiche `csv` et non plus `text`.
 6. **Pas d'affichage du filename dans le header `.code-head`** dans ce lot
-   (décision explicite, cf. « Composants UI provisoires » dans
-   `CLAUDE.md` : ne pas redessiner un composant visuel sans spec) — le nom n'est utilisé que pour le
+   (décision explicite : pas de spec visuelle pour ce header, et un composant
+   visuel ne se redessine pas sans spec) — le nom n'est utilisé que pour le
    download. `decoratePre` reste le **chemin unique** de décoration des `<pre>`
    (rendu message ET rendu ressource texte en bloc de code, `renderResourceText`).

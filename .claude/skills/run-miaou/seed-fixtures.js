@@ -190,10 +190,41 @@ const SEEDS = [
           { attId: 'att-2', name: 'nginx-access.log', mime: 'text/plain', size: 4096, kind: 'text' },
         ],
       },
-      { role: 'assistant', content: "D'après la capture, le 503 vient du backend qui timeout — visible aussi dans les dernières lignes du log nginx (upstream timed out). Vérifie le `proxy_read_timeout` de ta conf nginx et la charge du service en amont au moment de l'erreur." },
+      // Marqueurs de référence (lot AI) : file_ref vers les deux pièces jointes
+      // (blobs réels plus bas — image → lightbox, texte → téléchargement),
+      // conv_ref, et un handle qui ne résout rien (toast au clic).
+      { role: 'assistant', content: "D'après la capture, le 503 vient du backend qui timeout — visible aussi dans les dernières lignes du log nginx (upstream timed out). Vérifie le `proxy_read_timeout` de ta conf nginx et la charge du service en amont au moment de l'erreur.\n\nPour mémoire : [file_ref:att-2|le log analysé], [file_ref:att-1] (s'ouvre en grand), et le même souci de réseau Docker que dans [conv_ref:seed-05]. Un fichier absent reste un lien : [file_ref:res_absent]." },
     ],
     summary: "Diagnostic d'une erreur 503 à partir d'une capture d'écran et d'un log nginx joints au message. Cause : timeout du backend en amont, à corriger via proxy_read_timeout.",
     keywords: ['nginx', '503', 'timeout', 'pièce-jointe', 'attachment', 'capture-écran', 'log', 'debug', 'proxy', 'backend'],
+  },
+  {
+    // Sources web (lot AI) : pastilles [web_ref:…] dans les trois états —
+    // consultée (fetch_url, avec webMeta et favicon, puis sans webMeta : repli
+    // sur le domaine et le globe), relayée par un agent (compte rendu reçu en
+    // message user à agentResult), non consultée (vue seulement en recherche,
+    // titre repris du JSON) — plus un groupe de cinq, replié derrière « +2 ».
+    id: 'seed-10w',
+    title: 'Veille qui ne tient pas — sources web',
+    messages: [
+      { role: 'user', content: "Mon Mac ne se met plus en veille quand il est branché au dock. Tu peux chercher ?" },
+      { role: 'tool-ack', kind: 'mcp_call', server: 'ddg', name: 'ddg__ddg_search', args: { query: 'mac veille dock clamshell' },
+        result: JSON.stringify([
+          { title: 'MacBook won’t sleep in clamshell mode with dock', url: 'https://discussions.apple.com/thread/255123', snippet: '…' },
+          { title: 'Mac sleep fix after macOS update', url: 'https://www.macrumors.com/2026/08/sleep-fix', snippet: '…' },
+        ]), ts: 1790000000000, group: 'gseedw1', assistantText: null },
+      { role: 'tool-ack', kind: 'mcp_call', server: 'web', name: 'web__fetch_url', args: { url: 'https://discussions.apple.com/thread/255123' },
+        result: 'Plusieurs utilisateurs rapportent…', ts: 1790000001000, group: 'gseedw2', assistantText: null,
+        webMeta: { title: 'MacBook won’t sleep in clamshell mode with dock', site_name: 'Apple Community',
+          canonical_url: 'https://discussions.apple.com/thread/255123', favicon: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAIElEQVR4nGP4TyFgGFwG6NUaEYVHDRg1gLYGkAMG3gAANFgnrl/YodkAAAAASUVORK5CYII=' } },
+      { role: 'tool-ack', kind: 'mcp_call', server: 'web', name: 'web__fetch_url', args: { url: 'https://eclecticlight.co/2024/03/sleep' },
+        result: 'Sleep and wake are controlled by…', ts: 1790000002000, group: 'gseedw2', assistantText: null },
+      { role: 'user', content: "[Résultat d'agent — terminé]\nTâche confiée : lire les retours Reddit\n\n--- Réponse de l'agent ---\n\nLe réveil vient souvent d'un périphérique Bluetooth. [web_ref:https://www.reddit.com/r/mac/comments/abc/]",
+        agentResult: { id: 'seed-agent-absent', status: 'done', intent: 'lire les retours Reddit' } },
+      { role: 'assistant', content: "Plusieurs utilisateurs rapportent que débrancher le dock puis le rebrancher Mac éveillé suffit à rétablir la veille. [web_ref:https://discussions.apple.com/thread/255123] [web_ref:https://eclecticlight.co/2024/03/sleep]\n\nUne mise à jour récente aurait corrigé le problème pour certains écrans externes. [web_ref:https://www.macrumors.com/2026/08/sleep-fix]\n\nUn périphérique Bluetooth peut aussi réveiller la machine. [web_ref:https://www.reddit.com/r/mac/comments/abc/]\n\nLes retours divergent d'une version à l'autre : [web_ref:https://discussions.apple.com/thread/255123] [web_ref:https://www.reddit.com/r/mac/comments/abc/] [web_ref:https://eclecticlight.co/2024/03/sleep] [web_ref:https://www.macrumors.com/2026/08/sleep-fix] [web_ref:https://support.apple.com/fr-fr/guide/mac-help/mchle41a6ccd]" },
+    ],
+    summary: "Mac qui ne se met plus en veille branché au dock : retours d'utilisateurs (débrancher et rebrancher le dock), mise à jour correctrice possible, réveil par un périphérique Bluetooth.",
+    keywords: ['mac', 'veille', 'dock', 'clamshell', 'bluetooth', 'sources', 'web'],
   },
   {
     // Attachment kind:'binary' (brief H — descripteur générique). Contrairement

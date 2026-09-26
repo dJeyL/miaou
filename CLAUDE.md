@@ -610,8 +610,16 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   inspectable par le drapeau volatil `pending`, posé aux trois `onEarlyAcks`
   par `markEarlyAckPending` et retiré par `settleEarlyAckPending` — dont un
   point de retrait inconditionnel en fin de tour —, drawer ouvert recomplété
-  par `refreshToolInspectorIfOpen`), références de
-  conversation dans le texte du modèle (`conv_ref`), lien d'autorisation
+  par `refreshToolInspectorIfOpen`), références dans le texte du modèle
+  (lot AI : `conv_ref` et `file_ref` résolus par le point unique
+  `resolveRefMarkers`, qui tolère le marqueur emballé en lien Markdown
+  (`normalizeRefLinkForms`), clic de fichier par `openFileRef` avec le filtre
+  `fileRefRecordInScope` — le cache de ressources n'est PAS scopé —,
+  `neutralizeRefMarkers` pour copie, `.md` et résumé, `maskOpenRefMarker` en
+  streaming ; `web_ref` en pastilles par `resolveWebRefMarkers`, état lu dans
+  `webSourceRegistry` — consultée = `args.url` d'un ack non en erreur, JAMAIS
+  `result` que l'évacuation réécrit —, relayée par un agent, groupe replié
+  derrière « +N »), lien d'autorisation
   d'un ack refusé (campagne AB : `ackAuthorizationTarget`, seule affordance
   d'ack rendue en texte, absente des exports), et **microcompaction des tool
   results** (lot AE : `microcompactToolResults`, seuil uniforme
@@ -682,7 +690,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   campagne cache — décision inversée, le motif d'origine confondait « varier »
   et « varier à chaque tour » ; rattachées au préfixe d'outil réel
   `<slug>__<serveur>` que MIAOU est le seul à connaître) ; dit en tête où vit le code, `mcp.js` (distant) contre
-  `tools.js` (composition et routage).
+  `tools.js` (composition et routage) ; porte enfin le `_meta` d'un
+  `tools/call` (lot AI : `_meta["miaou/web"]` de `fetch_url`, lu par
+  `webMetaFromResult`, posé sur l'ack en `webMeta` par les trois
+  `onEnrichLastAck` via la liste unique `ackEnrichmentFields`).
 - **`docs/skills.md`** — skills stage 1 (CRUD, invocation slash, drawer) et
   stage 2 (autotrigger, doctrine de déclenchement, confirmation) ; porte aussi,
   depuis le lot AE, la **seconde famille derrière le `/`** — les commandes MIAOU
@@ -883,7 +894,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   gabarits, `data-tip` statique repris par `initTooltips`, règle ARIA pure
   `tipAriaRule` (nom pour un bouton-icône, description sinon, marque
   `data-tip-aria` qui protège l'`aria-label` d'auteur, `alt` d'une image compté
-  comme texte, `refreshTipAria` pour un texte rempli après coup), deux étages,
+  comme texte, `refreshTipAria` pour un texte rempli après coup), deux étages
+  et une icône facultative (lot AI : champ `icon`, data-URL matricielle validée
+  par `isSafeIconSrc` ou globe générique, SVG exclu),
   délais purs (`tipShowDelay`), masquage (frappe en capture sauf touche de
   modification seule — `tipKeyHides` —, Échap consommé, défilement du seul
   conteneur du porteur, porteur détruit), réaffichage sous le pointeur quand le
@@ -920,15 +933,6 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   pas « vu »), et quand on **quitte** la conversation sans être redescendu
   (`carryThreadUnseenToBadge`) ; tokens
   `--jump-shadow` et `--jump-glow-a`.
-
-## Composants UI provisoires (ne pas redessiner sans spec)
-
-Un composant visuel implémenté en intérimaire ne se retravaille pas à l'aveugle :
-demander les spécifications HTML/CSS avant de le redessiner. Seul cas restant :
-**`.bg-activity`** (indicateur d'activité de fond, `chat.css`, `index.html`,
-piloté par `runBackgroundTask`), hors maquette d'origine. (`.summary-banner`
-relevait de la même réserve mais a depuis reçu une spec définitive — plus
-concerné.)
 
 ## Règle d'or
 

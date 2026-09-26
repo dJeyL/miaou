@@ -41,10 +41,10 @@ HTML, ou à la synchro multi-onglets.
 
 1. **Un seul message `role: 'system'`.** Jamais en empiler plusieurs : certains
    backends ne gardent que le premier. `buildSystemMessage()` concatène, dans
-   l'ordre : `ROOT_SYSTEM_PROMPT` (constante build-time enchaînant huit
-   doctrines — `BINARY_DOCTRINE`, `ATTACHMENT_DOCTRINE`, `WEB_DOCTRINE`,
-   `CONV_REF_DOCTRINE`, `MEMORY_DOCTRINE`, `FILES_DOCTRINE`, `JS_EVAL_DOCTRINE`,
-   `RESOURCE_DOCTRINE` — injectée inconditionnellement) ; puis le prompt
+   l'ordre : `ROOT_SYSTEM_PROMPT` (constante build-time enchaînant les
+   doctrines racine — la liste fait foi dans sa définition, tools.js, et n'est
+   pas recopiée ici : la copie qu'on en tenait comptait « huit » doctrines et en
+   avait perdu trois — injectée inconditionnellement) ; puis le prompt
    système utilisateur (persona/préférences, éditable en paramètres).
 <a id="p2"></a>
 

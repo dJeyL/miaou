@@ -146,7 +146,7 @@ const ACK_KINDS = {
             className: 'ack-conv-link',
             href: 'javascript:void(0)',
             textContent: m.title || 'sans titre',
-            onclick: () => selectConv(m.convId),
+            onclick: () => selectConv(m.convId, true),
           })
         : document.createTextNode(m.title || 'sans titre');
       if (m.intent) {
@@ -740,7 +740,7 @@ function renderAgentAckLabel(m, el, verb) {
         className: 'ack-conv-link',
         href: 'javascript:void(0)',
         textContent: text,
-        onclick: () => selectConv(m.convId),
+        onclick: () => selectConv(m.convId, true),
       })
     : document.createTextNode(text);
   if (m.intent) {

@@ -461,7 +461,7 @@ describe('systemMessageParts / buildSystemMessage (brief B, refactor)', function
     expect(root.chars).toBe(ROOT_SYSTEM_PROMPT.length);
     var doctrines = [
       BINARY_DOCTRINE, ATTACHMENT_DOCTRINE, DOCS_DOCTRINE, WEB_DOCTRINE,
-      AUTHORIZATION_DOCTRINE, CONV_REF_DOCTRINE, MEMORY_DOCTRINE, FILES_DOCTRINE,
+      AUTHORIZATION_DOCTRINE, REFS_DOCTRINE, MEMORY_DOCTRINE, FILES_DOCTRINE,
       JS_EVAL_DOCTRINE, RESOURCE_DOCTRINE, AGENT_DOCTRINE,
     ];
     var summed = 0;

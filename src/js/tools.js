@@ -210,6 +210,11 @@ const WEB_DOCTRINE =
   "(type ![alt](url)) pour afficher une ressource déjà présentée ; le Markdown ne " +
   "sert qu'aux MINIATURES — l'URL de la MINIATURE pour l'image affichée, en lien " +
   "vers l'IMAGE originale (PAS la page qui la contient)\n" +
+  "- source : pour sourcer une affirmation, écris [web_ref:URL] — jamais un lien " +
+  "Markdown, ni une note [1] renvoyant à une liste de sources en fin de réponse —, " +
+  "après le point final du paragraphe, un marqueur par page. Seulement " +
+  "pour une page lue avec fetch_url dans cette conversation : un résultat de " +
+  "recherche n'est pas une source ; lis la page d'abord, ou ne la cite pas\n" +
   "</ACCES_WEB>\n\n" +
   "<SANS_ACCES_WEB>\n" +
   "Si aucun outil disponible ne te permet d'accéder au Web, indique-le si c'est " +
@@ -243,20 +248,25 @@ const AUTHORIZATION_DOCTRINE =
   "que tu peux faire sans, et considère que le même appel réussira une fois " +
   "l'accès accordé.";
 
-// Doctrine comportementale : référence à une conversation passée. Toujours
-// injectée quand des outils existent (conv__get/conv__list en
-// font partie du registre de base) — même statut que BINARY_DOCTRINE. Le
-// marqueur [conv_ref:ID] (ou [conv_ref:ID|Titre] si le titre est déjà connu du
-// modèle) est résolu côté client en lien cliquable affichant le TITRE, jamais
-// l'ID brut ; le titre est optionnel car l'application le retrouve elle-même
-// depuis l'index des résumés si absent. Partie de ROOT_SYSTEM_PROMPT.
-const CONV_REF_DOCTRINE =
-  "Quand tu mentionnes une conversation passée obtenue via conv__get ou " +
-  "conv__list (pour que l'utilisateur puisse l'ouvrir), n'écris JAMAIS " +
-  "son identifiant technique en clair (pas de guillemets, pas de backticks, pas " +
-  "de texte brut du type « conversation abc123 ») : utilise le marqueur " +
-  "[conv_ref:ID] ou, si tu connais déjà son titre, [conv_ref:ID|Titre] — " +
-  "l'application le remplace automatiquement par un lien affichant le titre.";
+// Doctrine des références cliquables (lot AI) : remplace CONV_REF_DOCTRINE, à
+// la même position (une seule invalidation du préfixe, piège 16). Toujours
+// injectée quand des outils existent. Deux marqueurs, même mécanique : le
+// modèle écrit un marqueur, l'application le résout en lien (resolveRefMarkers,
+// ui.js) — jamais un lien construit par le modèle. file_ref est cadré sur
+// « l'utilisateur doit pouvoir le récupérer » : pas pour la pièce qu'il vient
+// de joindre, et pas sans res_… pour un résultat d'outil (le cadrage
+// resource__from_result est dit ici, là où le besoin naît). Le marqueur web
+// n'est PAS ici : conditionné aux outils web, il ira dans la branche
+// <ACCES_WEB> de WEB_DOCTRINE. Partie de ROOT_SYSTEM_PROMPT.
+const REFS_DOCTRINE =
+  "Références cliquables : l'application remplace ces marqueurs par des liens.\n" +
+  "- Conversation passée obtenue via miaou__conv__get ou miaou__conv__list : " +
+  "[conv_ref:ID] ou [conv_ref:ID|Titre]. N'écris jamais son identifiant en clair.\n" +
+  "- Fichier que l'utilisateur doit pouvoir récupérer (produit par un outil, " +
+  "déposé en bibliothèque, évacué) : [file_ref:HANDLE] ou [file_ref:HANDLE|Nom], " +
+  "HANDLE étant son att-N, file-<id> ou res_<id> ; le lien le télécharge, ou " +
+  "ouvre l'image. Jamais pour une pièce que l'utilisateur vient de joindre. Un " +
+  "résultat d'outil sans res_ se range d'abord avec miaou__resource__from_result.";
 
 // Doctrine de déclenchement des outils mémoire. Partie de ROOT_SYSTEM_PROMPT.
 // v2 (campagne contexte) : resserrée sur place, SANS extraction en skill. Les
@@ -591,7 +601,7 @@ const AGENT_DOCTRINE =
 const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE + "\n\n---\n\n" +
   DOCS_DOCTRINE + "\n\n---\n\n" +
   WEB_DOCTRINE + "\n\n---\n\n" + AUTHORIZATION_DOCTRINE + "\n\n---\n\n" +
-  CONV_REF_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE +
+  REFS_DOCTRINE + "\n\n---\n\n" + MEMORY_DOCTRINE + "\n\n---\n\n" + FILES_DOCTRINE +
   "\n\n---\n\n" + JS_EVAL_DOCTRINE + "\n\n---\n\n" + RESOURCE_DOCTRINE +
   "\n\n---\n\n" + AGENT_DOCTRINE;
 
@@ -974,8 +984,8 @@ const TOOLS = [
     // project_search_excerpt_indicative_not_exhaustive : la règle est de le
     // DIRE dans la description de l'outil, pas de le développer en trois
     // phrases). La mise en garde « état PASSÉ » RESTE, en une phrase au lieu de
-    // trois : aucune doctrine racine ne la porte (CONV_REF_DOCTRINE ne traite
-    // que le marqueur [conv_ref:ID]), et son seul autre porteur —
+    // trois : aucune doctrine racine ne la porte (REFS_DOCTRINE ne traite
+    // que des marqueurs de lien), et son seul autre porteur —
     // buildSummaryBlock, main.js — est CONDITIONNEL aux résumés injectés. Un
     // conv__list sans résumé pertinent ne la lirait donc nulle part.
     description:

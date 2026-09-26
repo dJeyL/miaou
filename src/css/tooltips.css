@@ -48,6 +48,19 @@
 .tip .tip-label { display: block; font-weight: 600; }
 .tip .tip-detail { display: block; margin-top: 2px; color: var(--tip-text-2); }
 
+/* Icône à côté du libellé (champ `icon`, lot AI) : la favicon d'une source web,
+   comme dans un onglet de navigateur, ou un globe quand le site n'en a pas
+   fourni. Le détail s'aligne sur le libellé, pas sous l'icône. */
+.tip.has-icon .tip-head { display: flex; align-items: center; gap: 6px; }
+.tip.has-icon .tip-icon { flex: none; width: 14px; height: 14px; border-radius: 2px; }
+.tip.has-icon .tip-detail { padding-left: 20px; }
+.tip .tip-icon-globe {
+  border-radius: 0;
+  background: var(--tip-text-2);
+  -webkit-mask: var(--globe-glyph) center / contain no-repeat;
+  mask: var(--globe-glyph) center / contain no-repeat;
+}
+
 /* Flèche en deux triangles (bordure, puis fond par-dessus), qui vise le
    centre du porteur : --arrow-x, posé par tooltips.js. data-side="top" : bulle
    AU-DESSUS du porteur, flèche en bas. */

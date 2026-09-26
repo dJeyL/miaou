@@ -866,14 +866,9 @@ async function driveAgentConversation(gen, apiMessages, tools) {
         // détachée perd »).
         clearPendingToolBlocks();
       },
-      onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {
-        const fields = {};
-        if (name != null) fields.name = name;
-        if (args != null) fields.args = args;
-        if (result != null) fields.result = result;
-        if (ts != null) fields.ts = ts;
-        if (group != null) fields.group = group;
-        if (assistantText != null) fields.assistantText = assistantText;
+      onEnrichLastAck: (payload) => {
+        const isMcp = payload && payload.isMcp;
+        const fields = ackEnrichmentFields(payload);
         // Un ack MCP a déjà QUITTÉ _pendingToolAcks (drainé par onEarlyAcks) :
         // l'enrichir par updateLastPendingToolAck viserait une file vide, et
         // args/result n'atteindraient jamais l'entrée persistée — c'est ce qui
@@ -1225,14 +1220,9 @@ async function driveDetachedConversation(gen, apiMessages) {
         clearPendingToolAcks();
         clearPendingToolBlocks();
       },
-      onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {
-        const fields = {};
-        if (name != null) fields.name = name;
-        if (args != null) fields.args = args;
-        if (result != null) fields.result = result;
-        if (ts != null) fields.ts = ts;
-        if (group != null) fields.group = group;
-        if (assistantText != null) fields.assistantText = assistantText;
+      onEnrichLastAck: (payload) => {
+        const isMcp = payload && payload.isMcp;
+        const fields = ackEnrichmentFields(payload);
         // Un ack MCP a déjà QUITTÉ _pendingToolAcks (onEarlyAcks l'a drainé) :
         // l'enrichir par updateLastPendingToolAck viserait une file vide, et
         // args/result n'atteindraient jamais l'entrée persistée — c'est ce qui

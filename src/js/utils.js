@@ -69,6 +69,10 @@ const ACK_COPY_FIELDS = [
   'sourceName',                           // docs__read (V-5) — nom du document LU, dont se déduit le mot d'unité ; distinct de resourceName, qui est l'extrait PRODUIT en as_resource (un .txt)
   'message',                             // tool_failed — message d'échec d'un outil natif (toolFail)
   'origin',                               // docs__render_page (V-8) — 'docs_render' : distingue une image PRODUITE d'une pièce jointe RAPPELÉE, sur le même kind (libellé + icône, jamais le routage)
+  'webMeta',                              // lot AI — métadonnées de page d'un appel MCP (`_meta["miaou/web"]` de fetch_url :
+                                          // titre, nom de site, URL finale, favicon), assainies par webMetaFromResult.
+                                          // Hors émission par construction (expandThread n'envoie que result et args) :
+                                          // elles n'alimentent que le libellé et l'infobulle des pastilles de source.
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
   'errorCode', 'authorizationUrl', 'upstream', 'mcpServer',
                                           // campagne AB — refus d'autorisation d'un serveur MCP. Persistés
@@ -81,6 +85,19 @@ const ACK_COPY_FIELDS = [
                                           // CHEMIN relatif, l'origine doit être retrouvée dans la config à
                                           // l'affichage, et sans ce champ l'ack ne sait pas d'où il vient.
 ];
+
+// Champs d'enrichissement d'un ack après exécution de son outil, depuis le
+// payload du hook `onEnrichLastAck` (api.js). Trois hooks le portent (écran,
+// main.js ; agent et parent réveillé, agents.js) : ils recopiaient chacun la
+// même liste à la main, et un champ ajouté à l'un manquait aux deux autres —
+// la fonction non appliquée à toutes ses sources. Une seule liste ici. Pure.
+function ackEnrichmentFields(p) {
+  const src = p || {};
+  const fields = {};
+  const names = ['name', 'args', 'result', 'ts', 'group', 'assistantText', 'webMeta'];
+  for (const n of names) if (src[n] != null) fields[n] = src[n];
+  return fields;
+}
 
 function copyAckFields(src, dst) {
   for (const f of ACK_COPY_FIELDS) {
@@ -1412,7 +1429,7 @@ function rankConvResults(results, activeSpaceId) {
 
 // ── Références de conversation dans le texte du modèle ──────────────────────
 // Le modèle cite une conversation passée via [conv_ref:ID] ou [conv_ref:ID|Titre]
-// (doctrine CONV_REF_DOCTRINE, tools.js) plutôt que d'exposer l'ID brut. Extrait
+// (doctrine REFS_DOCTRINE, tools.js) plutôt que d'exposer l'ID brut. Extrait
 // tous les marqueurs présents dans une chaîne — fonction pure, le titre est
 // optionnel (résolu côté appelant si absent, via l'index des résumés).
 // N'utilise pas de lookahead/lookbehind variable : split sur le SEUL séparateur
@@ -1427,6 +1444,533 @@ function parseConvRefs(text) {
     out.push({ match: m[0], id: m[1], title: m[2] || null });
   }
   return out;
+}
+
+// ── Références de fichier et de source web (lot AI) ─────────────────────────
+// Même famille que conv_ref : un marqueur écrit par le modèle (REFS_DOCTRINE,
+// tools.js), résolu par l'application AVANT marked, jamais un lien construit
+// par le modèle.
+//   [file_ref:HANDLE] / [file_ref:HANDLE|Libellé] — HANDLE est un att-N, un
+//   file-<id> ou un res_<id> (la famille se lit par classifyHandleRef au clic).
+//   Ni espace, ni `|`, ni `]` dans le handle.
+//   [web_ref:URL] — une source par marqueur. La restriction à `https?://` est
+//   AUSSI la garde contre `javascript:`, `data:` et consorts : ne pas
+//   l'assouplir. Ni espace ni `]` dans l'URL.
+const FILE_REF_MARKER_RE = /\[file_ref:([^\s|\]]+)(?:\|([^\]]*))?\]/g;
+const WEB_REF_MARKER_RE = /\[web_ref:(https?:\/\/[^\s\]]+)\]/g;
+
+// Texte d'un libellé de référence émis en HTML inline AVANT marked : échappé
+// comme du HTML, puis les caractères que marked interpréterait dans le texte
+// d'un paragraphe (emphase, code, lien, barré, cellule de tableau) passés en
+// entités numériques — un nom de fichier `rapport_final_v2.txt` ou `a|b` doit
+// s'afficher tel quel. Les blancs (saut de ligne compris) sont aplatis.
+function refLabelHtml(s) {
+  return escHtml(String(s == null ? '' : s).replace(/\s+/g, ' ').trim())
+    .replace(/[\\`*_[\]~|]/g, function(c) { return '&#' + c.charCodeAt(0) + ';'; });
+}
+
+// HTML d'un lien de fichier. `record` est celui du cache au moment du rendu,
+// ou null : il ne sert qu'à choisir le glyphe (image → lightbox, sinon
+// téléchargement) et l'infobulle. Rien n'est vérifié ici — la résolution qui
+// fait foi a lieu au clic (openFileRef, ui.js). Le glyphe est posé en CSS
+// (`a.file-ref::after`, selon `data-file-kind`) : le texte du lien reste le
+// seul libellé, ce que lit la règle ARIA de l'infobulle.
+function fileRefHtml(handle, label, record) {
+  const isImage = !!(record && typeof record.mime === 'string' && record.mime.indexOf('image/') === 0);
+  const name = record && record.name ? String(record.name) : '';
+  const tip = { label: isImage ? 'Ouvrir l’image' : 'Télécharger', detail: name };
+  const flat = String(label).replace(/\s+/g, ' ').trim();
+  return '<a class="file-ref" data-file-kind="' + (isImage ? 'image' : 'file') + '"' +
+    ' href="#miaou-file:' + escHtml(encodeURIComponent(handle)) + '"' +
+    tipAttrs(tip, { text: flat }) + '>' + refLabelHtml(flat) + '</a>';
+}
+
+// Résout les [file_ref:…] d'un texte assistant. PUR : `lookup(handle)` rend le
+// record en cache (ou null), fourni par l'appelant qui connaît la
+// conversation. Libellé : celui du marqueur, sinon le nom du record, sinon le
+// handle. `opts.asPlainText` (export HTML standalone, où aucun clic ne résout
+// rien) : le libellé nu, échappé comme le lien.
+function resolveFileRefMarkers(text, lookup, opts) {
+  const asPlainText = !!(opts && opts.asPlainText);
+  return String(text).replace(FILE_REF_MARKER_RE, function(match, handle, title) {
+    const record = typeof lookup === 'function' ? (lookup(handle) || null) : null;
+    const label = (title && title.trim()) || (record && record.name) || handle;
+    if (asPlainText) return refLabelHtml(label);
+    return fileRefHtml(handle, label, record);
+  });
+}
+
+// Forme déviante d'un marqueur : le modèle l'emballe dans un lien Markdown,
+// `[test.txt](file_ref:file-8o8a)` au lieu de `[file_ref:file-8o8a|test.txt]`
+// (observé sur un modèle de 9B, pour une liste de fichiers à télécharger — le
+// réflexe « lien avec le nom devant »). Sans réécriture, marked en fait un lien
+// vers un schéma qui n'existe pas : ni glyphe, ni infobulle, ni clic. Réécrite
+// en marqueur AVANT toute résolution ou neutralisation. Tolérance sans risque
+// d'ambiguïté : `file_ref:` et `conv_ref:` ne sont un schéma d'URL nulle part,
+// une seule intention est possible. PUR.
+const REF_LINK_FORM_RE = /\[([^\]\n]*)\]\((conv_ref|file_ref):([^)\s|\]]+)\)/g;
+function normalizeRefLinkForms(text) {
+  const out = String(text == null ? '' : text).replace(REF_LINK_FORM_RE, function(match, label, kind, ref) {
+    const l = label.trim();
+    return '[' + kind + ':' + ref + (l ? '|' + l : '') + ']';
+  });
+  return moveWebRefsAfterPunctuation(convertSourceFootnotes(out));
+}
+
+// Troisième forme déviante, la plus tenace : les notes numérotées. Le modèle
+// renvoie par `[1]` à une liste de sources écrite en fin de réponse — habitude
+// d'entraînement (réponses de moteurs de recherche, textes académiques)
+// qu'une consigne ne déloge pas, même sur un 26B. Chaque `[n]` du texte devient
+// `[web_ref:URL]` et la liste disparaît. La provenance reste celle du registre :
+// une note vers une page non lue donne une pastille en pointillé, la
+// conversion ne légitime rien.
+//
+// Gardes, toutes nécessaires à la conversion (sinon le texte est rendu tel
+// quel) : une liste de définitions EN FIN de réponse, hors bloc de code ;
+// chaque définition porte une URL http(s) acceptable pour un web_ref ; chaque
+// définition est citée au moins une fois dans le texte (sinon retirer la liste
+// perdrait un lien). Un `[1]` d'indice de tableau ou de renvoi juridique,
+// sans liste qui lui corresponde, n'est jamais touché. Formes de définition :
+// `[1] [Titre](url)`, `[1]: url`, `[1] url`, `[1] Titre — url`, `1. [Titre](url)`,
+// et la note Markdown `[^1]: url`, précédées ou non d'une puce. Un intitulé (« Sources : », en gras ou en titre)
+// et un filet (`***`, `---`) juste au-dessus partent avec la liste. PUR.
+const FOOTNOTE_DEF_RE = /^\s*(?:[-*+]\s+)?(?:\[\^?(\d{1,3})\]:?|(\d{1,3})[.)])\s+(.*\S)\s*$/;
+const FOOTNOTE_HEADING_RE = /^\s*(?:#{1,6}\s*)?(?:\*\*|__)?\s*(?:sources?|références?|references?|liens?)\s*(?:\*\*|__)?\s*:?\s*(?:\*\*|__)?\s*$/i;
+const FOOTNOTE_RULE_RE = /^\s*(?:\*\s*){3,}$|^\s*(?:-\s*){3,}$|^\s*(?:_\s*){3,}$/;
+function footnoteDefUrl(rest) {
+  const md = /\]\((https?:\/\/\S+)\)/.exec(rest);
+  let url = md ? md[1] : '';
+  if (!url) {
+    const bare = /<?(https?:\/\/[^\s<>]+)>?/.exec(rest);
+    url = bare ? bare[1].replace(/[.,;:]+$/, '') : '';
+  }
+  return new RegExp('^' + WEB_REF_MARKER_RE.source + '$').test('[web_ref:' + url + ']') ? url : '';
+}
+function convertSourceFootnotes(text) {
+  const src = String(text == null ? '' : text);
+  if (src.indexOf('[') < 0) return src;
+  const lines = src.split('\n');
+  // Lignes dans un bloc de code clôturé : jamais lues ni réécrites.
+  const inCode = [];
+  let fence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const f = /^\s*(`{3,}|~{3,})/.exec(lines[i]);
+    if (fence) { inCode.push(true); if (f && f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = null; continue; }
+    if (f) { fence = f[1]; inCode.push(true); continue; }
+    inCode.push(false);
+  }
+  // Liste de définitions en fin de texte, blancs tolérés entre elles.
+  const defs = {};
+  let count = 0;
+  let start = lines.length;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (inCode[i]) break;
+    if (!lines[i].trim()) { if (count) start = i; continue; }
+    const m = FOOTNOTE_DEF_RE.exec(lines[i]);
+    if (!m) break;
+    const url = footnoteDefUrl(m[3]);
+    if (!url) return src;
+    defs[m[1] || m[2]] = url;
+    count++;
+    start = i;
+  }
+  if (!count) return src;
+  // Intitulé puis filet au-dessus de la liste, facultatifs.
+  let cut = start;
+  let j = cut - 1;
+  while (j >= 0 && !lines[j].trim()) j--;
+  if (j >= 0 && !inCode[j] && FOOTNOTE_HEADING_RE.test(lines[j])) { cut = j; j--; while (j >= 0 && !lines[j].trim()) j--; }
+  if (j >= 0 && !inCode[j] && FOOTNOTE_RULE_RE.test(lines[j])) cut = j;
+  // Renvois `[1]`, `[1, 2]`, `[1][2]` du texte, hors code ; jamais `[1](…)`
+  // ni `[1]:` (lien Markdown, définition de référence).
+  const cited = {};
+  const refRe = /\[\^?(\d{1,3}(?:\s*,\s*\d{1,3})*)\](?![(:])/g;
+  const body = lines.slice(0, cut).map(function(line, i) {
+    if (inCode[i]) return line;
+    return line.replace(refRe, function(match, list) {
+      const nums = list.split(/\s*,\s*/);
+      if (!nums.every(function(n) { return defs[n]; })) return match;
+      nums.forEach(function(n) { cited[n] = true; });
+      return nums.map(function(n) { return '[web_ref:' + defs[n] + ']'; }).join(' ');
+    });
+  });
+  if (!Object.keys(defs).every(function(n) { return cited[n]; })) return src;
+  // `[1][2]` : deux marqueurs accolés, séparés d'une espace comme `[1, 2]`.
+  for (let i = 0; i < body.length; i++) {
+    if (!inCode[i]) body[i] = body[i].replace(/(\[web_ref:[^\]\s]+\])(?=\[web_ref:)/g, '$1 ');
+  }
+  while (body.length && !body[body.length - 1].trim()) body.pop();
+  return body.join('\n');
+}
+
+// Seconde forme déviante, typographique celle-là : la source posée AVANT la
+// ponctuation qui clôt la phrase (`… 2026 [web_ref:…].`), ce que font la
+// plupart des petits modèles malgré la doctrine (mesuré : 24 pastilles sur 27
+// dans une réponse). La ponctuation qui suit immédiatement un groupe de
+// marqueurs est remontée devant lui, blanc insécable ou espace compris
+// (`vrai [web_ref:…] !` → `vrai ! [web_ref:…]`). La citation reste accrochée à
+// la même phrase : c'est de la typographie, pas un déplacement de la source.
+// Les parenthèses et guillemets fermants ne bougent pas : le marqueur peut
+// légitimement être à l'intérieur. PUR ; appelé par normalizeRefLinkForms, donc
+// au rendu comme à la neutralisation (copie, `.md`).
+function moveWebRefsAfterPunctuation(text) {
+  const group = WEB_REF_MARKER_RE.source + '(?:[ \\t]*' + WEB_REF_MARKER_RE.source + ')*';
+  const re = new RegExp('([ \\t]*)(' + group + ')([ \\u00a0\\u202f]?[.,;:!?…]+)', 'g');
+  // Le motif d'un marqueur porte son propre groupe capturant : la ponctuation
+  // est donc lue en DERNIÈRE capture (avant offset et chaîne), pas par rang.
+  return String(text).replace(re, function() {
+    const a = arguments;
+    const lead = a[1], refs = a[2], punct = a[a.length - 3];
+    return punct + (lead || ' ') + refs;
+  });
+}
+
+// Domaine affichable d'une URL de source : hôte en minuscules, sans `www.`,
+// sans identifiants ni port. Pur, sans `URL` (absent du harnais QuickJS).
+function webRefDomain(url) {
+  const m = /^https?:\/\/([^\/?#]*)/i.exec(String(url || ''));
+  if (!m) return '';
+  const host = m[1].replace(/^.*@/, '').replace(/:\d*$/, '').toLowerCase();
+  return host.replace(/^www\./, '');
+}
+
+// Retire les marqueurs de référence d'un texte qui quitte l'écran, où rien ne
+// les résoudrait plus. PUR. Trois modes :
+//   'copy'    — copie d'un message : conv_ref et file_ref → libellé,
+//               web_ref → [domaine](url) ;
+//   'md'      — export .md : idem, lien Markdown inline ;
+//   'summary' — projection de résumé et de titrage : libellés, web_ref retiré
+//               (une URL n'aide ni à titrer ni à retrouver).
+// `lookups` (facultatif) : { convTitle(id), fileName(handle) } pour retrouver
+// un libellé que le marqueur ne porte pas ; à défaut, l'id ou le handle.
+function neutralizeRefMarkers(text, mode, lookups) {
+  const lk = lookups || {};
+  const convTitle = function(id) { return typeof lk.convTitle === 'function' ? (lk.convTitle(id) || '') : ''; };
+  const fileName = function(h) { return typeof lk.fileName === 'function' ? (lk.fileName(h) || '') : ''; };
+  let out = normalizeRefLinkForms(text);
+  out = out.replace(new RegExp(CONV_REF_RE.source, 'g'), function(match, id, title) {
+    return (title && title.trim()) || convTitle(id) || id;
+  });
+  out = out.replace(new RegExp(FILE_REF_MARKER_RE.source, 'g'), function(match, handle, title) {
+    return (title && title.trim()) || fileName(handle) || handle;
+  });
+  if (mode === 'summary') {
+    return out.replace(new RegExp('[ \\t]*' + WEB_REF_MARKER_RE.source, 'g'), '');
+  }
+  return out.replace(new RegExp(WEB_REF_MARKER_RE.source, 'g'), function(match, url) {
+    // Parenthèses et chevrons encodés : ils fermeraient la destination du lien.
+    const safe = url.replace(/[()<>]/g, function(c) { return '%' + c.charCodeAt(0).toString(16).toUpperCase(); });
+    return '[' + (webRefDomain(url) || url) + '](' + safe + ')';
+  });
+}
+
+// Masque, PENDANT le streaming seulement, un marqueur de référence commencé
+// mais pas encore refermé en queue de texte : sinon `[file_ref:res_4f…` s'affiche
+// brut le temps de quelques deltas, puis se change en lien. Couvre aussi le nom
+// du marqueur en cours d'écriture (`[file_r`). Le rendu final ne masque rien :
+// un marqueur resté ouvert à la fin est une faute du modèle, et elle doit se
+// voir. Un `[` seul n'est pas masqué (trop ambigu). PUR.
+const REF_MARKER_NAMES = ['conv_ref:', 'file_ref:', 'web_ref:'];
+function maskOpenRefMarker(text) {
+  const s = String(text == null ? '' : text);
+  const open = /\[(?:conv|file|web)_ref:[^\]]*$/.exec(s);
+  if (open) return s.slice(0, open.index);
+  // Forme lien Markdown en cours d'écriture (normalizeRefLinkForms).
+  const openLink = /\[[^\]\n]*\]\((?:conv|file)_ref:[^)\s]*$/.exec(s);
+  if (openLink) return s.slice(0, openLink.index);
+  const i = s.lastIndexOf('[');
+  if (i < 0) return s;
+  const tail = s.slice(i + 1);
+  if (!tail) return s;
+  for (let k = 0; k < REF_MARKER_NAMES.length; k++) {
+    if (REF_MARKER_NAMES[k].indexOf(tail) === 0) return s.slice(0, i);
+  }
+  return s;
+}
+
+// Un record résolu au clic sur un [file_ref:…] appartient-il à la conversation
+// affichée ? PUR. Le cache session n'est PAS scopé : il accumule les records de
+// toutes les conversations ouvertes depuis le chargement de la page, et
+// `resolveHandleRecord` ne filtre que les familles att- (par convId) et file-
+// (par Space). Un res_… d'une autre conversation y résoudrait donc — et sa
+// présence dépendrait de ce qu'on a ouvert avant, un oracle (piège 18). Seule
+// exception : l'alias d'un fichier délégué à un agent, dont le record réel a un
+// autre id que le handle (resolveDelegatedRecordId, agents.js).
+function fileRefRecordInScope(handle, record, convId) {
+  if (!record) return false;
+  if (!/^res_/.test(String(handle)) || record.id !== handle) return true;
+  return !!convId && record.conversationId === convId;
+}
+
+// ── Sources web : registre et pastilles (lot AI) ────────────────────────────
+// Un [web_ref:URL] devient une pastille au nom du site, qui dit si la page a
+// réellement été consultée dans la conversation. Tout ici est PUR : le registre
+// se dérive d'un thread passé en argument, la pastille d'une entrée du registre.
+
+// `src` d'une favicon affichable : data-URL base64 d'un format matriciel, et
+// rien d'autre. SVG exclu (un document, pas une image : scripts, références
+// externes), comme tout schéma qui chargerait quelque chose d'un tiers à
+// l'affichage. La borne de longueur est une garde de sûreté, pas le contrat :
+// le serveur plafonne déjà à 16 Ko encodés.
+const WEB_ICON_SRC_RE = /^data:image\/(?:png|x-icon|vnd\.microsoft\.icon|gif|jpeg|webp);base64,[A-Za-z0-9+\/]+={0,2}$/;
+const WEB_ICON_SRC_MAX = 32768;
+function isSafeIconSrc(s) {
+  return typeof s === 'string' && s.length <= WEB_ICON_SRC_MAX && WEB_ICON_SRC_RE.test(s);
+}
+
+// Métadonnées de page qu'un outil a posées dans le `_meta` de son résultat,
+// sous la clé `miaou/web` (contrat de `fetch_url`, miaou-mcp-servers) :
+// { title, site_name, canonical_url, favicon }, tous facultatifs. Relues ici
+// champ par champ — le canal vient d'un serveur, rien n'y est de confiance :
+// textes aplatis et bornés, URL restreinte à http(s), favicon validée par
+// isSafeIconSrc. `null` si rien d'utilisable.
+function webMetaFromResult(result) {
+  const meta = result && result._meta;
+  const w = meta && typeof meta === 'object' ? meta['miaou/web'] : null;
+  if (!w || typeof w !== 'object') return null;
+  const text = function(v, max) {
+    return typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '';
+  };
+  const out = {};
+  const title = text(w.title, 300);
+  if (title) out.title = title;
+  const site = text(w.site_name, 120);
+  if (site) out.site_name = site;
+  if (typeof w.canonical_url === 'string' && w.canonical_url.length <= 2048 &&
+      /^https?:\/\/[^\s]+$/i.test(w.canonical_url)) out.canonical_url = w.canonical_url;
+  if (isSafeIconSrc(w.favicon)) out.favicon = w.favicon;
+  return Object.keys(out).length ? out : null;
+}
+
+// Clé de comparaison d'une URL de source : fragment retiré, slash final du
+// chemin ignoré, schéma et hôte en minuscules. RIEN d'autre (ni tri des
+// paramètres, ni `www.` retiré) : deux URL qui diffèrent autrement peuvent
+// désigner deux pages. '' si ce n'est pas une URL http(s).
+function normalizeWebUrl(url) {
+  const m = /^(https?):\/\/([^\/?#\s]*)([^?#\s]*)(\?[^#\s]*)?/i.exec(String(url == null ? '' : url).trim());
+  if (!m || !m[2]) return '';
+  return m[1].toLowerCase() + '://' + m[2].toLowerCase() + m[3].replace(/\/+$/, '') + (m[4] || '');
+}
+
+// Éléments d'un résultat de recherche resté inline : tableau JSON d'objets
+// (`[{title, url, …}]` de ddg/brave, `page_url` d'une recherche d'image), ou
+// objet porteur d'un tel tableau en `results`. La note MIAOU de queue est
+// retirée avant l'analyse. Tout autre résultat rend [] — y compris un résultat
+// évacué, réduit à son handle : c'est pourquoi le titre n'en est QUE
+// opportuniste, et la provenance n'en dépend jamais.
+function searchResultItems(result) {
+  const raw = splitToolResultNoteRaw(result).text.trim();
+  if (!raw || (raw.charAt(0) !== '[' && raw.charAt(0) !== '{')) return [];
+  let v;
+  try { v = JSON.parse(raw); } catch (e) { return []; }
+  const arr = Array.isArray(v) ? v : (v && Array.isArray(v.results) ? v.results : []);
+  return arr.filter(function(o) { return o && typeof o === 'object'; });
+}
+
+// Outil d'agent (`agent__result`, préfixé ou non) : son résultat est un compte
+// rendu d'agent, dont les [web_ref:…] valent provenance RELAYÉE.
+const AGENT_TOOL_NAME_RE = /(?:^|__)agent__/;
+
+// Registre des sources web d'une conversation : Map(urlNormalisée → { consulted,
+// relayed, title, site, favicon }). PUR, jamais persisté, dérivé du thread
+// ENTIER et non de la projection émise : il survit donc à une compaction, qui
+// ne détruit rien en amont de sa frontière.
+//
+// PROVENANCE — une URL est CONSULTÉE quand elle est l'`args.url` d'un ack qui
+// n'est pas en erreur (ackIsError), quel que soit l'outil : la forme, pas une
+// liste de noms. L'URL finale d'un `webMeta` (après redirections) l'est au même
+// titre, puisqu'elle vient du même appel. Jamais depuis `result` : il est
+// réécrit en place par l'évacuation et resource__from_result, alors que `args`
+// ne l'est jamais — une pastille passerait sinon de « consultée » à « non
+// consultée » après une évacuation. Une URL seulement vue dans un résultat de
+// recherche n'est PAS consultée.
+// RELAYÉE — un [web_ref:…] écrit par un agent : dans le compte rendu que reçoit
+// le parent (message user à `agentResult`, jamais évacué), ou dans le `result`
+// d'un `agent__result` qui le relit (lui évacuable, d'où la première source).
+// Une consultation directe l'emporte.
+// TITRE — `webMeta` fait foi quand il est là ; sinon le titre d'un résultat de
+// recherche encore inline. N'alimente que le libellé et l'infobulle.
+function webSourceRegistry(thread) {
+  const reg = new Map();
+  const entry = function(url) {
+    const k = normalizeWebUrl(url);
+    if (!k) return null;
+    let e = reg.get(k);
+    if (!e) {
+      e = { consulted: false, relayed: false, title: '', site: '', favicon: '', _searchTitle: '' };
+      reg.set(k, e);
+    }
+    return e;
+  };
+  const consult = function(url, meta) {
+    const e = entry(url);
+    if (!e) return;
+    e.consulted = true;
+    e.relayed = false;
+    if (meta) {
+      if (meta.title) e.title = meta.title;
+      if (meta.site_name) e.site = meta.site_name;
+      if (meta.favicon) e.favicon = meta.favicon;
+    }
+  };
+  const relay = function(text) {
+    const re = new RegExp(WEB_REF_MARKER_RE.source, 'g');
+    let m;
+    while ((m = re.exec(String(text))) !== null) {
+      const e = entry(m[1]);
+      if (e && !e.consulted) e.relayed = true;
+    }
+  };
+  for (const m of thread || []) {
+    if (!m) continue;
+    if (m.role === 'user' && m.agentResult && typeof m.content === 'string') { relay(m.content); continue; }
+    if (m.role !== 'tool-ack' || ackIsError(m)) continue;
+    const argUrl = m.args && typeof m.args === 'object' && typeof m.args.url === 'string' ? m.args.url : '';
+    const meta = m.webMeta && typeof m.webMeta === 'object' ? m.webMeta : null;
+    if (argUrl && normalizeWebUrl(argUrl)) {
+      consult(argUrl, meta);
+      if (meta && meta.canonical_url) consult(meta.canonical_url, meta);
+    }
+    if (typeof m.result !== 'string') continue;
+    if (m.name && AGENT_TOOL_NAME_RE.test(m.name)) relay(m.result);
+    for (const it of searchResultItems(m.result)) {
+      const u = typeof it.url === 'string' ? it.url : (typeof it.page_url === 'string' ? it.page_url : '');
+      const e = u ? entry(u) : null;
+      if (e && !e._searchTitle && typeof it.title === 'string') e._searchTitle = it.title.replace(/\s+/g, ' ').trim().slice(0, 300);
+    }
+  }
+  reg.forEach(function(e) {
+    if (!e.title) e.title = e._searchTitle;
+    delete e._searchTitle;
+  });
+  return reg;
+}
+
+// Signature bon marché d'un thread pour ce qu'en lit webSourceRegistry : le
+// registre ne change qu'à l'arrivée ou l'enrichissement d'un ack (ou d'un
+// compte rendu d'agent), jamais pendant qu'un texte assistant se streame. Sert
+// à ne pas le recalculer à chaque delta. Pure.
+function webSourceRegistrySignature(thread) {
+  const t = thread || [];
+  let sig = String(t.length);
+  for (const m of t) {
+    if (!m) continue;
+    if (m.role === 'tool-ack') {
+      sig += '|' + (m.args ? 'a' : '') + (typeof m.result === 'string' ? m.result.length : '') +
+        (m.webMeta ? 'w' : '') + (ackIsError(m) ? 'e' : '');
+    } else if (m.agentResult) {
+      sig += '|r' + (typeof m.content === 'string' ? m.content.length : 0);
+    }
+  }
+  return sig;
+}
+
+// Libellé d'une pastille : nom de site > titre > domaine sans `www.`.
+function webSourceLabel(source, url) {
+  const s = source || {};
+  return s.site || s.title || webRefDomain(url) || String(url);
+}
+
+// Glyphe générique d'une infobulle de source sans favicon (tooltips.js le
+// dessine) : jamais une bulle de source sans icône, pour qu'une favicon absente
+// ne se lise pas comme une autre sorte de lien.
+const TIP_GENERIC_ICON = 'globe';
+
+// Infobulle d'une pastille (deux étages, module AH) : le titre, puis le site et
+// le domaine, puis la provenance quand la page n'a pas été consultée ici. Le
+// constat n'accuse pas : l'URL a pu venir de l'utilisateur.
+function webSourceTip(source, url) {
+  const s = source || {};
+  const domain = webRefDomain(url) || String(url);
+  const lines = [s.site ? s.site + ' · ' + domain : domain];
+  if (s.relayed) lines.push('Consultée par un agent');
+  else if (!s.consulted) lines.push('Page absente des outils de cette conversation');
+  return {
+    label: s.title || s.site || domain,
+    detail: lines.join('\n'),
+    icon: isSafeIconSrc(s.favicon) ? s.favicon : TIP_GENERIC_ICON,
+  };
+}
+
+// Attributs d'infobulle d'un porteur émis en HTML inline AVANT marked : un
+// saut de ligne brut dans un attribut passerait, mais on ne donne pas à marked
+// une ligne qui commence au milieu d'une balise.
+function inlineTipAttrs(tip, opts) {
+  return tipAttrs(tip, opts).replace(/\n/g, '&#10;');
+}
+
+// HTML d'une pastille. État lu dans le registre : consultée (rien), relayée
+// par un agent, ou non consultée. `overflow` : au-delà des pastilles visibles
+// d'un groupe, masquée jusqu'au dépli. L'URL est déjà restreinte à http(s) par
+// WEB_REF_MARKER_RE ; `target`/`rel` sont posés par le hook DOMPurify (ui.js).
+// La flèche ↗ du survol est en CSS : un nœud texte entrerait dans le nom
+// accessible du lien.
+function webRefPillHtml(url, source, overflow) {
+  const s = source || {};
+  const state = s.consulted ? '' : (s.relayed ? ' relayed' : ' unverified');
+  const label = webSourceLabel(s, url);
+  const icon = isSafeIconSrc(s.favicon)
+    ? '<img class="wr-icon" alt="" src="' + escHtml(s.favicon) + '">'
+    : '<span class="wr-icon wr-globe"></span>';
+  return '<a class="web-ref' + state + (overflow ? ' wr-overflow' : '') + '" href="' + escHtml(url) + '"' +
+    inlineTipAttrs(webSourceTip(s, url), { text: label }) + '>' +
+    icon + '<span class="wr-label">' + refLabelHtml(label) + '</span></a>';
+}
+
+// Pastilles visibles d'un groupe. Au-delà, « +N » replie le reste — seulement
+// s'il en masque au moins deux : un « +1 » prend la place de la pastille qu'il
+// cache (maquette AI-0).
+const WEB_REF_GROUP_VISIBLE = 3;
+// Marqueurs contigus, séparés seulement par des espaces ou tabulations : un
+// groupe. Les blancs qui le précèdent sont absorbés (le groupe porte sa marge).
+const WEB_REF_GROUP_RE = new RegExp('[ \\t]*' + WEB_REF_MARKER_RE.source + '(?:[ \\t]*' + WEB_REF_MARKER_RE.source + ')*', 'g');
+
+// Découpe les groupes d'un texte, pour les tests et pour resolveWebRefMarkers.
+// Rend [{ match, urls }]. Pur.
+function webRefGroups(text) {
+  const out = [];
+  const re = new RegExp(WEB_REF_GROUP_RE.source, 'g');
+  let m;
+  while ((m = re.exec(String(text))) !== null) {
+    const urls = [];
+    const one = new RegExp(WEB_REF_MARKER_RE.source, 'g');
+    let u;
+    while ((u = one.exec(m[0])) !== null) urls.push(u[1]);
+    out.push({ match: m[0], urls: urls });
+  }
+  return out;
+}
+
+// Résout les [web_ref:…] d'un texte assistant. PUR : `registry` est celui de
+// la conversation dont le texte est rendu (webSourceRegistry), fourni par
+// l'appelant. `opts.asPlainText` (export HTML) : un lien externe ordinaire
+// entre parenthèses, au libellé de la pastille, sans style — EXPORT_CSS est
+// figé (piège 22).
+function resolveWebRefMarkers(text, registry, opts) {
+  const asPlainText = !!(opts && opts.asPlainText);
+  const reg = registry instanceof Map ? registry : new Map();
+  const src = function(u) { return reg.get(normalizeWebUrl(u)) || null; };
+  return String(text).replace(new RegExp(WEB_REF_GROUP_RE.source, 'g'), function(group) {
+    const urls = webRefGroups(group)[0].urls;
+    if (asPlainText) {
+      return urls.map(function(u) {
+        return ' <a href="' + escHtml(u) + '">(' + refLabelHtml(webSourceLabel(src(u), u)) + ')</a>';
+      }).join('');
+    }
+    const fold = urls.length - WEB_REF_GROUP_VISIBLE >= 2;
+    let html = '<span class="web-refs">';
+    urls.forEach(function(u, i) { html += webRefPillHtml(u, src(u), fold && i >= WEB_REF_GROUP_VISIBLE); });
+    if (fold) {
+      const rest = urls.slice(WEB_REF_GROUP_VISIBLE);
+      const more = '+' + rest.length;
+      html += '<button type="button" class="web-ref-more"' +
+        inlineTipAttrs({
+          label: rest.length + ' autres sources',
+          detail: rest.map(function(u) { return webSourceLabel(src(u), u); }).join('\n'),
+        }, { text: more }) + '>' + more + '</button>';
+    }
+    return html + '</span>';
+  });
 }
 
 // ── Téléchargement côté client ───────────────────────────────────────────────
@@ -3064,21 +3608,30 @@ function projectThreadForCompaction(thread, maxResultChars) {
 // sens pour qui doit seulement titrer ou résumer un historique, et qui
 // l'inviterait à commenter une lacune plutôt qu'à faire son travail (souvenir
 // `model-facing-text`, défaut « référentiel implicite »).
-function projectThreadForRecap(thread) {
+//
+// Les marqueurs de référence du texte du MODÈLE (réponses, résumé de
+// compaction) y sont neutralisés (`neutralizeRefMarkers`, mode 'summary') : le
+// rédacteur n'a que faire d'un `[file_ref:res_…]`, et il le recopierait dans
+// un titre. Pas le texte de l'utilisateur, qui ne porte pas de marqueur — et
+// dont `messageTextForSummary` alimente aussi l'extrait de secours, laissé
+// intact. `lookups` (facultatif) : cf. neutralizeRefMarkers.
+function projectThreadForRecap(thread, lookups) {
   var list = thread || [];
   var from = lastCompactionIndex(list);
   var parts = [];
   var i = 0;
   if (from >= 0) {
     parts.push('[Résumé du début de la conversation :]\n\n' +
-      String(list[from].content == null ? '' : list[from].content));
+      neutralizeRefMarkers(list[from].content == null ? '' : list[from].content, 'summary', lookups));
     i = from + 1;
   }
   for (; i < list.length; i++) {
     var m = list[i];
     if (!m) continue;
     if (m.role !== 'user' && m.role !== 'assistant') continue;
-    parts.push(m.role + ': ' + messageTextForSummary(m));
+    var text = messageTextForSummary(m);
+    if (m.role === 'assistant') text = neutralizeRefMarkers(text, 'summary', lookups);
+    parts.push(m.role + ': ' + text);
   }
   return parts.join('\n\n');
 }
@@ -5154,16 +5707,24 @@ const TIP_ARROW_INSET = 10;
 // Accepte une chaîne (un étage) ou { label, detail } (deux étages). Un
 // détail sans libellé devient le libellé : un étage seul est toujours un
 // libellé.
+// `icon` (lot AI, seule extension du module) : image posée à côté du libellé,
+// comme la favicon d'un onglet. Deux valeurs admises : une data-URL validée par
+// isSafeIconSrc, ou TIP_GENERIC_ICON (glyphe dessiné par tooltips.js). Toute
+// autre valeur est ABANDONNÉE ici, avant d'atteindre un attribut ou un `src`.
 function normalizeTip(tip) {
-  let label = '', detail = '';
+  let label = '', detail = '', icon = '';
   if (tip && typeof tip === 'object') {
     label = tip.label == null ? '' : String(tip.label).trim();
     detail = tip.detail == null ? '' : String(tip.detail).trim();
+    if (tip.icon === TIP_GENERIC_ICON || isSafeIconSrc(tip.icon)) icon = tip.icon;
   } else if (tip != null) {
     label = String(tip).trim();
   }
   if (!label && detail) { label = detail; detail = ''; }
-  return label ? { label: label, detail: detail } : null;
+  if (!label) return null;
+  const t = { label: label, detail: detail };
+  if (icon) t.icon = icon;
+  return t;
 }
 
 // Texte plat d'une infobulle (attributs ARIA) : « libellé. détail », sans
@@ -5215,6 +5776,7 @@ function tipAttrs(tip, opts) {
   if (!t) return out;
   out += ' data-tip="' + escHtml(t.label) + '"';
   if (t.detail) out += ' data-tip-detail="' + escHtml(t.detail) + '"';
+  if (t.icon) out += ' data-tip-icon="' + escHtml(t.icon) + '"';
   const aria = tipAriaRule(t, o);
   if (aria.kind === 'label') out += ' aria-label="' + escHtml(aria.text) + '" data-tip-aria="label"';
   else if (aria.kind === 'description') out += ' aria-description="' + escHtml(aria.text) + '" data-tip-aria="description"';
@@ -5241,6 +5803,32 @@ function tipPlacement(m) {
   const inset = m.arrowInset == null ? 0 : m.arrowInset;
   const arrowX = Math.max(inset, Math.min(cx - left, m.tipW - inset));
   return { side: side, top: top, left: left, arrowX: arrowX };
+}
+
+// Boîte d'ancrage d'un porteur, parmi ses boîtes de ligne (`getClientRects`).
+// Un porteur EN LIGNE coupé sur deux lignes (lien dans un paragraphe) a une
+// boîte englobante qui couvre les deux lignes : la bulle viserait le milieu du
+// paragraphe. On ancre donc sur la ligne sous le pointeur ; entre deux lignes
+// (interligne), sur la plus proche verticalement ; sans pointeur (focus
+// clavier), sur la première. Un porteur boîte n'a qu'une boîte : inchangé.
+// Les boîtes vides (fragments de largeur ou hauteur nulle) sont ignorées tant
+// qu'il en reste une pleine. `null` si aucune boîte : l'appelant retombe sur
+// `getBoundingClientRect`.
+//   rects = [{ top, bottom, left, right }], point = { x, y } | null
+function tipAnchorRect(rects, point) {
+  const all = Array.prototype.slice.call(rects || []);
+  if (!all.length) return null;
+  const full = all.filter(function(r) { return r.right - r.left > 0 && r.bottom - r.top > 0; });
+  const list = full.length ? full : all;
+  if (!point) return list[0];
+  let best = null, bestDy = Infinity, bestDx = Infinity;
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    const dy = point.y < r.top ? r.top - point.y : (point.y > r.bottom ? point.y - r.bottom : 0);
+    const dx = point.x < r.left ? r.left - point.x : (point.x > r.right ? point.x - r.right : 0);
+    if (dy < bestDy || (dy === bestDy && dx < bestDx)) { best = r; bestDy = dy; bestDx = dx; }
+  }
+  return best;
 }
 
 // Délai avant d'afficher une bulle : immédiat si une bulle est déjà

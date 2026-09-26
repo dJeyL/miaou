@@ -41,6 +41,11 @@ téléchargement du fil (`decoratePre`, `downloadMsgMd`) dans `ui.js`.
   `setSending` (ui.js). CSS : `.conv-dl-btn:disabled` masque
   le bouton. `downloadConvMd()` (main.js) ne garde que les rôles `user`/`assistant`
   pour le texte, et inclut l'horodatage par message si `ts` est défini.
+- **Marqueurs de référence neutralisés** dans l'export `.md` (`downloadConvMd`,
+  `downloadMsgMd`) et la copie d'un message assistant (`copyMsg`) :
+  `neutralizeRefMarkers` (utils.js), `conv_ref`/`file_ref` en libellé,
+  `web_ref` en lien `[domaine](url)`. Le texte utilisateur n'est pas touché.
+  Détail dans `docs/tools.md` (§ « Références dans le texte du modèle »).
 - **Traces d'appels d'outils dans l'export.** `formatToolAcksMd(acks)` (utils.js,
   pure, testée QuickJS) rend un groupe d'acks **enrichis** (`args` non null —
   mêmes acks que `expandThread` réinjecte cross-turn, cf. `docs/tools.md`)
@@ -285,8 +290,12 @@ ultérieures du même lot).
   raisonnement précède l'appel d'outils qu'il motive) ; les acks précédant un
   `user` sont silencieusement droppés (même choix que `downloadConvMd`, pas une
   régression).
-  Corps assistant via `renderMd(content, { asPlainText: true })` (conv_ref
-  délié), reasoning en `<details class="reasoning">` **fermé** par défaut, avec
+  Corps assistant via `renderMd(content, { asPlainText: true, refCtx, webSources })`
+  (conv_ref et file_ref déliés en libellé nu ; `refCtx` est la conversation
+  exportée, pas forcément celle affichée, pour le nom de repli d'un fichier ;
+  `web_ref` en lien externe ordinaire entre parenthèses, au libellé de la
+  pastille — nom de site, titre ou domaine — lu dans `webSources`, le registre
+  du thread EXPORTÉ ; aucun style de pastille, `EXPORT_CSS` étant figé), reasoning en `<details class="reasoning">` **fermé** par défaut, avec
   le contenu (`.reasoning-content`) **imbriqué DANS le `<summary>`** — même
   motif que `formatToolAcksHtml` (le détail est dans le summary, pas en frère) :
   tout le bloc est une zone de clic pliable **sans JS** (cf. piège

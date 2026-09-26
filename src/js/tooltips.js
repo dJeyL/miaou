@@ -27,6 +27,7 @@ let _tipPending = null;     // porteur dont l'affichage attend son délai
 let _tipWatchTimer = null;
 let _tipLastHideAt = null;
 let _tipWired = false;
+let _tipPoint = null;       // pointeur à l'entrée sur le porteur (ancrage par ligne)
 
 // ── Point d'écriture unique ───────────────────────────────────────────────────
 
@@ -37,8 +38,12 @@ function getTip(el) {
   if (!el || typeof el.getAttribute !== 'function') return '';
   const label = el.getAttribute('data-tip') || '';
   const detail = el.getAttribute('data-tip-detail') || '';
+  const icon = el.getAttribute('data-tip-icon') || '';
   if (!label) return '';
-  return detail ? { label: label, detail: detail } : label;
+  if (!detail && !icon) return label;
+  const t = { label: label, detail: detail };
+  if (icon) t.icon = icon;
+  return t;
 }
 
 // Pose (ou retire, texte vide) l'infobulle d'un porteur, ARIA compris. Si la
@@ -92,11 +97,14 @@ function applyTipAttributes(el, tip) {
   if (!t) {
     el.removeAttribute('data-tip');
     el.removeAttribute('data-tip-detail');
+    el.removeAttribute('data-tip-icon');
     return;
   }
   el.setAttribute('data-tip', t.label);
   if (t.detail) el.setAttribute('data-tip-detail', t.detail);
   else el.removeAttribute('data-tip-detail');
+  if (t.icon) el.setAttribute('data-tip-icon', t.icon);
+  else el.removeAttribute('data-tip-icon');
   const aria = tipAriaRule(t, { text: tipCarrierText(el), ariaLabel: el.getAttribute('aria-label') || '' });
   if (aria.kind === 'label') el.setAttribute('aria-label', aria.text);
   else if (aria.kind === 'description') el.setAttribute('aria-description', aria.text);
@@ -138,21 +146,46 @@ function renderTip() {
   if (!owner || !t) { hideTip(); return; }
   const el = ensureTipEl();
   el.textContent = '';
-  if (t.detail) {
+  el.classList.toggle('has-icon', !!t.icon);
+  if (t.detail || t.icon) {
     const label = document.createElement('span');
     label.className = 'tip-label';
     label.textContent = t.label;
-    const detail = document.createElement('span');
-    detail.className = 'tip-detail';
-    detail.textContent = t.detail;
-    el.appendChild(label);
-    el.appendChild(detail);
+    if (t.icon) {
+      // Icône à côté du libellé, comme la favicon d'un onglet. `src` posé par
+      // propriété, et seulement sur une valeur que normalizeTip a validée
+      // (data-URL matricielle) ; sinon le glyphe générique, dessiné en CSS.
+      const head = document.createElement('span');
+      head.className = 'tip-head';
+      let icon;
+      if (t.icon === TIP_GENERIC_ICON) {
+        icon = document.createElement('span');
+        icon.className = 'tip-icon tip-icon-globe';
+      } else {
+        icon = document.createElement('img');
+        icon.className = 'tip-icon';
+        icon.alt = '';
+        icon.src = t.icon;
+      }
+      head.appendChild(icon);
+      head.appendChild(label);
+      el.appendChild(head);
+    } else {
+      el.appendChild(label);
+    }
+    if (t.detail) {
+      const detail = document.createElement('span');
+      detail.className = 'tip-detail';
+      detail.textContent = t.detail;
+      el.appendChild(detail);
+    }
   } else {
     el.textContent = t.label;
   }
   el.style.left = '0px';
   el.style.top = '0px';
-  const r = owner.getBoundingClientRect();
+  // Ligne du porteur sous le pointeur, pas sa boîte englobante (tipAnchorRect).
+  const r = tipAnchorRect(owner.getClientRects(), _tipPoint) || owner.getBoundingClientRect();
   const offset = parseFloat(getComputedStyle(el).getPropertyValue('--tip-offset')) || 8;
   const p = tipPlacement({
     anchor: { top: r.top, bottom: r.bottom, left: r.left, width: r.width },
@@ -231,6 +264,9 @@ function onTipPointerOver(e) {
   if (e.pointerType === 'touch') return;   // tactile hors champ, comme le natif
   const owner = tipOwnerOf(e.target);
   if (!owner) return;
+  // Retenu à l'ENTRÉE sur le porteur seulement : passer d'un enfant à l'autre
+  // du même porteur ne déplace pas une bulle déjà ancrée.
+  if (owner !== _tipHover || !tipIsVisible()) _tipPoint = { x: e.clientX, y: e.clientY };
   _tipHover = owner;
   scheduleTip(owner);
 }
@@ -255,6 +291,7 @@ function onTipFocusIn(e) {
   const owner = tipOwnerOf(e.target);
   if (!owner || owner !== e.target || !owner.matches(':focus-visible')) return;
   if (owner.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(owner.tagName)) return;
+  if (owner !== _tipHover) _tipPoint = null;   // focus clavier : première ligne
   scheduleTip(owner);
 }
 

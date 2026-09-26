@@ -964,6 +964,11 @@ def run_native_title_check() -> tuple[int, int]:
     DATA_TITLE_WRITES = {
         ('main.js', "if (entry) { entry.title = t; saveSummary(currentConvId, entry); }"),
         ('skills.js', "if (inMetadata && key === 'title' && val) out.title = val;"),
+        # Titre de page d'une source web (lot AI) : webMetaFromResult et
+        # webSourceRegistry, donnée du registre — l'infobulle passe par tipAttrs.
+        ('utils.js', "if (title) out.title = title;"),
+        ('utils.js', "if (meta.title) e.title = meta.title;"),
+        ('utils.js', "if (!e.title) e.title = e._searchTitle;"),
     }
     patterns = [
         re.compile(r"""\btitle=["']"""),

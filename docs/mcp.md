@@ -761,6 +761,32 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       APRÈS le libellé (la règle ARIA lit le texte visible au moment de
       l'appel), en deux étages quand un serveur est injoignable (lot AH).
 
+19. **`_meta` d'un appel `tools/call` : métadonnées de page (lot AI).** Un
+    précédent distinct du point 16, qui lit le `_meta` de `tools/list` : ici
+    c'est celui du RÉSULTAT d'un appel, canal hors modèle d'un outil vers
+    l'application. Seul `fetch_url` (`mcp_web`, miaou-mcp-servers) l'emploie :
+    `_meta["miaou/web"] = { title, site_name, canonical_url, favicon }`, tous
+    facultatifs, clé préfixée `miaou/` comme `miaou/unauthorized_upstreams`
+    (anti-collision dans l'espace partagé `_meta`). `favicon` est une data-URL
+    matricielle plafonnée à 16 Ko encodés côté serveur. Rien de tout cela
+    n'entre dans `content` : le modèle cite une URL et n'a pas besoin du titre,
+    qu'il paierait sinon à chaque tour.
+    - **Chemin** : `callRemoteTool` (mcp.js) relaie `result._meta` sur ce qu'il
+      rend ; api.js en extrait ce qu'il sait lire par `webMetaFromResult`
+      (utils.js, pure — textes aplatis et bornés, URL restreinte à http(s),
+      favicon revalidée par `isSafeIconSrc` : un serveur n'est pas de confiance)
+      et le passe à `onEnrichLastAck`, qui le pose sur l'ack en `webMeta`.
+    - **Trois hooks, une liste** : `onEnrichLastAck` existe en trois copies
+      (écran dans main.js ; agent et parent réveillé dans agents.js). Elles
+      recopiaient à la main la même liste de champs ; elles passent désormais
+      toutes par `ackEnrichmentFields` (utils.js), sans quoi `webMeta` aurait
+      manqué aux fils d'agent.
+    - **Persistance** : `webMeta` est dans `ACK_COPY_FIELDS`. Il reste hors
+      émission par construction (`expandThread` n'envoie que `result` et
+      `args`). Il ne sert qu'au libellé et à l'infobulle des pastilles de source
+      (`webSourceRegistry`, cf. `docs/tools.md`), jamais à la provenance. Pas de
+      dédoublonnage des favicons par domaine : stockage par ack, borné.
+
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 
 Le lot V a rapatrié dans le navigateur ce que `mcp_docs` savait faire — le zip

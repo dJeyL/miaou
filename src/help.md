@@ -395,7 +395,10 @@ retrouver une conversation passée par mots-clés — quand ta demande le justif
 La conversation en cours est toujours exclue de ces recherches.
 
 Quand le modèle cite une conversation passée, elle apparaît comme un lien
-cliquable affichant son titre ; cliquer dessus l'ouvre directement.
+cliquable affichant son titre ; cliquer dessus l'ouvre directement. De la même
+façon, il peut citer un fichier que tu dois pouvoir récupérer : le lien le
+télécharge ; et une page web lue, sous forme de pastille de source (sujet
+`interface`).
 
 Tu gardes la main sur ces résumés : un panneau dédié te laisse les consulter,
 ouvrir la conversation dont chacun provient, ou les supprimer — supprimer un
@@ -948,9 +951,26 @@ Quelques repères pour te déplacer dans MIAOU :
   arrivé entre-temps apparaît dès que tu cliques ailleurs.
 - **Liens** : un lien web cité dans un message — par toi ou par le modèle —
   s'ouvre dans un **nouvel onglet**, pour que la conversation reste en place
-  derrière. Seuls les liens vers une de tes conversations (sujet `historique`)
-  s'ouvrent dans l'onglet courant : ils changent de conversation, ils ne quittent
-  pas MIAOU.
+  derrière. Les liens que le modèle pose vers ce qui vit dans MIAOU restent dans
+  l'onglet courant : un lien vers une de tes conversations (sujet `historique`)
+  l'ouvre, et un **lien vers un fichier** — un fichier qu'un outil a produit,
+  un fichier de la bibliothèque de l'Espace, un fichier joint — se reconnaît au
+  petit glyphe qui suit son nom : une flèche le télécharge, un cadre d'image
+  ouvre l'image en grand (d'où tu peux aussi la télécharger). Le survol dit ce
+  que fera le clic. Un tel lien ne vaut que dans sa conversation : si le
+  fichier n'y est pas (supprimé, ou venu d'ailleurs), une notification le dit.
+  Copier la réponse ou l'exporter en Markdown remplace ces liens par leur nom.
+- **Sources web** : quand le modèle a lu des pages sur le Web, il peut indiquer
+  en fin de paragraphe d'où vient une affirmation, sous forme de **pastilles**
+  discrètes au nom du site (avec son icône quand elle est connue). Un clic
+  ouvre la page dans un nouvel onglet ; le survol donne son titre et son
+  adresse. La pastille dit si la page a vraiment été lue dans la conversation :
+  pleine, elle l'a été (par le modèle, ou par un agent qu'il a lancé, ce que le
+  survol précise) ; en **pointillé**, la page n'apparaît dans aucun des outils
+  de la conversation — elle a pu être citée de mémoire, ou venir de toi, et
+  c'est à vérifier. Quand un paragraphe cite beaucoup de sources, seules les
+  premières sont affichées, et « +N » déplie les autres. Copier la réponse ou l'exporter en Markdown donne des liens
+  ordinaires au nom du site ; l'export HTML aussi.
 - **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône
   dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,
   gardé à part de la réponse.

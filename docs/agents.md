@@ -970,8 +970,7 @@ Reste à faire dans le lot :
 - **X-2** — liste d'agents dans la palette (`Cmd+K` puis `a`, raccourci déjà
   réservé en T-3a), et pilule « X agents » cliquable.
 - **X-3** — surfaces d'affichage : ack enrichi qui reflète l'état d'un agent en
-  cours. Demande une **spec visuelle de Julien avant codage** (règle des
-  composants UI provisoires).
+  cours. Demande une **spec visuelle de Julien avant codage**.
 ## Le bouton de retour en topbar (X-1c)
 
 Le bandeau seul ne suffit pas : il **défile avec le fil** et disparaît dès qu'on

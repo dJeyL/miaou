@@ -5037,3 +5037,518 @@ describe('tipKeyHides — frappe qui masque la bulle (lot AH)', function() {
     expect(tipKeyHides('Enter')).toBe(true);
   });
 });
+
+// ── Références de fichier et de source web (lot AI) ─────────────────────────
+
+describe('resolveFileRefMarkers', function() {
+  var recs = {
+    'att-1': { id: 'att_x', attId: 'att-1', name: 'notes.txt', mime: 'text/plain' },
+    'file-ab12': { id: 'file_ab12', kind: 'library', name: 'plan.pdf', mime: 'application/pdf' },
+    'res_9c03': { id: 'res_9c03', name: 'reveils.png', mime: 'image/png' },
+    'res_weird': { id: 'res_weird', name: 'a]b_c*|d.txt', mime: 'text/plain' },
+  };
+  function lookup(h) { return recs[h] || null; }
+  it('les trois familles deviennent des liens #miaou-file:', function() {
+    var r = resolveFileRefMarkers('[file_ref:att-1] [file_ref:file-ab12] [file_ref:res_9c03]', lookup);
+    expect(r).toContain('href="#miaou-file:att-1"');
+    expect(r).toContain('href="#miaou-file:file-ab12"');
+    expect(r).toContain('href="#miaou-file:res_9c03"');
+    expect(r).toContain('>notes.txt</a>');
+    expect(r).toContain('>plan.pdf</a>');
+  });
+  it('libellé explicite prioritaire sur le nom du record', function() {
+    var r = resolveFileRefMarkers('[file_ref:att-1|Mes notes]', lookup);
+    expect(r).toContain('>Mes notes</a>');
+    expect(r).toContain('data-tip-detail="notes.txt"');
+  });
+  it('handle inconnu : reste un lien, libellé = handle, glyphe de téléchargement', function() {
+    var r = resolveFileRefMarkers('voir [file_ref:res_zz]', lookup);
+    expect(r).toContain('href="#miaou-file:res_zz"');
+    expect(r).toContain('data-file-kind="file"');
+    expect(r).toContain('>res&#95;zz</a>');   // _ en entité, comme tout libellé
+    expect(r).toContain('data-tip="Télécharger"');
+  });
+  it('image en cache : glyphe image et infobulle d\'ouverture', function() {
+    var r = resolveFileRefMarkers('[file_ref:res_9c03]', lookup);
+    expect(r).toContain('data-file-kind="image"');
+    expect(r).toContain('data-tip="Ouvrir l’image"');
+  });
+  it('nom de repli : ], _, * et | passés en entités (marked ne les lit pas)', function() {
+    var r = resolveFileRefMarkers('[file_ref:res_weird]', lookup);
+    expect(r).toContain('>a&#93;b&#95;c&#42;&#124;d.txt</a>');
+  });
+  it('HTML du libellé échappé', function() {
+    var r = resolveFileRefMarkers('[file_ref:att-1|<img src=x onerror=alert(1)>]', lookup);
+    expect(r.indexOf('<img')).toBe(-1);
+    expect(r).toContain('&lt;img');
+  });
+  it('asPlainText : libellé nu, aucun lien', function() {
+    var r = resolveFileRefMarkers('ici : [file_ref:att-1]', lookup, { asPlainText: true });
+    expect(r).toBe('ici : notes.txt');
+  });
+  it('marqueur malformé (espace dans le handle) laissé tel quel', function() {
+    expect(resolveFileRefMarkers('[file_ref:res a]', lookup)).toBe('[file_ref:res a]');
+  });
+});
+
+describe('WEB_REF_MARKER_RE (via neutralizeRefMarkers)', function() {
+  it('javascript: et data: ne sont pas des marqueurs', function() {
+    expect(neutralizeRefMarkers('[web_ref:javascript:alert(1)]', 'copy')).toBe('[web_ref:javascript:alert(1)]');
+    expect(neutralizeRefMarkers('[web_ref:data:text/html,x]', 'copy')).toBe('[web_ref:data:text/html,x]');
+  });
+  it('espace ou ] coupent l\'URL : pas de marqueur', function() {
+    expect(neutralizeRefMarkers('[web_ref:https://a.com/b c]', 'copy')).toBe('[web_ref:https://a.com/b c]');
+  });
+  it('parenthèses et paramètres gardés, parenthèses encodées dans la destination', function() {
+    var r = neutralizeRefMarkers('[web_ref:https://fr.wikipedia.org/wiki/Chat_(animal)?a=1&b=2]', 'copy');
+    expect(r).toBe('[fr.wikipedia.org](https://fr.wikipedia.org/wiki/Chat_%28animal%29?a=1&b=2)');
+  });
+});
+
+describe('webRefDomain', function() {
+  it('hôte en minuscules, sans www., identifiants ni port', function() {
+    expect(webRefDomain('https://WWW.Example.COM/x')).toBe('example.com');
+    expect(webRefDomain('http://user:pw@host.org:8080/p')).toBe('host.org');
+    expect(webRefDomain('ftp://x')).toBe('');
+  });
+});
+
+describe('neutralizeRefMarkers', function() {
+  var txt = 'Voir [conv_ref:c1|Migration] et [conv_ref:c2], le fichier [file_ref:res_1|rapport.csv] ' +
+    'et [file_ref:att-2]. Source [web_ref:https://www.site.fr/p].';
+  var lk = { convTitle: function(id) { return id === 'c2' ? 'Titre c2' : ''; },
+             fileName: function(h) { return h === 'att-2' ? 'photo.jpg' : ''; } };
+  // Source posée avant le point : remontée après lui (moveWebRefsAfterPunctuation).
+  it('copy : libellés, web_ref en lien Markdown au domaine', function() {
+    expect(neutralizeRefMarkers(txt, 'copy', lk)).toBe(
+      'Voir Migration et Titre c2, le fichier rapport.csv et photo.jpg. Source. [site.fr](https://www.site.fr/p)');
+  });
+  it('md : même rendu', function() {
+    expect(neutralizeRefMarkers(txt, 'md', lk)).toBe(
+      'Voir Migration et Titre c2, le fichier rapport.csv et photo.jpg. Source. [site.fr](https://www.site.fr/p)');
+  });
+  it('summary : libellés, web_ref retiré avec son blanc', function() {
+    expect(neutralizeRefMarkers(txt, 'summary', lk)).toBe(
+      'Voir Migration et Titre c2, le fichier rapport.csv et photo.jpg. Source.');
+  });
+  it('sans lookups : repli sur l\'id et le handle', function() {
+    expect(neutralizeRefMarkers('[conv_ref:c9] [file_ref:res_7]', 'copy')).toBe('c9 res_7');
+  });
+});
+
+describe('projectThreadForRecap — marqueurs neutralisés côté assistant seulement', function() {
+  it('assistant neutralisé, user intact', function() {
+    var out = projectThreadForRecap([
+      { role: 'user', content: 'tape [file_ref:res_1]' },
+      { role: 'assistant', content: 'Voici [file_ref:res_1|data.csv] [web_ref:https://a.com]' },
+    ]);
+    expect(out).toContain('user: tape [file_ref:res_1]');
+    expect(out).toContain('assistant: Voici data.csv');
+    expect(out.indexOf('web_ref')).toBe(-1);
+  });
+});
+
+describe('maskOpenRefMarker', function() {
+  it('marqueur ouvert en queue : masqué', function() {
+    expect(maskOpenRefMarker('Voici [file_ref:res_4f')).toBe('Voici ');
+    expect(maskOpenRefMarker('Source [web_ref:https://ex')).toBe('Source ');
+  });
+  it('nom du marqueur en cours d\'écriture : masqué', function() {
+    expect(maskOpenRefMarker('Voici [file_r')).toBe('Voici ');
+    expect(maskOpenRefMarker('Voici [c')).toBe('Voici ');
+  });
+  it('marqueur refermé : rien de masqué', function() {
+    expect(maskOpenRefMarker('Voici [file_ref:res_4f]')).toBe('Voici [file_ref:res_4f]');
+  });
+  it('deux marqueurs, le second ouvert : seul le second est masqué', function() {
+    expect(maskOpenRefMarker('[conv_ref:c1|A] puis [conv_ref:c2')).toBe('[conv_ref:c1|A] puis ');
+  });
+  it('crochet ordinaire ou seul : rien de masqué', function() {
+    expect(maskOpenRefMarker('liste [x')).toBe('liste [x');
+    expect(maskOpenRefMarker('fin [')).toBe('fin [');
+  });
+});
+
+describe('fileRefRecordInScope', function() {
+  it('res_ de la conversation : dans le périmètre', function() {
+    expect(fileRefRecordInScope('res_1', { id: 'res_1', conversationId: 'c1' }, 'c1')).toBe(true);
+  });
+  it('res_ d\'une autre conversation resté en cache : hors périmètre', function() {
+    expect(fileRefRecordInScope('res_1', { id: 'res_1', conversationId: 'c2' }, 'c1')).toBe(false);
+  });
+  it('alias délégué à un agent (id réel différent) : dans le périmètre', function() {
+    expect(fileRefRecordInScope('res_alias', { id: 'res_real', conversationId: 'parent' }, 'agent')).toBe(true);
+  });
+  it('att- et file- : déjà filtrés par resolveHandleRecord', function() {
+    expect(fileRefRecordInScope('att-1', { id: 'att_x', conversationId: 'c1' }, 'c1')).toBe(true);
+    expect(fileRefRecordInScope('file-a', { id: 'file_a', kind: 'library' }, 'c1')).toBe(true);
+  });
+  it('pas de record : hors périmètre', function() {
+    expect(fileRefRecordInScope('res_1', null, 'c1')).toBe(false);
+  });
+});
+
+describe('tipAnchorRect', function() {
+  var one = [{ top: 10, bottom: 30, left: 0, right: 100 }];
+  var two = [{ top: 10, bottom: 30, left: 200, right: 400 }, { top: 34, bottom: 54, left: 0, right: 80 }];
+  it('une seule boîte : elle-même', function() {
+    expect(tipAnchorRect(one, { x: 50, y: 20 })).toBe(one[0]);
+  });
+  it('deux lignes, pointeur sur chacune', function() {
+    expect(tipAnchorRect(two, { x: 300, y: 20 })).toBe(two[0]);
+    expect(tipAnchorRect(two, { x: 40, y: 44 })).toBe(two[1]);
+  });
+  it('pointeur dans l\'interligne : la ligne la plus proche', function() {
+    expect(tipAnchorRect(two, { x: 50, y: 33 })).toBe(two[1]);
+    expect(tipAnchorRect(two, { x: 300, y: 31 })).toBe(two[0]);
+  });
+  it('pas de point (focus clavier) : première ligne', function() {
+    expect(tipAnchorRect(two, null)).toBe(two[0]);
+  });
+  it('boîte vide ignorée, aucune boîte → null', function() {
+    var withEmpty = [{ top: 10, bottom: 30, left: 400, right: 400 }, two[1]];
+    expect(tipAnchorRect(withEmpty, null)).toBe(two[1]);
+    expect(tipAnchorRect([], null)).toBe(null);
+  });
+});
+
+describe('normalizeRefLinkForms — marqueur emballé dans un lien Markdown', function() {
+  it('file_ref et conv_ref en cible de lien → marqueur avec libellé', function() {
+    expect(normalizeRefLinkForms('- [test.txt](file_ref:file-8o8aiw4g) — texte'))
+      .toBe('- [file_ref:file-8o8aiw4g|test.txt] — texte');
+    expect(normalizeRefLinkForms('voir [La migration](conv_ref:c1)')).toBe('voir [conv_ref:c1|La migration]');
+  });
+  it('libellé vide → marqueur nu', function() {
+    expect(normalizeRefLinkForms('[](file_ref:res_1)')).toBe('[file_ref:res_1]');
+  });
+  it('lien ordinaire et marqueur déjà correct intacts', function() {
+    expect(normalizeRefLinkForms('[doc](https://a.com/file_ref:x)')).toBe('[doc](https://a.com/file_ref:x)');
+    expect(normalizeRefLinkForms('[file_ref:res_1|a]')).toBe('[file_ref:res_1|a]');
+  });
+  it('résolu jusqu\'au lien de fichier', function() {
+    var r = resolveFileRefMarkers(normalizeRefLinkForms('[test.txt](file_ref:file-8o)'), function() { return null; });
+    expect(r).toContain('href="#miaou-file:file-8o"');
+    expect(r).toContain('>test.txt</a>');
+  });
+  it('neutralisé en copie : le libellé seul', function() {
+    expect(neutralizeRefMarkers('- [test.txt](file_ref:file-8o) ok', 'copy')).toBe('- test.txt ok');
+  });
+  it('masqué en streaming tant que la cible n\'est pas refermée', function() {
+    expect(maskOpenRefMarker('- [test.txt](file_ref:file-8o')).toBe('- ');
+    expect(maskOpenRefMarker('- [test.txt](file_ref:file-8o)')).toBe('- [test.txt](file_ref:file-8o)');
+  });
+});
+
+// ── Sources web (lot AI, AI-2 / AI-3b) ──────────────────────────────────────
+var PNG_ICON = 'data:image/png;base64,iVBORw0KGgo=';
+
+describe('ackEnrichmentFields — liste unique des trois hooks onEnrichLastAck', function() {
+  it('garde les champs présents, dont webMeta, et ignore isMcp', function() {
+    var f = ackEnrichmentFields({ isMcp: true, name: 'web__fetch_url', args: { url: 'https://a.com' },
+      result: 'x', ts: 1, group: 'g', assistantText: null, webMeta: { title: 'T' } });
+    expect(JSON.stringify(f)).toBe(JSON.stringify({ name: 'web__fetch_url', args: { url: 'https://a.com' },
+      result: 'x', ts: 1, group: 'g', webMeta: { title: 'T' } }));
+  });
+  it('webMeta est dans ACK_COPY_FIELDS (persisté, recopié au reload)', function() {
+    expect(ACK_COPY_FIELDS.indexOf('webMeta') >= 0).toBe(true);
+    var e = copyAckFields({ kind: 'mcp_call', webMeta: { title: 'T' } }, {});
+    expect(e.webMeta.title).toBe('T');
+  });
+});
+
+describe('webMetaFromResult — _meta["miaou/web"] d\'un résultat MCP', function() {
+  it('lit les quatre champs du contrat', function() {
+    var m = webMetaFromResult({ _meta: { 'miaou/web': { title: ' Chat  — Wikipédia ', site_name: 'Wikipédia',
+      canonical_url: 'https://fr.wikipedia.org/wiki/Chat', favicon: PNG_ICON } } });
+    expect(m.title).toBe('Chat — Wikipédia');
+    expect(m.site_name).toBe('Wikipédia');
+    expect(m.canonical_url).toBe('https://fr.wikipedia.org/wiki/Chat');
+    expect(m.favicon).toBe(PNG_ICON);
+  });
+  it('rien d\'utilisable → null ; clé absente → null', function() {
+    expect(webMetaFromResult({ content: [] })).toBe(null);
+    expect(webMetaFromResult({ _meta: { other: 1 } })).toBe(null);
+    expect(webMetaFromResult({ _meta: { 'miaou/web': { title: 42, canonical_url: 'javascript:x' } } })).toBe(null);
+  });
+  it('favicon SVG et URL non http(s) abandonnées, le reste gardé', function() {
+    var m = webMetaFromResult({ _meta: { 'miaou/web': { title: 'T', canonical_url: 'ftp://a',
+      favicon: 'data:image/svg+xml;base64,PHN2Zz4=' } } });
+    expect(JSON.stringify(m)).toBe(JSON.stringify({ title: 'T' }));
+  });
+});
+
+describe('isSafeIconSrc — src d\'une favicon', function() {
+  it('formats matriciels base64 admis', function() {
+    expect(isSafeIconSrc(PNG_ICON)).toBe(true);
+    expect(isSafeIconSrc('data:image/x-icon;base64,AAAB')).toBe(true);
+    expect(isSafeIconSrc('data:image/vnd.microsoft.icon;base64,AAAB')).toBe(true);
+    expect(isSafeIconSrc('data:image/webp;base64,UklG')).toBe(true);
+  });
+  it('SVG, MIME hors liste, non base64, URL distante refusés', function() {
+    expect(isSafeIconSrc('data:image/svg+xml;base64,PHN2Zz4=')).toBe(false);
+    expect(isSafeIconSrc('data:text/html;base64,PGI+')).toBe(false);
+    expect(isSafeIconSrc('data:image/png,<svg onload=x>')).toBe(false);
+    expect(isSafeIconSrc('data:image/png;base64,abc"onerror="x')).toBe(false);
+    expect(isSafeIconSrc('https://a.com/favicon.ico')).toBe(false);
+    expect(isSafeIconSrc(null)).toBe(false);
+  });
+});
+
+describe('normalizeWebUrl — clé de comparaison', function() {
+  it('fragment retiré, slash final ignoré', function() {
+    expect(normalizeWebUrl('https://a.com/page/#sec')).toBe('https://a.com/page');
+    expect(normalizeWebUrl('https://a.com/')).toBe(normalizeWebUrl('https://a.com'));
+  });
+  it('casse du schéma et de l\'hôte seulement', function() {
+    expect(normalizeWebUrl('HTTPS://A.Com/Page')).toBe('https://a.com/Page');
+  });
+  it('rien d\'autre : paramètres et www gardés', function() {
+    expect(normalizeWebUrl('https://www.a.com/p?b=2&a=1')).toBe('https://www.a.com/p?b=2&a=1');
+  });
+  it('non http(s) → vide', function() {
+    expect(normalizeWebUrl('javascript:alert(1)')).toBe('');
+    expect(normalizeWebUrl('')).toBe('');
+  });
+});
+
+describe('webSourceRegistry — provenance et titres', function() {
+  function ack(o) { return Object.assign({ role: 'tool-ack', kind: 'mcp_call' }, o); }
+  it('args.url d\'un ack non en erreur → consultée, quel que soit l\'outil', function() {
+    var r = webSourceRegistry([ack({ name: 'x__lire', args: { url: 'https://a.com/p' }, result: 'texte' })]);
+    expect(r.get('https://a.com/p').consulted).toBe(true);
+  });
+  it('ack en erreur ignoré', function() {
+    var r = webSourceRegistry([ack({ name: 'web__fetch_url', args: { url: 'https://a.com/p' }, error: true })]);
+    expect(r.has('https://a.com/p')).toBe(false);
+  });
+  it('URL vue en recherche seulement : non consultée, mais titre repris', function() {
+    var r = webSourceRegistry([ack({ name: 'ddg__ddg_search', args: { query: 'chat' },
+      result: JSON.stringify([{ title: 'Le chat', url: 'https://b.org/chat', snippet: '…' },
+        { title: 'Image', page_url: 'https://c.net/i' }]) })]);
+    var b = r.get('https://b.org/chat');
+    expect(b.consulted).toBe(false);
+    expect(b.title).toBe('Le chat');
+    expect(r.get('https://c.net/i').title).toBe('Image');
+  });
+  it('webMeta prioritaire sur le JSON de recherche, URL finale consultée aussi', function() {
+    var r = webSourceRegistry([
+      ack({ name: 'ddg__ddg_search', args: { query: 'q' }, result: JSON.stringify([{ title: 'Snippet', url: 'https://b.org/chat' }]) }),
+      ack({ name: 'web__fetch_url', args: { url: 'https://b.org/chat' }, result: '…',
+        webMeta: { title: 'Vrai titre', site_name: 'B', canonical_url: 'https://www.b.org/chat', favicon: PNG_ICON } }),
+    ]);
+    var b = r.get('https://b.org/chat');
+    expect(b.title).toBe('Vrai titre');
+    expect(b.site).toBe('B');
+    expect(b.favicon).toBe(PNG_ICON);
+    expect(r.get('https://www.b.org/chat').consulted).toBe(true);
+  });
+  it('ack évacué : la provenance tient (args jamais réécrit)', function() {
+    var before = [ack({ name: 'web__fetch_url', args: { url: 'https://a.com/p' }, result: 'x'.repeat(5000) })];
+    var after = [ack({ name: 'web__fetch_url', args: { url: 'https://a.com/p' }, result: '[resource_stored:res_abc — 5000 caractères]' })];
+    expect(webSourceRegistry(before).get('https://a.com/p').consulted).toBe(true);
+    expect(webSourceRegistry(after).get('https://a.com/p').consulted).toBe(true);
+  });
+  it('provenance relayée : compte rendu d\'agent (message user) et agent__result', function() {
+    var r = webSourceRegistry([
+      { role: 'user', agentResult: { id: 'c1' }, content: '--- Réponse ---\nFait. [web_ref:https://d.io/x]' },
+      ack({ name: 'miaou__agent__result', kind: 'agent_result', result: 'Voir [web_ref:https://e.io/y]' }),
+    ]);
+    expect(r.get('https://d.io/x').relayed).toBe(true);
+    expect(r.get('https://d.io/x').consulted).toBe(false);
+    expect(r.get('https://e.io/y').relayed).toBe(true);
+  });
+  it('une consultation directe l\'emporte sur le relais, dans les deux ordres', function() {
+    var relay = { role: 'user', agentResult: { id: 'c1' }, content: '[web_ref:https://d.io/x]' };
+    var direct = ack({ name: 'web__fetch_url', args: { url: 'https://d.io/x' }, result: 'ok' });
+    var a = webSourceRegistry([relay, direct]).get('https://d.io/x');
+    var b = webSourceRegistry([direct, relay]).get('https://d.io/x');
+    expect(a.consulted && !a.relayed).toBe(true);
+    expect(b.consulted && !b.relayed).toBe(true);
+  });
+  it('un web_ref dans un texte assistant ne vaut rien', function() {
+    var r = webSourceRegistry([{ role: 'assistant', content: 'Voir [web_ref:https://f.io]' }]);
+    expect(r.size).toBe(0);
+  });
+});
+
+describe('webSourceRegistrySignature — recalcul à l\'arrivée d\'un ack seulement', function() {
+  it('change quand un ack est enrichi, pas quand un texte assistant grossit', function() {
+    var a = { role: 'tool-ack', kind: 'mcp_call' };
+    var t = [{ role: 'assistant', content: 'a' }, a];
+    var s1 = webSourceRegistrySignature(t);
+    t[0].content = 'abcdef';
+    expect(webSourceRegistrySignature(t)).toBe(s1);
+    a.args = { url: 'https://a.com' };
+    a.webMeta = { title: 'T' };
+    expect(webSourceRegistrySignature(t) === s1).toBe(false);
+  });
+});
+
+describe('webRefGroups — groupement des pastilles', function() {
+  it('contiguës séparées par des espaces : un groupe', function() {
+    var g = webRefGroups('Phrase. [web_ref:https://a.com] [web_ref:https://b.com]\tfin');
+    expect(g.length).toBe(1);
+    expect(g[0].urls.join(' ')).toBe('https://a.com https://b.com');
+  });
+  it('séparées par du texte : deux groupes', function() {
+    var g = webRefGroups('Un. [web_ref:https://a.com] Deux. [web_ref:https://b.com]');
+    expect(g.length).toBe(2);
+  });
+  it('regex : javascript:, data:, espace et ] exclus ; parenthèses et paramètres gardés', function() {
+    expect(webRefGroups('[web_ref:javascript:alert(1)]').length).toBe(0);
+    expect(webRefGroups('[web_ref:data:text/html,x]').length).toBe(0);
+    expect(webRefGroups('[web_ref:https://a.com/b c]').length).toBe(0);
+    var g = webRefGroups('[web_ref:https://fr.wikipedia.org/wiki/Chat_(animal)?a=1&b=2]');
+    expect(g[0].urls[0]).toBe('https://fr.wikipedia.org/wiki/Chat_(animal)?a=1&b=2');
+  });
+});
+
+describe('resolveWebRefMarkers — pastilles', function() {
+  function reg() {
+    return webSourceRegistry([
+      { role: 'tool-ack', kind: 'mcp_call', name: 'web__fetch_url', args: { url: 'https://a.com/p' }, result: 'ok',
+        webMeta: { title: 'Titre A', site_name: 'Site A', favicon: PNG_ICON } },
+      { role: 'tool-ack', kind: 'mcp_call', name: 'web__fetch_url', args: { url: 'https://www.b.com/' }, result: 'ok' },
+    ]);
+  }
+  it('consultée : libellé = nom de site, favicon, infobulle titre + site · domaine', function() {
+    var h = resolveWebRefMarkers('Vrai. [web_ref:https://a.com/p]', reg());
+    expect(h).toContain('<span class="web-refs"><a class="web-ref" href="https://a.com/p"');
+    expect(h).toContain('<span class="wr-label">Site A</span>');
+    expect(h).toContain('<img class="wr-icon" alt="" src="' + PNG_ICON + '">');
+    expect(h).toContain('data-tip="Titre A"');
+    expect(h).toContain('data-tip-detail="Site A · a.com"');
+    expect(h).toContain('data-tip-icon="' + PNG_ICON + '"');
+  });
+  it('sans métadonnées : domaine sans www, globe, icône générique de l\'infobulle', function() {
+    var h = resolveWebRefMarkers('[web_ref:https://www.b.com]', reg());
+    expect(h).toContain('<span class="wr-label">b.com</span>');
+    expect(h).toContain('<span class="wr-icon wr-globe"></span>');
+    expect(h).toContain('data-tip-icon="globe"');
+  });
+  it('non consultée : classe unverified et constat sans accusation', function() {
+    var h = resolveWebRefMarkers('[web_ref:https://c.org/x]', reg());
+    expect(h).toContain('class="web-ref unverified"');
+    expect(h).toContain('Page absente des outils de cette conversation');
+    expect(h).toContain('&#10;');
+  });
+  it('relayée : classe relayed et mention de l\'agent', function() {
+    var r = webSourceRegistry([{ role: 'user', agentResult: { id: 'c' }, content: '[web_ref:https://d.io]' }]);
+    var h = resolveWebRefMarkers('[web_ref:https://d.io]', r);
+    expect(h).toContain('class="web-ref relayed"');
+    expect(h).toContain('Consultée par un agent');
+  });
+  it('au-delà de trois (deux masquées au moins) : « +N » et pastilles repliées', function() {
+    var t = [1, 2, 3, 4, 5].map(function(i) { return '[web_ref:https://s' + i + '.com]'; }).join(' ');
+    var h = resolveWebRefMarkers(t, new Map());
+    expect(h.split('wr-overflow').length - 1).toBe(2);
+    expect(h).toContain('<button type="button" class="web-ref-more"');
+    expect(h).toContain('>+2</button>');
+    expect(h).toContain('data-tip="2 autres sources"');
+  });
+  it('quatre pastilles : toutes visibles, pas de « +1 »', function() {
+    var t = [1, 2, 3, 4].map(function(i) { return '[web_ref:https://s' + i + '.com]'; }).join(' ');
+    var h = resolveWebRefMarkers(t, new Map());
+    expect(h.indexOf('web-ref-more')).toBe(-1);
+    expect(h.indexOf('wr-overflow')).toBe(-1);
+  });
+  it('libellé et URL échappés', function() {
+    var r = webSourceRegistry([{ role: 'tool-ack', kind: 'mcp_call', args: { url: 'https://a.com/q?x="1"&y=<b>' },
+      result: 'ok', webMeta: { site_name: '<img src=x onerror=alert(1)>' } }]);
+    var h = resolveWebRefMarkers('[web_ref:https://a.com/q?x="1"&y=<b>]', r);
+    expect(h).toContain('href="https://a.com/q?x=&quot;1&quot;&amp;y=&lt;b&gt;"');
+    expect(h).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(h.indexOf('<img src=x')).toBe(-1);
+  });
+  it('export (asPlainText) : lien ordinaire entre parenthèses, sans pastille', function() {
+    var h = resolveWebRefMarkers('Vrai. [web_ref:https://a.com/p] [web_ref:https://c.org/x]', reg(), { asPlainText: true });
+    expect(h).toBe('Vrai. <a href="https://a.com/p">(Site A)</a> <a href="https://c.org/x">(c.org)</a>');
+  });
+});
+
+describe('normalizeTip — champ icon', function() {
+  it('data-URL matricielle et glyphe générique admis', function() {
+    expect(normalizeTip({ label: 'a', icon: PNG_ICON }).icon).toBe(PNG_ICON);
+    expect(normalizeTip({ label: 'a', icon: 'globe' }).icon).toBe('globe');
+  });
+  it('SVG ou valeur arbitraire abandonnés avant tout attribut', function() {
+    expect(normalizeTip({ label: 'a', icon: 'data:image/svg+xml;base64,PHN2Zz4=' }).icon).toBe(undefined);
+    expect(tipAttrs({ label: 'a', icon: 'javascript:x' }).indexOf('data-tip-icon')).toBe(-1);
+  });
+  it('tipAttrs émet data-tip-icon', function() {
+    expect(tipAttrs({ label: 'a', icon: 'globe' })).toContain(' data-tip-icon="globe"');
+  });
+});
+
+describe('moveWebRefsAfterPunctuation — la source après la ponctuation', function() {
+  it('point final remonté devant le marqueur', function() {
+    expect(moveWebRefsAfterPunctuation('En vente le 18 [web_ref:https://a.com/x].'))
+      .toBe('En vente le 18. [web_ref:https://a.com/x]');
+  });
+  it('groupe entier, virgule en milieu de phrase', function() {
+    expect(moveWebRefsAfterPunctuation('Vrai [web_ref:https://a.com] [web_ref:https://b.com], et suite'))
+      .toBe('Vrai, [web_ref:https://a.com] [web_ref:https://b.com] et suite');
+  });
+  it('marqueur collé au mot : une espace est posée', function() {
+    expect(moveWebRefsAfterPunctuation('mot[web_ref:https://a.com].')).toBe('mot. [web_ref:https://a.com]');
+  });
+  it('ponctuation double à insécable gardée avec son blanc', function() {
+    expect(moveWebRefsAfterPunctuation('Vrai [web_ref:https://a.com] !')).toBe('Vrai ! [web_ref:https://a.com]');
+  });
+  it('déjà après la ponctuation, ou parenthèse fermante : inchangé', function() {
+    expect(moveWebRefsAfterPunctuation('Vrai. [web_ref:https://a.com]')).toBe('Vrai. [web_ref:https://a.com]');
+    expect(moveWebRefsAfterPunctuation('(voir [web_ref:https://a.com])')).toBe('(voir [web_ref:https://a.com])');
+  });
+  it('appliqué au rendu et à la copie', function() {
+    expect(resolveWebRefMarkers(normalizeRefLinkForms('Vrai [web_ref:https://a.com].'), new Map()).indexOf('Vrai.<span class="web-refs">')).toBe(0);
+    expect(neutralizeRefMarkers('Vrai [web_ref:https://a.com].', 'copy')).toBe('Vrai. [a.com](https://a.com)');
+  });
+});
+
+describe('convertSourceFootnotes — notes numérotées vers web_ref', function() {
+  // Forme relevée sur gemma4:26b (contenu neutralisé) : puces, renvois avant le
+  // point, filet, intitulé en gras, définition « [1] [Titre](url) ».
+  var sample = '### Tarifs\n*   **Modèle A :** 10 € [1].\n*   **Modèle B :** 20 € [1][2].\n\n***\n\n' +
+    '**Sources :**\n*   [1] [Site Un - Fiche](https://un.example/fiche/)\n*   [2] [Site Deux](https://deux.example/p)\n';
+  it('renvois convertis, liste, intitulé et filet retirés', function() {
+    expect(convertSourceFootnotes(sample)).toBe('### Tarifs\n*   **Modèle A :** 10 € [web_ref:https://un.example/fiche/].\n' +
+      '*   **Modèle B :** 20 € [web_ref:https://un.example/fiche/] [web_ref:https://deux.example/p].');
+  });
+  it('enchaîné avec la ponctuation : source après le point', function() {
+    expect(normalizeRefLinkForms(sample).split('\n')[1]).toBe('*   **Modèle A :** 10 €. [web_ref:https://un.example/fiche/]');
+  });
+  it('autres formes de définition', function() {
+    expect(convertSourceFootnotes('Vrai [1] et [2, 3].\n\n[1]: https://a.example/x\n2. [B](https://b.example)\n- [3] Titre — https://c.example/y.'))
+      .toBe('Vrai [web_ref:https://a.example/x] et [web_ref:https://b.example] [web_ref:https://c.example/y].');
+    expect(convertSourceFootnotes('Vrai[^1].\n\n[^1]: https://a.example/x'))
+      .toBe('Vrai[web_ref:https://a.example/x].');
+  });
+  it('URL à parenthèses dans un lien Markdown', function() {
+    expect(convertSourceFootnotes('Chat [1].\n\n[1] [Chat](https://fr.wikipedia.org/wiki/Chat_(animal))'))
+      .toBe('Chat [web_ref:https://fr.wikipedia.org/wiki/Chat_(animal)].');
+  });
+  it('sans liste finale : un [1] ordinaire intact', function() {
+    var t = 'Le tableau t[1] vaut 3, cf. article 4 [1].\n\nFin du texte.';
+    expect(convertSourceFootnotes(t)).toBe(t);
+  });
+  it('définition jamais citée : rien converti (la liste garderait un lien)', function() {
+    var t = 'Vrai [1].\n\n[1] https://a.example\n[2] https://b.example';
+    expect(convertSourceFootnotes(t)).toBe(t);
+  });
+  it('définition sans URL http(s) : rien converti', function() {
+    var t = 'Vrai [1].\n\n[1] Un livre, page 12';
+    expect(convertSourceFootnotes(t)).toBe(t);
+  });
+  it('renvoi dans un bloc de code intact', function() {
+    expect(convertSourceFootnotes('Vrai [1].\n```js\nx = a[1];\n```\n\n[1] https://a.example'))
+      .toBe('Vrai [web_ref:https://a.example].\n```js\nx = a[1];\n```');
+  });
+  it('liste finale dans un bloc de code : rien converti', function() {
+    var t = 'Vrai [1].\n```\n[1] https://a.example\n```';
+    expect(convertSourceFootnotes(t)).toBe(t);
+  });
+  it('lien Markdown [1](url) non pris pour un renvoi', function() {
+    var t = 'Voir [1](https://z.example) et [1].\n\n[1] https://a.example';
+    expect(convertSourceFootnotes(t)).toBe('Voir [1](https://z.example) et [web_ref:https://a.example].');
+  });
+});

@@ -203,7 +203,16 @@ marqueurs ; `resolveConvRefs` : lien avec titre fourni, lookup storage si titre
 absent, lien conservé avec titre sur une entrée tombstone (conversation
 existante), texte barré `~~...(supprimée)~~` si `loadConversation` échoue —
 avec titre du marqueur, avec titre orphelin en résumé, ou repli sur l'ID si
-aucun titre connu —, encodage URL de l'id), et la **recherche plein texte de la
+aucun titre connu —, encodage URL de l'id ; le lien est du HTML inline porteur
+d'infobulle depuis le lot AI), les **références de fichier et de source**
+(lot AI : `resolveFileRefMarkers` — trois familles, libellé explicite, repli
+sur le nom puis le handle, caractères Markdown en entités, HTML échappé,
+`asPlainText` ; forme lien Markdown ramenée au marqueur,
+`normalizeRefLinkForms` ; regex `web_ref` contre `javascript:`, `data:`, espace et
+parenthèses ; `neutralizeRefMarkers` trois modes × trois marqueurs, et sa
+portée dans `projectThreadForRecap` — assistant seulement ; `maskOpenRefMarker` ;
+`fileRefRecordInScope` ; `REFS_DOCTRINE` à sa position), l'**ancrage d'infobulle
+par ligne** (`tipAnchorRect`), et la **recherche plein texte de la
 sidebar** (`searchConversations` : titre en substring, résumé via
 `tokenize`/`scoreSummary`, tombstone ignoré, et — depuis U-3 — appartenance à
 l'ensemble `contentHits` fourni par l'appelant, ainsi que le comportement quand

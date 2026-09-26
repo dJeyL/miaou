@@ -155,6 +155,9 @@ Figtree/Fira Code).
 - Quand le modèle cite une conversation passée, elle apparaît comme un **lien
   cliquable affichant son titre** (jamais l'ID technique) ; cliquer dessus
   l'ouvre directement.
+- **Sources web vérifiables** : une affirmation tirée du Web porte une pastille
+  au nom du site, qui dit si la page a réellement été lue dans la conversation
+  — cf. [docs/tools.md](docs/tools.md).
 - Souvenirs persistants : le modèle écrit sur instruction explicite, ou demande
   confirmation pour un fait inféré. Gestion directe possible dans le drawer ; les
   souvenirs actifs sont réinjectés dans le contexte à chaque envoi.

@@ -1097,6 +1097,10 @@ async function runConversation(messages, hooks) {
             // réinjection cross-turn (args, result aplati, ts, group). Pour les
             // outils distants l'ack est déjà dans earlyRendered ; pour les
             // outils internes il est encore dans _pendingToolAcks.
+            // `webMeta` (lot AI) : métadonnées de page que l'outil a posées
+            // dans le `_meta` de son résultat, hors `content` — donc hors
+            // contexte modèle (webMetaFromResult, utils.js).
+            const webMeta = webMetaFromResult(rawResult);
             if (h.onEnrichLastAck) h.onEnrichLastAck({
               isMcp,
               name: tc.function.name,
@@ -1105,6 +1109,7 @@ async function runConversation(messages, hooks) {
               ts: Date.now(),
               group,
               assistantText,
+              webMeta,
             });
           } finally {
             bgActivityEnd();
@@ -1266,7 +1271,7 @@ function normalizeTitle(raw) {
 async function generateTitle(thread, model) {
   // projectThreadForRecap : honore la frontière de compaction (le résumé
   // remplace les messages qu'il couvre) au lieu de reprojeter le thread brut.
-  const convo = projectThreadForRecap(thread);
+  const convo = projectThreadForRecap(thread, refMarkerLookups(null));
   const out = await silentCompletion([
     { role: 'system', content: TITLE_PROMPT },
     { role: 'user', content: convo },
@@ -1293,7 +1298,7 @@ async function generateSummary(thread) {
   // projectThreadForRecap : même projection que le titrage, et pour la même
   // raison — après une compaction, le thread brut renvoyait au modèle tout ce
   // que l'utilisateur venait de faire évacuer.
-  const convo = projectThreadForRecap(thread);
+  const convo = projectThreadForRecap(thread, refMarkerLookups(null));
   const out = await silentCompletion([
     { role: 'system', content: SUMMARY_PROMPT },
     { role: 'user', content: convo },

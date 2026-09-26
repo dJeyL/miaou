@@ -724,6 +724,13 @@ function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, script
 // chargement CDN et les rendus — le reste de la construction est synchrone.
 async function renderExportBody(thread, convId) {
   const container = document.createElement('div');
+  // Conversation exportée, pour le libellé de repli d'un [file_ref:…] (nom du
+  // fichier) : elle n'est pas forcément celle affichée.
+  const exported = convId ? loadConversation(convId) : null;
+  const refCtx = { convId: convId || null, spaceId: (exported && exported.spaceId) || DEFAULT_SPACE_ID };
+  // Sources web du thread EXPORTÉ (libellé des liens [web_ref:…]), pas du fil
+  // affiché : même raison que refCtx.
+  const webSources = webSourceRegistry(thread);
   let pendingAcks = [];
   for (const m of thread) {
     if (isAckRole(m.role)) {
@@ -793,7 +800,7 @@ async function renderExportBody(thread, convId) {
       const reasoningHtml = (m.reasoning && String(m.reasoning).trim())
         ? '<details class="reasoning"><summary><span class="reasoning-label">Raisonnement</span><div class="reasoning-content">' + escHtml(String(m.reasoning)) + '</div></summary></details>'
         : '';
-      msgEl.innerHTML = metaHtml + reasoningHtml + acksHtml + ackImgHtml + '<div class="body">' + renderMd(m.content || '', { asPlainText: true }) + '</div>';
+      msgEl.innerHTML = metaHtml + reasoningHtml + acksHtml + ackImgHtml + '<div class="body">' + renderMd(m.content || '', { asPlainText: true, refCtx: refCtx, webSources: webSources }) + '</div>';
     }
     container.appendChild(msgEl);
   }

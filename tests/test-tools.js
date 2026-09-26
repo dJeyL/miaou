@@ -2431,3 +2431,15 @@ describe('splitTipSentences — une phrase par ligne', function() {
     expect(splitTipSentences('').length).toBe(0);
   });
 });
+
+describe('REFS_DOCTRINE (constante de ROOT_SYSTEM_PROMPT, remplace la doctrine conv_ref)', function() {
+  it('porte les deux marqueurs et reste dans ROOT_SYSTEM_PROMPT, à la place de conv_ref', function() {
+    expect(REFS_DOCTRINE).toContain('[conv_ref:ID]');
+    expect(REFS_DOCTRINE).toContain('[file_ref:HANDLE]');
+    expect(ROOT_SYSTEM_PROMPT.indexOf(REFS_DOCTRINE) > ROOT_SYSTEM_PROMPT.indexOf(AUTHORIZATION_DOCTRINE)).toBe(true);
+    expect(ROOT_SYSTEM_PROMPT.indexOf(REFS_DOCTRINE) < ROOT_SYSTEM_PROMPT.indexOf(MEMORY_DOCTRINE)).toBe(true);
+  });
+  it('nomme la voie pour un résultat d\'outil sans res_', function() {
+    expect(REFS_DOCTRINE).toContain('miaou__resource__from_result');
+  });
+});

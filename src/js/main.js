@@ -1758,7 +1758,7 @@ async function openConversation(id, reveal) {
   // Même dépendance à la conversation affichée, autre décision : laquelle des
   // deux surfaces annonce une compaction en vol (cf. syncCompactionActivitySurface).
   syncCompactionActivitySurface();
-  // Ouverture depuis la palette (recherche de conversation) : ramener la conv
+  // Ouverture depuis hors de la sidebar (palette, lien conv_ref du fil…) : ramener la conv
   // fraîchement chargée dans la liste visible, même sidebar masquée (reveal),
   // centrée pour ne pas la coller au bord.
   if (reveal) revealActiveConv('center');
@@ -1985,6 +1985,7 @@ function downloadConvMd() {
   const title = (conv && conv.title) || 'miaou-conversation';
 
   const lines = [];
+  const refLookups = refMarkerLookups({ convId: currentConvId, spaceId: activeSpaceId });
   let pendingAcks = [];
   for (const m of currentThread) {
     if (isAckRole(m.role)) {
@@ -2003,8 +2004,11 @@ function downloadConvMd() {
     }
     pendingAcks = [];
     // Export = littéral affiché (displayText) si présent (slash-commande skill),
-    // pas le corps de skill injecté dans content.
-    lines.push((m.role === 'user' && m.displayText != null ? m.displayText : m.content) || '');
+    // pas le corps de skill injecté dans content. Côté assistant, les marqueurs
+    // de référence sont neutralisés : un .md n'a personne pour les résoudre.
+    lines.push(m.role === 'user'
+      ? ((m.displayText != null ? m.displayText : m.content) || '')
+      : neutralizeRefMarkers(m.content || '', 'md', refLookups));
     lines.push('');
     lines.push('---');
     lines.push('');
@@ -4240,14 +4244,11 @@ async function dispatchSend(matches, continuation) {
       // nécessaires à la réinjection cross-turn. Appelé par api.js après chaque
       // outil, AVANT onToolAcks. Pour les outils distants (isMcp) l'ack est
       // déjà dans earlyRendered ; pour les internes il est dans _pendingToolAcks.
-      onEnrichLastAck: ({ isMcp, name, args, result, ts, group, assistantText }) => {
-        const fields = {};
-        if (name != null)          fields.name = name;
-        if (args != null)          fields.args = args;
-        if (result != null)        fields.result = result;
-        if (ts != null)            fields.ts = ts;
-        if (group != null)         fields.group = group;
-        if (assistantText != null) fields.assistantText = assistantText;
+      // Liste des champs : ackEnrichmentFields (utils.js), partagée avec les
+      // deux hooks d'agents.js — dont `webMeta` d'un appel MCP (lot AI).
+      onEnrichLastAck: (payload) => {
+        const isMcp = payload && payload.isMcp;
+        const fields = ackEnrichmentFields(payload);
         if (isMcp) {
           const last = earlyRendered[earlyRendered.length - 1];
           if (last) {
@@ -5565,7 +5566,33 @@ async function init() {
     e.preventDefault();
     if (sending) return;   // pas de navigation pendant un stream en cours
     const id = decodeURIComponent(a.getAttribute('href').slice('#miaou-conv:'.length));
-    selectConv(id);
+    // reveal : la cible, choisie hors de la sidebar, peut y être hors champ.
+    selectConv(id, true);
+  });
+  // Même délégation pour les liens [file_ref:…] (lot AI, openFileRef, ui.js),
+  // SANS le blocage sur `sending` : télécharger ou ouvrir une image ne touche
+  // ni au fil ni à la génération en cours.
+  $('messages').addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#miaou-file:"]');
+    if (!a) return;
+    e.preventDefault();
+    openFileRef(decodeURIComponent(a.getAttribute('href').slice('#miaou-file:'.length)));
+  });
+  // « +N » d'un groupe de pastilles de source (lot AI, resolveWebRefMarkers) :
+  // déplie le groupe. Délégation et non `onclick` inline, que DOMPurify
+  // retirerait. Le bouton disparaît ; s'il avait le focus (clavier), celui-ci
+  // passe à la première pastille révélée plutôt que de retomber sur `body`.
+  $('messages').addEventListener('click', (e) => {
+    const more = e.target.closest('button.web-ref-more');
+    if (!more) return;
+    const group = more.closest('.web-refs');
+    if (!group) return;
+    const hadFocus = document.activeElement === more;
+    group.classList.add('expanded');
+    more.remove();
+    hideTip();
+    const first = group.querySelector('a.web-ref.wr-overflow');
+    if (hadFocus && first) first.focus();
   });
 
   // Visibilité du bouton « aller tout en bas » + levée du plafond d'autoscroll

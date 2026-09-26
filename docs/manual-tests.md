@@ -64,6 +64,18 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     **tombstonée** (souvenir supprimé via « Ré-autoriser » possible, pas
     `deleteConv`) reste, elle, un **lien cliquable normal** — le tombstone ne
     concerne que le résumé/mémoire, jamais la conversation elle-même.
+4e. **Pastilles de source `web_ref`** (backend local, serveurs `ddg`/`brave` et
+    `web` branchés) : demander une question d'actualité qui force une recherche
+    puis la lecture de deux ou trois pages. Vérifier : la réponse porte des
+    pastilles au nom du site en fin de paragraphe, avec la favicon quand
+    `fetch_url` l'a fournie (globe sinon) ; le survol donne titre, site ·
+    domaine, et l'icône à côté du titre ; une URL citée sans avoir été lue (à
+    provoquer en demandant de citer un site non consulté) est en pointillé, et
+    son survol dit « Page absente des outils de cette conversation ». Puis
+    **évacuer les tool results** depuis l'inspecteur de contexte : aucune
+    pastille ne change d'état. Puis **compacter** : même vérification. Copier
+    la réponse et l'exporter en `.md` : liens `[domaine](url)`, aucun marqueur
+    brut.
 5. **Plusieurs tool_calls par tour** : tous exécutés dans le même tour.
 6. **Répétition d'appel** : un appel rigoureusement identique répété dans le même
    échange est SERVI — le handler retourne, et un outil qui observe un état

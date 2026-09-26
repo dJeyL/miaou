@@ -315,6 +315,14 @@ function toastRenameFailed(name) {
 
 // Presse-papier refusé (permission, page sans focus) : les trois boutons
 // « Copier » passent ici plutôt que de laisser leur promesse rejeter en silence.
+// Lien [file_ref:…] dont le fichier ne se résout pas dans la conversation
+// affichée (openFileRef, ui.js) : handle inventé, fichier supprimé, ou
+// ressource d'une autre conversation.
+function toastFileRefMissing() {
+  showToast({ key: 'file-ref', level: 'warn', theme: 'files',
+    text: 'Fichier introuvable dans cette conversation.' });
+}
+
 function toastCopyFailed() {
   showToast({ key: 'clipboard', level: 'warn', theme: 'clipboard',
     text: 'Copie refusée par le navigateur.' });

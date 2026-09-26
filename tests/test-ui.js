@@ -30,14 +30,17 @@ describe('resolveConvRefs', function() {
     localStorage.clear();
     saveConversation({ id: 'c1', title: 'x', timestamp: Date.now(), messages: [] });
     var r = resolveConvRefs('[conv_ref:c1|Migration Postgres]');
-    expect(r).toBe('[Migration Postgres](#miaou-conv:c1)');
+    expect(r).toContain('<a class="conv-ref" href="#miaou-conv:c1"');
+    expect(r).toContain('data-tip="Ouvrir la conversation"');
+    expect(r).toContain('>Migration Postgres</a>');
   });
   it('marqueur sans titre → lookup dans l\'index des résumés', function() {
     localStorage.clear();
     saveConversation({ id: 'c1', title: 'x', timestamp: Date.now(), messages: [] });
     saveSummary('c1', { title: 'Titre retrouvé', timestamp: Date.now(), summary: 's', keywords: [] });
     var r = resolveConvRefs('[conv_ref:c1]');
-    expect(r).toBe('[Titre retrouvé](#miaou-conv:c1)');
+    expect(r).toContain('href="#miaou-conv:c1"');
+    expect(r).toContain('>Titre retrouvé</a>');
   });
   it('marqueur sans titre, entrée tombstone → lien conservé avec le titre (suppressed ne concerne que le résumé, pas la conversation)', function() {
     localStorage.clear();
@@ -45,7 +48,8 @@ describe('resolveConvRefs', function() {
     saveSummary('c1', { title: 'Titre', timestamp: Date.now(), summary: 's', keywords: [] });
     suppressSummary('c1');
     var r = resolveConvRefs('[conv_ref:c1]');
-    expect(r).toBe('[Titre](#miaou-conv:c1)');
+    expect(r).toContain('href="#miaou-conv:c1"');
+    expect(r).toContain('>Titre</a>');
   });
   it('conversation réellement supprimée (deleteConv) → texte barré, pas de lien', function() {
     localStorage.clear();
@@ -68,7 +72,7 @@ describe('resolveConvRefs', function() {
     localStorage.clear();
     saveConversation({ id: 'a b', title: 'x', timestamp: Date.now(), messages: [] });
     var r = resolveConvRefs('[conv_ref:a b|T]');
-    expect(r).toBe('[T](#miaou-conv:a%20b)');
+    expect(r).toContain('href="#miaou-conv:a%20b"');
   });
   it('opts.asPlainText: sans marqueur, texte inchangé', function() {
     expect(resolveConvRefs('bonjour', { asPlainText: true })).toBe('bonjour');
@@ -90,7 +94,9 @@ describe('resolveConvRefs', function() {
     localStorage.clear();
     saveConversation({ id: 'c1', title: 'x', timestamp: Date.now(), messages: [] });
     var r = resolveConvRefs('[conv_ref:c1|Migration Postgres]');
-    expect(r).toBe('[Migration Postgres](#miaou-conv:c1)');
+    expect(r).toContain('<a class="conv-ref" href="#miaou-conv:c1"');
+    expect(r).toContain('data-tip="Ouvrir la conversation"');
+    expect(r).toContain('>Migration Postgres</a>');
   });
 });
 
