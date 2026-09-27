@@ -1417,10 +1417,14 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
   mask: var(--globe-glyph) center / contain no-repeat;
 }
 .body a.web-ref .wr-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .body a.web-ref::after {
-  content: '↗'; display: none;
+  content: ''; display: none;
   position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
-  font-size: 10px; line-height: 1;
+  width: 10px; height: 10px; background: currentColor;
+  -webkit-mask: var(--web-ref-arrow-glyph) center / contain no-repeat;
+  mask: var(--web-ref-arrow-glyph) center / contain no-repeat;
+  --web-ref-arrow-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17L17 7M9 7h8v8'/%3E%3C/svg%3E");
 }
 .body a.web-ref:hover::after, .body a.web-ref:focus-visible::after { display: block; }
 .body a.web-ref:hover .wr-label, .body a.web-ref:focus-visible .wr-label {
@@ -1724,8 +1728,8 @@ html[data-wide-tables="off"] .table-bleed {
   to   { opacity: 0.85; }
 }
 
-.welcome-tip-head,
-.welcome-tip-body {
+.welcome-tip-content {
+  display: block;
   pointer-events: auto;
   user-select: text;
   cursor: pointer;
@@ -1733,9 +1737,8 @@ html[data-wide-tables="off"] .table-bleed {
 
 .welcome-tip-body { display: block; }
 
-.welcome-tip:has(.welcome-tip-head:hover, .welcome-tip-body:hover) { opacity: 1; }
-.welcome-tip:has(.welcome-tip-body:hover) .welcome-tip-head,
-.welcome-tip-head:hover { text-decoration: underline; }
+.welcome-tip:has(.welcome-tip-content:hover) { opacity: 1; }
+.welcome-tip-content:hover .welcome-tip-head { text-decoration: underline; }
 
 .welcome-tip-head {
   display: block;
@@ -5198,7 +5201,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-27 08:48 UTC */
+/* miaou — built: 2026-09-27 11:21 UTC */
 
 /* ── utils.js ── */
 
@@ -10626,7 +10629,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790498884}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790508111}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -18052,15 +18055,19 @@ function renderDidYouKnow(hostEl, tip) {
     .map(p => '<span class="welcome-tip-line">' + escHtml(harden(p)) + '</span>').join('');
 
   const head = _welcomeTipHead.get(hostEl) || { emoji: '💡', head: 'Le savais-tu ?' };
-  el.innerHTML =
-    '<span class="welcome-tip-head">' +
-      '<span class="welcome-tip-head-emoji">' + head.emoji + '</span>' +
-      escHtml(harden(head.head)) +
-    '</span>' +
-    '<span class="welcome-tip-body">' + lines + '</span>';
 
-  setTip(el, 'Demander à développer');
-  el.addEventListener('click', () => askToDevelopWelcomeTip(hostEl));
+  el.innerHTML =
+    '<span class="welcome-tip-content">' +
+      '<span class="welcome-tip-head">' +
+        '<span class="welcome-tip-head-emoji">' + head.emoji + '</span>' +
+        escHtml(harden(head.head)) +
+      '</span>' +
+      '<span class="welcome-tip-body">' + lines + '</span>' +
+    '</span>';
+  const content = el.firstChild;
+
+  setTip(content, 'Demander à développer');
+  content.addEventListener('click', () => askToDevelopWelcomeTip(hostEl));
   hostEl.appendChild(el);
 }
 

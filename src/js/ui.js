@@ -289,12 +289,19 @@ function renderDidYouKnow(hostEl, tip) {
   // Tête accordée à l'écran d'accueil tiré ; repli sur la formule neutre si
   // l'hôte n'en porte pas (écran posé par un chemin qui n'en fournirait pas).
   const head = _welcomeTipHead.get(hostEl) || { emoji: '💡', head: 'Le savais-tu ?' };
+  // Tête et corps sous un porteur commun qui épouse le texte : c'est lui qui
+  // prend clic et infobulle, jamais `el`, qui s'étire du trio d'accueil
+  // jusqu'au composer — une bulle ancrée sur la boîte étirée flottait en haut
+  // de ce vide, à des centaines de pixels du texte.
   el.innerHTML =
-    '<span class="welcome-tip-head">' +
-      '<span class="welcome-tip-head-emoji">' + head.emoji + '</span>' +
-      escHtml(harden(head.head)) +
-    '</span>' +
-    '<span class="welcome-tip-body">' + lines + '</span>';
+    '<span class="welcome-tip-content">' +
+      '<span class="welcome-tip-head">' +
+        '<span class="welcome-tip-head-emoji">' + head.emoji + '</span>' +
+        escHtml(harden(head.head)) +
+      '</span>' +
+      '<span class="welcome-tip-body">' + lines + '</span>' +
+    '</span>';
+  const content = el.firstChild;
   // Cliquer l'astuce pré-remplit le composer d'une demande de développement.
   // Listener et non attribut inline : ce nœud est recréé à chaque mise en page
   // (pose puis re-rendus au redimensionnement), il n'y a donc aucun câblage
@@ -303,8 +310,8 @@ function renderDidYouKnow(hostEl, tip) {
   // Infobulle plutôt qu'un texte d'invite ajouté dans l'encart : l'astuce est
   // courte et bornée en hauteur (elle s'élague déjà faute de place), une ligne
   // de plus y disputerait la place au contenu.
-  setTip(el, 'Demander à développer');
-  el.addEventListener('click', () => askToDevelopWelcomeTip(hostEl));
+  setTip(content, 'Demander à développer');
+  content.addEventListener('click', () => askToDevelopWelcomeTip(hostEl));
   hostEl.appendChild(el);
 }
 
