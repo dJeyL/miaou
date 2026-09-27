@@ -1080,6 +1080,59 @@ function collapseCompactionSummary(body, content) {
   };
 }
 
+// Lien vers la page visée par l'appel (`ackPageLink`, prédicat UNIQUE) : en
+// queue de la ligne technique — le détail replié quand l'ack a un intent, la
+// ligne unique sinon ; hors de `.mcp-intent-row`, donc le clic n'y replie rien.
+// Porté par un conteneur `.ack-page` pour être IDEMPOTENTE : elle est rappelée
+// sur un ack déjà peint, parce qu'un ack MCP l'est par `onEarlyAcks` AVANT que
+// `args` n'y soit posé (markEarlyAckPending) et que `webMeta`, d'où vient la
+// favicon, n'arrive qu'avec la réponse (settleEarlyAckPending) ; et après
+// chaque re-rendu du libellé, qui l'efface (rétro-application d'erreur). Le
+// nœud peut être null (génération détachée) : le rendu à l'attache relira le
+// prédicat sur l'entrée à jour.
+//
+// `href` et `src` posés par propriété, jamais interpolés : l'URL vient du
+// modèle, la favicon d'un serveur. La favicon (celle de l'ack, ou celle de la
+// même page dans le registre des sources — cf. `ackPageLink`) est revalidée par
+// `isSafeIconSrc` à l'affichage, comme pour les pastilles ; absente, aucune icône — pas de globe générique, le domaine suffit à
+// dire où mène le lien. Nouvel onglet sans `opener` ni référent. Comme `.ack-dl`,
+// ABSENT des exports (piège 21) : `_formatToolCallHtml` ne passe pas par ici.
+function refreshAckPageLink(node, entry) {
+  if (!node || !entry) return;
+  const label = node.classList && node.classList.contains('ack-label') ? node : node.querySelector('.ack-label');
+  if (!label) return;
+  const old = label.querySelector('.ack-page');
+  if (old) old.remove();
+  // Registre du fil AFFICHÉ (mémo de vue, ui.js) : un nœud n'est peint que pour
+  // lui (piège 28). Garde typeof : ui.js n'est pas chargé par tous les tests.
+  const link = ackPageLink(entry, typeof displayedWebSources === 'function' ? displayedWebSources() : null);
+  if (!link) return;
+  const box = document.createElement('span');
+  box.className = 'ack-page';
+  const sep = document.createElement('span');
+  sep.className = 'ack-page-sep';
+  sep.textContent = '·';
+  box.appendChild(document.createTextNode(' '));
+  box.appendChild(sep);
+  box.appendChild(document.createTextNode(' '));
+  const a = document.createElement('a');
+  a.className = 'ack-page-link';
+  a.href = link.url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  if (link.favicon) {
+    const img = document.createElement('img');
+    img.className = 'ack-page-icon';
+    img.alt = '';
+    img.src = link.favicon;
+    a.appendChild(img);
+  }
+  a.appendChild(document.createTextNode(link.domain));
+  setTip(a, link.url);
+  box.appendChild(a);
+  (label.querySelector('.mcp-breadcrumb-detail') || label).appendChild(box);
+}
+
 function buildToolAck(m) {
   const kind = ackKindOf(m);
   const spec = ACK_KINDS[kind] || { undo: null, icon: '', label: () => 'Action effectuée' };
@@ -1115,6 +1168,9 @@ function buildToolAck(m) {
   } else {
     label.textContent = spec.label(m);
   }
+  // Lien vers la page visée : prédicat UNIQUE `ackPageLink`, jamais un test de
+  // kind ici (cf. refreshAckPageLink, juste au-dessus).
+  refreshAckPageLink(label, m);
   wrap.appendChild(label);
 
   // Téléchargement de la ressource désignée par l'ack (lot V). Placé APRÈS le

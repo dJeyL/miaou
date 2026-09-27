@@ -1217,6 +1217,11 @@ modèle.
   Un fichier trop volumineux n'est pas prévisualisé — il reste téléchargeable.
   La loupe n'apparaît que sur les traces dont le détail a été conservé : les
   conversations les plus anciennes peuvent en être dépourvues.
+- **Ouvrir la page consultée** : quand un outil porte sur une adresse web
+  (lecture d'une page, par exemple), sa trace se termine par « · » suivi du nom
+  du site, précédé de son icône quand l'outil l'a fournie. Un clic ouvre la page dans un nouvel onglet ; survole-le pour lire
+  l'adresse complète. Si la trace affiche une intention, ce lien est dans son
+  détail, sous le petit chevron.
 - **Inspecter un appel pendant qu'il tourne** : la loupe apparaît dès que
   l'appel part, sans attendre sa réponse. Le panneau montre alors déjà **ce qui
   a été demandé** — les paramètres de l'appel, l'outil, le serveur — et indique

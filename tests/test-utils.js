@@ -3352,6 +3352,51 @@ describe('authorizationUrlOrigin (campagne AB) — recevabilité de l\'URL', fun
   });
 });
 
+describe('ackPageLink — lien vers la page visee par un appel', function() {
+  it('rend url et domaine sans www pour un args.url http(s), quel que soit l\'outil', function() {
+    var t = ackPageLink({ kind: 'mcp_call', name: 'web__fetch_url', args: { url: 'https://www.exemple.test/a?b=1' } });
+    expect(t.url).toBe('https://www.exemple.test/a?b=1');
+    expect(t.domain).toBe('exemple.test');
+    expect(ackPageLink({ kind: 'mcp_call', name: 'autre__outil', args: { url: 'http://sous.site.test:8080' } }).domain).toBe('sous.site.test');
+  });
+  it('libelle = hote REEL, userinfo retire', function() {
+    expect(ackPageLink({ args: { url: 'https://banque.test@ailleurs.test/x' } }).domain).toBe('ailleurs.test');
+  });
+  it('garde son lien sur un ack en erreur', function() {
+    expect(ackPageLink({ error: true, args: { url: 'https://a.test/' } }).domain).toBe('a.test');
+  });
+  it('null hors http(s), sans autorite, ou avec un caractere de controle', function() {
+    expect(ackPageLink({ args: { url: 'javascript:alert(1)' } })).toBe(null);
+    expect(ackPageLink({ args: { url: 'file:///etc/passwd' } })).toBe(null);
+    expect(ackPageLink({ args: { url: 'https:///x' } })).toBe(null);
+    expect(ackPageLink({ args: { url: 'https://a.test/x y' } })).toBe(null);
+    expect(ackPageLink({ args: { url: 'https://a.test/\nx' } })).toBe(null);
+  });
+  it('favicon de l\'ack d\'abord, sinon celle de la MEME page dans le registre', function() {
+    var ICON = 'data:image/png;base64,AAAA';
+    var OTHER = 'data:image/png;base64,BBBB';
+    var reg = webSourceRegistry([
+      { role: 'tool-ack', kind: 'mcp_call', name: 'web__fetch_url',
+        args: { url: 'https://site.test/page' }, webMeta: { favicon: ICON } },
+    ]);
+    // fetch_read qui poursuit la lecture : pas de webMeta, meme page.
+    expect(ackPageLink({ args: { url: 'https://site.test/page', offset: 2 } }, reg).favicon).toBe(ICON);
+    // Sa propre favicon prime.
+    expect(ackPageLink({ args: { url: 'https://site.test/page' }, webMeta: { favicon: OTHER } }, reg).favicon).toBe(OTHER);
+    // Autre page du meme domaine : jamais devinee.
+    expect(ackPageLink({ args: { url: 'https://site.test/autre' } }, reg).favicon).toBe('');
+    // Sans registre, ou favicon irrecevable.
+    expect(ackPageLink({ args: { url: 'https://site.test/page' } }).favicon).toBe('');
+    expect(ackPageLink({ args: { url: 'https://a.test/' }, webMeta: { favicon: 'data:image/svg+xml;base64,AAAA' } }).favicon).toBe('');
+  });
+  it('null sans args.url chaine', function() {
+    expect(ackPageLink({ args: { query: 'x' } })).toBe(null);
+    expect(ackPageLink({ args: { url: 42 } })).toBe(null);
+    expect(ackPageLink({ kind: 'mcp_call' })).toBe(null);
+    expect(ackPageLink(null)).toBe(null);
+  });
+});
+
 describe('ackAuthorizationTarget (campagne AB) — refus presentable', function() {
   var CODE = 'AUTHORIZATION_REQUIRED';
   it('rend une cible complete quand code ET url recevable sont presents', function() {

@@ -626,7 +626,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   (`convertColonUrlCitations`) ; liste finale de sources réduite à une rangée
   de pastilles (`reduceSourceLines`)), lien d'autorisation
   d'un ack refusé (campagne AB : `ackAuthorizationTarget`, seule affordance
-  d'ack rendue en texte, absente des exports), et **microcompaction des tool
+  de fin d'ack rendue en texte, absente des exports), lien vers la page visée
+  par tout appel à `args.url` http(s) (`ackPageLink`, domaine de
+  `webRefDomain` et favicon de `webMeta` ou, à défaut, du registre pour la même page, en queue de la ligne technique,
+  `refreshAckPageLink` rappelée à l'enrichissement), et **microcompaction des tool
   results** (lot AE : `microcompactToolResults`, seuil uniforme
   `TOOL_RESULT_EVACUATION_MIN_CHARS` jamais une liste de kinds, descripteur
   statique et jamais `_makeResourceRef`, réentrance par identité d'objet sur N

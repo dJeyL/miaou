@@ -865,6 +865,39 @@ function ackAuthorizationTarget(m, mcpServerUrl) {
   return { url: raw, origin: origin, upstream: m.upstream || null };
 }
 
+// Lien vers la page qu'un appel d'outil a visée, ou `null`. La FORME et jamais
+// une liste de noms d'outils, même critère que la provenance de
+// `webSourceRegistry` : tout appel dont l'argument `url` est une URL http(s).
+// `args` vient du modèle : on refuse tout caractère de contrôle ou espace (qui
+// masquerait à l'oeil ce que le navigateur ouvre) et toute autorité vide. Le
+// libellé est le domaine de `webRefDomain` — l'hôte RÉEL, userinfo retiré,
+// donc un `https://banque.fr@ailleurs.test` s'affiche `ailleurs.test` — le même
+// que portent les pastilles de source. Rendu à l'affichage, donc valable aussi
+// pour les acks relus du stockage. Un ack en erreur garde son lien : la page
+// n'a pas été lue, mais c'est bien celle-là qui a été demandée.
+// FAVICON — celle de l'ack (`webMeta`, posée par fetch_url), sinon celle que le
+// registre des sources (`webSourceRegistry`, facultatif) connaît pour la MÊME
+// page : un fetch_read qui poursuit la lecture ne publie pas de `webMeta`, mais
+// l'appel qui a ouvert la page l'a fait. Par page et non par domaine : une
+// icône n'est jamais devinée depuis une page voisine. Revalidée par
+// `isSafeIconSrc` dans les deux cas ; absente, `favicon` vaut ''. PUR.
+function ackPageLink(m, registry) {
+  const args = m && m.args && typeof m.args === 'object' ? m.args : null;
+  const url = args && typeof args.url === 'string' ? args.url.trim() : '';
+  if (!/^https?:\/\/[^\/?#]/i.test(url)) return null;
+  for (let i = 0; i < url.length; i++) {
+    if (url.charCodeAt(i) <= 0x20) return null;
+  }
+  const domain = webRefDomain(url);
+  if (!domain) return null;
+  let favicon = m.webMeta && isSafeIconSrc(m.webMeta.favicon) ? m.webMeta.favicon : '';
+  if (!favicon && registry instanceof Map) {
+    const e = registry.get(normalizeWebUrl(url));
+    if (e && isSafeIconSrc(e.favicon)) favicon = e.favicon;
+  }
+  return { url: url, domain: domain, favicon: favicon };
+}
+
 // Les DEUX motifs de marqueur de ressource, en un seul endroit —
 // `ackInspectResourceTargets` (qui en dérive les cibles) et
 // `splitResultResourceMarkers` (qui les détache du corps) les lisent tous les

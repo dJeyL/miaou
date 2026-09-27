@@ -993,7 +993,8 @@ relue dans la config à chaque affichage, pour qu'un ack rouvert des mois plus
 tard pointe là où le proxy est aujourd'hui. Serveur non résoluble et chemin
 relatif → **pas de lien** : une affordance ne se devine pas.
 
-**Seule affordance d'ack rendue en TEXTE et non en icône.** Ses voisines
+**Seule affordance de fin d'ack rendue en TEXTE et non en icône** (le lien de
+page, section suivante, vit dans le libellé et non dans cette colonne). Ses voisines
 (`.ack-dl`, `.ack-inspect`, `.ack-open-agent`) agissent *sur* l'ack ou sa cible
 et se lisent d'un pictogramme ; celle-ci
 **sort de MIAOU** vers un tiers, et l'origine doit être lisible avant le clic —
@@ -1030,6 +1031,43 @@ contexte ni fraîcheur. `_formatToolCallHtml`/`_formatToolCallMd` énumèrent ce
 qu'ils émettent et n'en font rien — épinglé par un test qui vérifie **aussi** que
 l'ack lui-même est bien rendu, sans quoi les assertions négatives passeraient sur
 un export vide.
+
+### Lien vers la page visée
+
+**Prédicat : `ackPageLink(m)`** (utils.js, pur, testé) → `{url, domain}` ou
+`null`. Critère de FORME, jamais une liste d'outils — le même que la provenance
+« consultée » de `webSourceRegistry` : tout ack dont `args.url` est une URL
+http(s). Refus de tout caractère ≤ 0x20 (un espace ou un saut de ligne masquerait
+à l'œil ce que le navigateur ouvre) et d'une autorité vide. Le libellé est
+`webRefDomain` — l'hôte réel sans `www.`, userinfo et port retirés, le même que
+celui des pastilles de source : `https://banque.test@ailleurs.test` s'affiche
+`ailleurs.test`. Un ack en erreur garde son lien (c'est bien cette page qui a été
+demandée). `args` et non `webMeta.canonical_url` : le lien dit ce que le modèle a
+demandé, pas où la redirection a mené.
+
+**Rendu** (`refreshAckPageLink`, acks.js) : ` · domaine` en queue de la ligne
+technique — le détail replié (`.mcp-breadcrumb-detail`) quand l'ack a un intent,
+la ligne unique sinon ; hors de `.mcp-intent-row`, donc le clic ne replie rien.
+Précédé de la favicon de `webMeta` quand elle est là, sinon de celle que le
+registre des sources (`webSourceRegistry`, via le mémo de vue
+`displayedWebSources`) connaît pour la **même page** — un `fetch_read` qui
+poursuit la lecture ne publie pas de `webMeta`, l'appel qui a ouvert la page
+l'a fait. Par page normalisée et jamais par domaine : une icône ne se devine pas
+depuis une page voisine. Revalidée par `isSafeIconSrc` à l'affichage comme pour
+les pastilles ; absente, aucune icône (pas de globe : le domaine dit déjà où
+mène le lien). Nouvel onglet, `href` et
+`src` par propriété, `rel="noopener noreferrer"`, URL complète en infobulle.
+Couleur héritée, donc souligné au repos (trait fin et pâli). **Absent des deux
+exports**, comme les affordances de fin d'ack : `_formatToolCallHtml` ne passe
+pas par `buildToolAck`.
+
+**Idempotente et rappelée, comme la loupe.** Un ack MCP est peint par
+`onEarlyAcks` avant que `args` n'y soit posé, et `webMeta` n'arrive qu'avec la
+réponse : sans rappel, le lien n'apparaissait qu'après un rechargement. Elle est
+donc rappelée par `markEarlyAckPending` (args) et `settleEarlyAckPending`
+(webMeta), et après les deux re-rendus du libellé de la rétro-application
+d'erreur, qui l'effaçaient. Le lien vit dans un conteneur `.ack-page` retiré puis
+reposé à chaque appel.
 
 ### Échecs d'outils : `tool_failed` et `toolFail()`
 
