@@ -7649,9 +7649,27 @@ function syncSpaceUI() {
   if (badge) {
     badge.textContent = space.name || '';
     badge.hidden = activeSpaceId === DEFAULT_SPACE_ID;
+    // Troncature mesurée au SURVOL, pas ici : sidebar ouverte ou fontes pas
+    // encore chargées, la mesure faite maintenant serait fausse. Le listener du
+    // porteur passe avant celui de document (bulle) : l'infobulle est à jour
+    // avant que son délai ne soit armé. Propriété et non addEventListener pour
+    // rester idempotent sur les appels répétés.
+    badge.onpointerover = function() { syncSpaceBadgeTip(badge); };
   }
   syncActivityBadges();
   syncAgentCount();
+}
+
+// Infobulle du badge d'Espace : « Espace actuel », plus le nom complet en
+// second étage quand l'ellipse le coupe. setTip seulement sur changement :
+// appelé sous le pointeur, il réafficherait la bulle sans délai.
+function syncSpaceBadgeTip(badge) {
+  const truncated = badge.scrollWidth > badge.clientWidth;
+  const detail = truncated ? badge.textContent : '';
+  const cur = getTip(badge);
+  const curDetail = (cur && typeof cur === 'object') ? cur.detail : '';
+  if (cur && curDetail === detail) return;
+  setTip(badge, detail ? { label: 'Espace actuel', detail: detail } : 'Espace actuel');
 }
 
 // Applique un état de badge ('working' | 'unread' | null) sur un porteur. Un

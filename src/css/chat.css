@@ -68,7 +68,9 @@
   pointer-events: none;
   transition: opacity 190ms var(--ease), transform 190ms var(--ease);
 }
-.app.booted:not(.sidebar-open) .topbar-space-badge:not([hidden]) { opacity: 1; transform: translateX(0); }
+/* pointer-events rendu seulement à l'état visible : l'infobulle « Espace
+   actuel » n'a de sens que là, et le badge invisible ne doit pas capter. */
+.app.booted:not(.sidebar-open) .topbar-space-badge:not([hidden]) { opacity: 1; transform: translateX(0); pointer-events: auto; }
 .topbar-mid   { justify-self: center; min-width: 0; max-width: 46vw; display: flex; align-items: center; gap: 2px; }
 .conv-dl-btn, .conv-retitle-btn { opacity: 0; width: 26px; height: 26px; flex-shrink: 0; transition: opacity 150ms var(--ease), background 130ms var(--ease), color 130ms var(--ease); }
 .conv-dl-btn svg, .conv-retitle-btn svg { width: 14px; height: 14px; }
