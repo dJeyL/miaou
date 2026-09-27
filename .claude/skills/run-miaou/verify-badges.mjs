@@ -26,6 +26,9 @@
 //  10. le non-VU du fil (bouton « aller tout en bas ») devient un non-LU de
 //      sidebar à la FIN de la génération, même sur la conversation affichée —
 //      et au DÉPART pour un non-vu qu'aucune génération ne clôt
+//  11. le non-lu est PERSISTÉ (2026-09-27) : il survit au reload, un onglet
+//      ouvert après coup le trouve, marquage et effacement se propagent entre
+//      onglets ouverts, et le démarrage élague les conversations disparues
 //
 // Usage : node verify-badges.mjs <dossier-captures> [--headed]
 import { launchIsolated } from './stub-backend.js';
@@ -146,7 +149,8 @@ const waitGenCount = (n) => page.waitForFunction(
 // Lit l'état de la pastille d'une ligne de conversation, par convId. La classe
 // est LE contrat entre le JS et le CSS : on la lit, plus une mesure de rendu
 // (scénario 8 vérifie que la classe se traduit bien en pixels).
-const convBadge = (id) => page.evaluate((cid) => {
+// `p` : la page interrogée — le scénario 11 lit aussi un second onglet.
+const convBadge = (id, p = page) => p.evaluate((cid) => {
   // La ligne ne porte pas d'id, mais ses boutons SI : le pin et la corbeille
   // reçoivent `togglePin('<id>')` / `onConvDel(this,'<id>')` en attribut généré.
   // On apparie donc sur cette ancre, une IDENTITÉ.
@@ -543,7 +547,9 @@ const agentPill = () => page.evaluate(() => {
 await page.evaluate(() => { window.__gates = {}; window.__released = {}; });
 await page.evaluate((d) => pickSpace(d), spaces.def);
 await page.waitForTimeout(250);
-await page.evaluate(() => { _unreadConvs.clear(); renderConvList(); syncSpaceUI(); });
+// Le Set n'est que le miroir de `miaou-unread` (persisté depuis le 2026-09-27) :
+// le vider seul laisserait le prochain markConv* ressusciter l'état stocké.
+await page.evaluate(() => { saveUnreadConvIds([]); refreshUnreadConvs([]); renderConvList(); syncSpaceUI(); });
 check('au repos : pas de compteur', await agentPill() === null);
 
 // Une seule génération, SOUS LES YEUX : silencieux (le composer le dit déjà).
@@ -701,6 +707,105 @@ await newConv();
 await page.waitForTimeout(200);
 check('quitter une conversation entièrement lue n\'allume aucune pastille',
   await convBadge(convI) === null);
+
+// ─────────────────────────────────────────────────────────────────────────
+// Scénario 11 : non-lu persisté — reload et onglets
+// ─────────────────────────────────────────────────────────────────────────
+// Deux onglets du MÊME contexte : ils partagent localStorage, IndexedDB et le
+// BroadcastChannel, comme deux onglets d'un même profil. Chaque onglet a son
+// propre stub (window) ; seul `page` génère.
+//
+// Chaque contrôle porte sur un état qu'un non-lu VOLATILE ne peut pas
+// produire : un onglet qui n'existait pas au marquage, un rechargement, un
+// effacement fait ailleurs. Un non-lu volatile rend `null` au premier, `null`
+// au deuxième, et laisse la pastille allumée au troisième.
+console.log('\n— Scénario 11 : non-lu persisté (reload, onglets)');
+await page.evaluate(() => { saveUnreadConvIds([]); refreshUnreadConvs([]); renderConvList(); syncSpaceUI(); });
+await page.evaluate(() => { window.__gates = {}; window.__released = {}; window.__bulky = {}; });
+
+// Attend un état de pastille plutôt qu'un délai : la propagation passe par le
+// canal et l'événement `storage`, sans borne de temps connue. Rend l'état lu.
+const waitBadge = async (id, want, p = page, ms = 3000) => {
+  const t0 = Date.now();
+  let st = await convBadge(id, p);
+  while (st !== want && Date.now() - t0 < ms) {
+    await p.waitForTimeout(100);
+    st = await convBadge(id, p);
+  }
+  return st;
+};
+const bootWait = async (p) => {
+  await p.waitForSelector('#composer-text', { timeout: 10000 });
+  await p.waitForFunction(() => document.querySelector('.boot-done') !== null, null, { timeout: 10000 });
+  await p.waitForTimeout(300);
+};
+// Termine une génération HORS écran : la conversation devient non lue.
+const finishOffscreen = async (tag, text) => {
+  await newConv();
+  await gate(tag);
+  await send(text);
+  await waitGenCount(1);
+  await page.waitForTimeout(200);
+  const id = await page.evaluate(() => currentConvId);
+  await newConv();
+  await release(tag);
+  await waitGenCount(0);
+  await page.waitForTimeout(300);
+  return id;
+};
+
+const convJ = await finishOffscreen('J', 'CONV-J persistance.');
+check('prémisse : J non lue dans l\'onglet qui l\'a marquée', await convBadge(convJ) === 'unread');
+check('… et écrite dans miaou-unread',
+  await page.evaluate((j) => JSON.parse(localStorage.getItem('miaou-unread') || '[]').indexOf(j) !== -1, convJ) === true);
+
+// Onglet ouvert APRÈS le marquage : il ne peut le tenir que du stockage.
+const page2 = await context.newPage();
+page2.on('console', (m) => { if (m.type() === 'error') errors.push('[onglet 2] ' + m.text()); });
+page2.on('pageerror', (e) => errors.push('[onglet 2] ' + String(e)));
+await page2.goto('file://' + distPath);
+await bootWait(page2);
+const j2Unread = await convBadge(convJ, page2) === 'unread';
+check('onglet ouvert après coup : J y est non lue', j2Unread);
+
+// Effacement propagé : ouvrir J dans le premier onglet l'éteint dans le second.
+await page.evaluate((j) => selectConv(j), convJ);
+await page.waitForTimeout(300);
+check('ouverte dans l\'onglet 1 : éteinte là', await convBadge(convJ) === null);
+// Un effacement ne se prouve que sur une pastille qui était allumée : sans la
+// prémisse, ce contrôle passe sur un non-lu volatile (mesuré au rejeu sur le
+// code d'avant, où J n'a jamais été non lue dans l'onglet 2).
+check('… et éteinte dans l\'onglet 2, sans rechargement',
+  j2Unread && await waitBadge(convJ, null, page2) === null);
+
+// Marquage propagé : K finit hors écran dans l'onglet 1, l'onglet 2 l'allume.
+const convK = await finishOffscreen('K', 'CONV-K propagation.');
+check('prémisse : K non lue dans l\'onglet 1', await convBadge(convK) === 'unread');
+check('K s\'allume dans l\'onglet 2, sans rechargement', await waitBadge(convK, 'unread', page2) === 'unread');
+
+// Rechargement de l'onglet qui a marqué : le non-lu survit (le reload ne
+// rouvre aucune conversation, cf. SKILL.md — rien ne l'efface donc au boot).
+await page.reload();
+await bootWait(page);
+const kSurvived = await convBadge(convK) === 'unread';
+check('après reload : K toujours non lue', kSurvived);
+check('… et J toujours lue', await convBadge(convJ) === null);
+
+// Effacement dans l'onglet 2 → l'onglet 1 rechargé suit.
+await page2.evaluate((k) => selectConv(k), convK);
+await page2.waitForTimeout(300);
+check('K ouverte dans l\'onglet 2 : éteinte dans l\'onglet 1 (même prémisse)',
+  kSurvived && await waitBadge(convK, null) === null);
+
+// Élagage au démarrage : un id de conversation disparue ne survit pas au boot,
+// un id vivant si. Écrit directement (aucune conversation ne s'appelle ainsi).
+await page.evaluate((k) => localStorage.setItem('miaou-unread', JSON.stringify(['conv-disparue-xyz', k])), convK);
+await page.reload();
+await bootWait(page);
+check('démarrage : l\'id disparu est élagué, le vivant conservé',
+  await page.evaluate(() => localStorage.getItem('miaou-unread')) === JSON.stringify([convK]));
+check('… et le vivant s\'affiche', await convBadge(convK) === 'unread');
+await page2.close();
 
 // ─────────────────────────────────────────────────────────────────────────
 console.log('');

@@ -537,7 +537,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `miaou-memories`, `miaou-mcp-servers` (+ sa sentinelle de seed de build
   `miaou-mcp-seeded`), `miaou-api-servers`, `miaou-model-props` (cache
   des propriétés déclarées, hors export),
-  `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`) et
+  `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`,
+  `miaou-unread` (non-lus des badges, hors export)) et
   IndexedDB (`skills`, `resources`, `conversations`, `summaries` — ces deux
   derniers migrés depuis localStorage au lot U), champs de méta `snippet`
   (extrait de secours, lot AA) et `autoTitled` (titre écrit par la machine, qui
@@ -765,7 +766,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 - **`docs/badges.md`** — badges d'activité (lot T-2) : deux états (working
   pulsant / unread statique), prédicat unique `convBadgeState`, agrégation
   cross-Space assumée, quatre surfaces et leurs points de synchronisation,
-  volatilité du non-lu et sa portée (racines seulement : marquer suppose
+  persistance du non-lu (`miaou-unread`, miroir `_unreadConvs`, propagé aux
+  onglets par `unread-updated`) et sa portée (racines seulement : marquer suppose
   pouvoir effacer, et un agrégat ne remonte rien que le détail ne puisse
   expliquer).
 - **`docs/agents.md`** — agents (lot X) : sous-conversations lancées par le

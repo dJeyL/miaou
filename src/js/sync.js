@@ -46,6 +46,7 @@ const SYNC_MESSAGE_TYPES = [
   'conv-generation-started',  // { convId, tabId } — readonly relay + heartbeat
   'conv-generation-ended',    // { convId, tabId } — fin de readonly relay
   'storage-state',            // { full } — quota IndexedDB atteint (pose) ou place libérée (levée), lot AG
+  'unread-updated',           // { } — conversations non lues (badges) modifiées : relire le stockage
 ];
 
 // Construit une enveloppe bien formée. `rand` injecté (déterminisme) n'est PAS
@@ -100,13 +101,14 @@ function validateEnvelope(obj) {
 //     'readonly-on'    — génération démarrée ailleurs sur la conv affichée.
 //     'readonly-off'   — génération terminée ailleurs.
 //     'storage-state'  — le stockage est plein (`full`) ou ne l'est plus.
+//     'unread-list'    — relire les conversations non lues et repeindre les badges.
 //
 // Le contexte porte aussi, pour les décisions liées à la conv, de quoi trancher
 // « affichée ? » (convId === ctx.currentConvId) — l'herméticité de Space
 // (piège 18) est laissée au câblage impur (il a accès à `spaceConvIds` et à la
 // liste réelle des conversations), routeMessage ne fait que la présélection.
 // ── Écritures localStorage d'un pair : l'événement `storage` ────────────────
-// Les types adossés à localStorage (`settings-updated`, `space-changed`) disent
+// Les types adossés à localStorage (`settings-updated`, `space-changed`, `unread-updated`) disent
 // « relis », et le récepteur relit localStorage. Or rien n'ordonne l'arrivée du
 // message sur le canal et la VISIBILITÉ de l'écriture dans cet onglet : mesuré
 // le 2026-09-25 (thème, palette et fontes changés d'affilée dans un onglet), le
@@ -142,6 +144,7 @@ function storageEventDecision(key, oldValue, newValue) {
   if (key === ACTIVE_API_SERVER_KEY) return { action: 'apply-settings', keys: ['active-api-server'] };
   if (key === MCP_SERVERS_KEY) return { action: 'apply-settings', keys: ['mcp-servers'] };
   if (key === SPACES_KEY) return { action: 'space-list' };
+  if (key === UNREAD_CONVS_KEY) return { action: 'unread-list' };
   return null;
 }
 
@@ -199,6 +202,10 @@ function routeMessage(env, ctx) {
       // Tout ce qui n'est pas exactement `true` vaut levée — un payload abîmé
       // ne doit pas poser un état qui ne se lève que par une suppression.
       return { action: 'storage-state', full: p.full === true };
+    case 'unread-updated':
+      // Le payload ne porte rien : le récepteur relit l'ensemble, toujours
+      // entier — un id isolé ne dirait pas si d'autres ont bougé entre-temps.
+      return { action: 'unread-list' };
     default:
       return { action: 'ignore' };
   }

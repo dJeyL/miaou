@@ -568,6 +568,59 @@ function saveModelProps(map) {
 
 function _modelPropsUrl(url) { return String(url || '').trim(); }
 
+// ── Conversations non lues, persistées ────────────────────────────────────────
+// Le « non lu » des badges d'activité (docs/badges.md) : un tableau d'ids de
+// conversations. Volatile jusqu'au 2026-09-27, persisté depuis pour survivre au
+// reload et se propager aux onglets voisins — c'est un état de l'UTILISATEUR
+// (« je n'ai pas encore regardé cette réponse »), pas de l'onglet qui l'a posé.
+//
+// Clé localStorage à part plutôt qu'un champ du record de conversation : le
+// marquage tombe juste après le `persistGeneration` final, et l'effacement à
+// chaque ouverture — un champ du record ferait de chacun un second écrivain de
+// la conversation, et diffuserait un `conv-updated` qui réhydrate le fil chez
+// le pair qui l'affiche. Hors EXPORT_KEYS : l'état de lecture n'est pas du
+// contenu, et un import remplace les conversations dont il parle.
+//
+// Le miroir RAM (`_unreadConvs`, main.js) n'est jamais la source d'une
+// écriture : chaque mutation relit le stockage juste avant d'écrire
+// (lecture-modification-écriture synchrone), sans quoi deux onglets qui
+// marquent chacun une conversation s'écraseraient.
+const UNREAD_CONVS_KEY = 'miaou-unread';
+
+// Pure : un tableau de chaînes non vides, sans doublon, quoi qu'on lui donne.
+function normalizeUnreadConvIds(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const id of raw) {
+    if (typeof id === 'string' && id && out.indexOf(id) === -1) out.push(id);
+  }
+  return out;
+}
+
+function loadUnreadConvIds() {
+  try { return normalizeUnreadConvIds(JSON.parse(localStorage.getItem(UNREAD_CONVS_KEY))); }
+  catch (e) { return []; }
+}
+
+// Écrit puis diffuse, post-commit (piège 24 (a)) ; le pair relit aussi sur
+// l'événement `storage` (piège 24 (c), `storageEventDecision`).
+function saveUnreadConvIds(ids) {
+  if (writeLocalStorage(UNREAD_CONVS_KEY, JSON.stringify(normalizeUnreadConvIds(ids)))) {
+    syncPost('unread-updated', {});
+  }
+}
+
+// Pure : ne garde que les ids de conversations RACINE qui existent encore. Une
+// conversation supprimée (ici ou ailleurs, onglet fermé entre-temps) laisserait
+// sinon un id que rien n'efface, puisque seule son ouverture le fait.
+function pruneUnreadConvIds(ids, convs) {
+  const alive = new Set();
+  for (const c of (convs || [])) {
+    if (c && c.id != null && isRootConversation(c)) alive.add(c.id);
+  }
+  return normalizeUnreadConvIds(ids).filter(id => alive.has(id));
+}
+
 // Pure : record persisté d'un modèle, ou null si rien n'est connu (entrée
 // absente, ou datée d'une autre URL). À défaut du nom exact, la forme complète
 // d'Ollama : un modèle saisi `llama3` est listé `llama3:latest`, et c'est sous

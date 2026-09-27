@@ -608,6 +608,16 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
 
   Lu par `modelPropsFor(server, modelId)`, qui rend toujours un record,
   entièrement inconnu à défaut.
+- `miaou-unread` : tableau d'ids des conversations **non lues** (badges
+  d'activité, cf. `docs/badges.md`), persisté depuis le 2026-09-27 pour
+  survivre au reload et se propager aux onglets. Clé à part plutôt qu'un champ
+  du record : marquage et effacement ne deviennent pas des écrivains de la
+  conversation, et n'émettent pas de `conv-updated`. Hors `EXPORT_KEYS` (état
+  de lecture, pas contenu). Chaque mutation relit le stockage juste avant
+  d'écrire (`markConvUnread`/`markConvRead`, main.js) ; le Set `_unreadConvs`
+  n'en est que le miroir. Diffusé par `unread-updated` et relu sur l'événement
+  `storage`. Élagué au démarrage des conversations disparues et des agents
+  (`pruneUnreadConvIds`, pure).
 - `miaou-spaces` : tableau `[{ id, name, description?, createdAt }]` (feature
   Spaces, lot C). `description` (texte libre) est **ajoutée après** le prompt
   système utilisateur global dans `buildSystemMessage()` — ce n'est PAS un

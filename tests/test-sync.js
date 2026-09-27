@@ -238,3 +238,17 @@ describe('storage-state (lot AG) — quota partagé entre onglets', function() {
     expect(routeMessage(makeEnvelope('storage-state', 'other', {}), CTX).full).toBe(false);
   });
 });
+
+describe('unread-updated — non-lus partagés entre onglets', function() {
+  var CTX = { tabId: 'me', currentConvId: 'c1', activeSpaceId: 's1' };
+  it('fait partie de la liste fermée des types', function() {
+    expect(!!validateEnvelope({ v: 1, type: 'unread-updated', tabId: 'tab_a', payload: {} })).toBe(true);
+  });
+  it('routé en relecture, quelle que soit la conv affichée', function() {
+    expect(routeMessage(makeEnvelope('unread-updated', 'other', {}), CTX)).toEqual({ action: 'unread-list' });
+    expect(routeMessage(makeEnvelope('unread-updated', 'other', { convId: 'c1' }), CTX)).toEqual({ action: 'unread-list' });
+  });
+  it('l\'événement storage de la clé rend la même décision', function() {
+    expect(storageEventDecision(UNREAD_CONVS_KEY, '[]', '["c1"]')).toEqual({ action: 'unread-list' });
+  });
+});

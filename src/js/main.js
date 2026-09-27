@@ -720,12 +720,40 @@ function isStopRequested(convId) {
 
 // ── Badges d'activité (lot T-2) ─────────────────────────────────────────────
 // « Non lu » = une génération s'est terminée pendant que l'utilisateur
-// regardait AILLEURS, et il n'est pas revenu depuis. VOLATILE par décision
-// Un Set en mémoire, vidé au reload — exactement la portée de survie des
-// générations elles-mêmes (T-1 décision 1). Aucune persistance, aucune clé
-// localStorage, aucun champ sur la conversation : une génération ne survit pas
-// au reload, son « non lu » non plus.
+// regardait AILLEURS, et il n'est pas revenu depuis.
+//
+// PERSISTÉ depuis le 2026-09-27 (`miaou-unread`, storage.js), à la demande de
+// Julien : il était volatile au lot T-2, au motif qu'une génération ne survit
+// pas au reload et que son « non lu » n'avait pas à lui survivre non plus. Le
+// motif confondait la génération et son RÉSULTAT — la réponse, elle, est
+// persistée, et le reload ne l'a pas fait lire. Même raisonnement pour les
+// onglets : l'état de lecture est celui de l'utilisateur, pas d'un onglet.
+//
+// Ce Set est le MIROIR du stockage, lu par `convBadgeState` à chaque ligne
+// rendue (d'où un miroir plutôt qu'un JSON.parse par appel). Muté EN PLACE,
+// jamais réaffecté : les tests QuickJS le manipulent directement. Il n'est
+// jamais la source d'une écriture — cf. `markConvUnread`.
 const _unreadConvs = new Set();
+
+// Recopie l'état persisté dans le miroir. Appelé au démarrage, après chaque
+// écriture locale, et à la réception d'un `unread-updated` d'un pair.
+function refreshUnreadConvs(ids) {
+  _unreadConvs.clear();
+  for (const id of (ids || loadUnreadConvIds())) _unreadConvs.add(id);
+}
+
+// Démarrage : charge l'état persisté, élagué des conversations disparues ou
+// qui ne sont pas des racines (même garde qu'aux deux producteurs). N'écrit
+// que si l'élagage a retiré quelque chose. Appelé avant le branchement du
+// canal : l'écriture éventuelle n'est pas diffusée, et n'a pas à l'être (un
+// pair élaguera à son propre démarrage, et un id mort n'allume rien — les
+// agrégats ne balaient que les conversations existantes).
+function loadUnreadConvsOnInit() {
+  const stored = loadUnreadConvIds();
+  const kept = pruneUnreadConvIds(stored, listAllConversations());
+  if (kept.length !== stored.length) saveUnreadConvIds(kept);
+  refreshUnreadConvs(kept);
+}
 
 // Marquage à la FIN d'une génération, si la conversation n'était pas à l'écran
 // — ou si elle y était mais que la fin s'est écrite hors de vue
@@ -734,17 +762,38 @@ const _unreadConvs = new Set();
 // dépasse l'écran. La condition elle-même vit chez l'appelant
 // (`unregisterGeneration`) — cette fonction est le seul ÉCRIVAIN du Set, pas
 // l'arbitre.
+//
+// Lecture-modification-écriture sur le STOCKAGE, pas sur le miroir : un pair a
+// pu marquer ou effacer une autre conversation depuis la dernière recopie, et
+// écrire le miroir tel quel annulerait son geste. N'écrit (donc ne diffuse)
+// que si l'état change.
 function markConvUnread(convId) {
   if (convId == null) return;
-  _unreadConvs.add(convId);
+  const ids = loadUnreadConvIds();
+  if (ids.indexOf(convId) === -1) {
+    ids.push(convId);
+    saveUnreadConvIds(ids);
+  }
+  refreshUnreadConvs(ids);
 }
 
 // L'ouverture de la conversation SUFFIT à marquer comme lu. Pas de
 // sémantique par message ni de « bas du fil atteint » — MIAOU n'en a nulle part
-// ailleurs, en introduire une ici serait disproportionné.
+// ailleurs, en introduire une ici serait disproportionné. Rend vrai si un
+// non-lu a effectivement été retiré (les appelants ne repeignent qu'alors).
+// Même lecture-modification-écriture que `markConvUnread`, et pour la même
+// raison.
 function markConvRead(convId) {
   if (convId == null) return false;
-  return _unreadConvs.delete(convId);
+  const ids = loadUnreadConvIds();
+  const at = ids.indexOf(convId);
+  const had = at !== -1 || _unreadConvs.has(convId);
+  if (at !== -1) {
+    ids.splice(at, 1);
+    saveUnreadConvIds(ids);
+  }
+  refreshUnreadConvs(ids);
+  return had;
 }
 
 // LE prédicat d'état de badge d'une conversation. Un seul, jamais réécrit
@@ -5451,6 +5500,7 @@ async function init() {
 
   migrateSpacesIfNeeded();   // backfill idempotent spaceId/scope + registre miaou-spaces, avant tout rendu
   activeSpaceId = getActiveSpaceId();   // persistance miaou-active-space ; défaut DEFAULT_SPACE_ID
+  loadUnreadConvsOnInit();   // non-lus persistés (badges), après l'hydratation qui fournit les conversations à élaguer, avant le premier rendu des badges
   // Fire-and-forget (résolution après le premier rendu) : la pilule/l'inspecteur
   // calculés avant résolution ignorent la bibliothèque du Space, sous-évaluant le
   // total tant que ce .then() n'a pas rafraîchi le compteur (cf. commentaire de

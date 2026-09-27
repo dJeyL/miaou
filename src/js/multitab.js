@@ -261,6 +261,17 @@ function applySyncDecision(d) {
       setStorageFull(d.full, false);
       return;
 
+    case 'unread-list':
+      // Un pair a marqué ou effacé un non-lu (docs/badges.md). Relire le
+      // stockage — jamais appliquer un delta — puis repeindre les quatre
+      // surfaces : la liste et les deux porteurs permanents via syncSpaceUI.
+      // Pas de file pendant une génération locale : rien du fil n'est touché.
+      // Rejoué deux fois (canal puis événement `storage`) sans dommage.
+      refreshUnreadConvs();
+      renderConvList();
+      syncSpaceUI();
+      return;
+
     case 'soft-lock': {
       // Un pair (d.tabId) affiche la même conv que nous. L'ajouter au set. Si
       // c'est un pair INCONNU, se re-signaler une fois (handshake) pour que le

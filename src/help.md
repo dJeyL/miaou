@@ -1131,7 +1131,10 @@ sans perdre ta place.
     latérale masquée, il se replie sur l'**icône du menu** en haut à gauche.
   - S'il y a à la fois du terminé-non-vu et du en-cours, le point fixe l'emporte
     sur ces indicateurs de groupe — le détail se lit en dépliant.
-  - Ces points sont volatiles : ils disparaissent si tu recharges la page.
+  - Le point fixe est mémorisé : il survit au rechargement de la page, et il
+    apparaît (puis s'éteint) dans tous tes onglets de MIAOU à la fois. Le point
+    qui clignote, lui, suit la réponse en cours, qui ne survit pas au
+    rechargement.
 - **Compteur d'agents** : en haut à droite, une pastille « 1 agent » / « 3
   agents » indique combien de choses travaillent en ce moment, tous Espaces
   confondus. Un **agent**, ici, c'est toute conversation en train de produire une
@@ -1166,8 +1169,8 @@ sans perdre ta place.
   s'affiche pas. Voir le sujet `mcp`.
 - **Plusieurs onglets** : tu peux ouvrir MIAOU dans plusieurs onglets du même
   navigateur ; ils restent synchronisés. Une modification faite dans un onglet
-  (nouveau message, titre, réglage, fichier, ou la liste des Espaces quand tu en
-  crées, renommes ou supprimes un…) se reflète dans les autres sans rechargement.
+  (nouveau message, titre, réglage, fichier, réponse non lue, ou la liste des
+  Espaces quand tu en crées, renommes ou supprimes un…) se reflète dans les autres sans rechargement.
   L'Espace **actif**, en revanche, reste propre à chaque onglet : c'est ce que
   tu regardes, pas une donnée partagée — tu peux donc travailler dans deux
   Espaces différents dans deux onglets. Si la même conversation est ouverte à

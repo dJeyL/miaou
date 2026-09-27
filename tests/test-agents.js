@@ -1787,3 +1787,62 @@ describe('rootActivityLabel — occupations d\'une conversation racine', functio
     expect(rootActivityLabel(true, 'compaction')).toBe('compacte le contexte');
   });
 });
+
+describe('non-lus persistés (miaou-unread)', function() {
+  function setup() {
+    localStorage.clear();
+    _activeGenerations.clear();
+    _unreadConvs.clear();
+    saveConversation({ id: 'p1', title: 'un', timestamp: 1, updatedAt: 1, messages: [], spaceId: 'sA' });
+    saveConversation({ id: 'p2', title: 'deux', timestamp: 2, updatedAt: 2, messages: [], spaceId: 'sA' });
+    saveConversation({ id: 'a1', title: '', timestamp: 3, updatedAt: 3, messages: [], spaceId: 'sA', parentConvId: 'p1' });
+  }
+  it('normalizeUnreadConvIds : chaînes non vides, sans doublon, jamais une exception', function() {
+    expect(normalizeUnreadConvIds(['a', 'a', '', 3, null, 'b'])).toEqual(['a', 'b']);
+    expect(normalizeUnreadConvIds({ a: 1 })).toEqual([]);
+    expect(normalizeUnreadConvIds(null)).toEqual([]);
+  });
+  it('loadUnreadConvIds : stockage illisible lu comme vide', function() {
+    localStorage.clear();
+    localStorage.setItem(UNREAD_CONVS_KEY, '{pas du json');
+    expect(loadUnreadConvIds()).toEqual([]);
+  });
+  it('marquer écrit le stockage, et un reload (miroir vidé) le retrouve', function() {
+    setup();
+    markConvUnread('p1');
+    expect(loadUnreadConvIds()).toEqual(['p1']);
+    _unreadConvs.clear();
+    loadUnreadConvsOnInit();
+    expect(convBadgeState('p1')).toBe('unread');
+  });
+  it('marquer relit le stockage : le non-lu posé par un pair n\'est pas écrasé', function() {
+    setup();
+    localStorage.setItem(UNREAD_CONVS_KEY, JSON.stringify(['p2']));   // écrit par un autre onglet, miroir pas encore relu
+    markConvUnread('p1');
+    expect(loadUnreadConvIds().slice().sort()).toEqual(['p1', 'p2']);
+    expect(convBadgeState('p2')).toBe('unread');
+  });
+  it('effacer retire du stockage, rend vrai une seule fois, et préserve les autres', function() {
+    setup();
+    markConvUnread('p1');
+    markConvUnread('p2');
+    expect(markConvRead('p1')).toBe(true);
+    expect(loadUnreadConvIds()).toEqual(['p2']);
+    expect(markConvRead('p1')).toBe(false);
+    expect(convBadgeState('p1')).toBe(null);
+  });
+  it('effacer un non-lu posé par un pair et pas encore relu ici', function() {
+    setup();
+    localStorage.setItem(UNREAD_CONVS_KEY, JSON.stringify(['p1']));
+    expect(markConvRead('p1')).toBe(true);
+    expect(loadUnreadConvIds()).toEqual([]);
+  });
+  it('démarrage : élague les conversations disparues et les agents', function() {
+    setup();
+    localStorage.setItem(UNREAD_CONVS_KEY, JSON.stringify(['p1', 'gone', 'a1']));
+    loadUnreadConvsOnInit();
+    expect(loadUnreadConvIds()).toEqual(['p1']);
+    expect(_unreadConvs.has('gone')).toBe(false);
+    expect(_unreadConvs.has('a1')).toBe(false);
+  });
+});

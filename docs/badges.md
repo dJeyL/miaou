@@ -73,12 +73,44 @@ Même discipline que `spaceConvIds` (piège 18) : chaque question a UNE fonction
 vocabulaire supplémentaire, qui n'existerait qu'en agrégation. Le détail se lit
 au dépliage, où chaque ligne porte son propre état.
 
-## Le non-lu est VOLATILE
+## Le non-lu est PERSISTÉ (depuis le 2026-09-27)
 
-`_unreadConvs` (main.js) est un `Set` en mémoire, vidé au reload. **Aucune
-persistance, aucune clé localStorage, aucun champ sur la conversation** — c'est
-exactement la portée de survie des générations elles-mêmes (T-1 décision 1) :
-une génération ne survit pas au reload, son « non lu » non plus.
+`_unreadConvs` (main.js) est le **miroir RAM** de la clé localStorage
+`miaou-unread` (tableau d'ids, storage.js). Il survit au reload et se propage
+aux autres onglets.
+
+Il était volatile au lot T-2, avec pour motif la portée de survie des
+générations (T-1 décision 1) : une génération ne survit pas au reload, son
+« non lu » non plus. Le motif confondait la génération et son **résultat** — la
+réponse est persistée, et recharger la page ne l'a pas fait lire. Même
+raisonnement pour les onglets : l'état de lecture appartient à l'utilisateur,
+pas à l'onglet qui l'a posé. Le `working`, lui, reste volatile par nature : il
+suit la génération en vol.
+
+- **Clé à part, pas un champ du record.** Le marquage tombe juste après le
+  `persistGeneration` final, l'effacement à chaque ouverture : un champ ferait
+  de chacun un second écrivain de la conversation, et émettrait un
+  `conv-updated` qui réhydrate le fil chez le pair qui l'affiche. Hors
+  `EXPORT_KEYS` : l'état de lecture n'est pas du contenu.
+- **Lecture-modification-écriture sur le stockage, jamais sur le miroir.**
+  `markConvUnread`/`markConvRead` relisent `miaou-unread` juste avant d'écrire,
+  puis recopient le résultat dans le miroir (`refreshUnreadConvs`). Écrire le
+  miroir tel quel annulerait le geste d'un pair pas encore relu. Aucune
+  écriture — donc aucun broadcast — si l'état ne change pas.
+- **Synchro** : `unread-updated` (payload vide) → `unread-list` → relecture
+  entière, puis `renderConvList()` + `syncSpaceUI()`. Aussi déclenché par
+  l'événement `storage` de la clé (piège 24 (c)). Cf. `docs/multitab-sync.md`.
+- **Démarrage** : `loadUnreadConvsOnInit` (après l'hydratation, avant le premier
+  rendu des badges) élague les ids de conversations disparues et d'agents
+  (`pruneUnreadConvIds`, pure) — seule l'ouverture efface un non-lu, et une
+  conversation supprimée ne s'ouvre plus. Écrit avant le branchement du canal,
+  donc sans diffuser.
+- **Cas limite assumé** : un onglet B qui affiche la conversation X (relais
+  readonly) pendant qu'un onglet A la génère puis la quitte reçoit le non-lu de
+  A sur la conversation qu'il a sous les yeux. L'état étant partagé, B ne peut
+  pas décider « vu » à la place de A (B est peut-être un onglet que personne ne
+  regarde). Rouvrir X dans B, ou descendre au fond d'un fil à non-vu, l'efface
+  partout.
 
 - **Marquage** : deux producteurs, et le second n'est pas une génération.
   (1) `unregisterGeneration`, si `!genOwnsScreen(gen)` — **ou** si l'écran
@@ -406,6 +438,13 @@ supprimé resterait sinon invisible du hamburger, qui doit être exhaustif.
   conversation, agrégation cross-Space repliée et dépliée, corollaire du
   dépliage, agrégation du hamburger et masquage CSS, apparence mesurée
   (tailles, opacités, keyframe, couleur commune), reduced-motion, zone morte.
+  Depuis le 2026-09-27, aussi la **persistance du non-lu** (scénario 11) : un
+  second onglet du même contexte ouvert APRÈS le marquage le trouve, marquage
+  et effacement s'y propagent sans rechargement, le non-lu survit au reload,
+  et le démarrage élague un id de conversation disparue. Rejoué sur le code
+  d'avant : 8 rouges. Les deux contrôles d'effacement inter-onglets y passaient
+  d'abord à vide (la pastille n'avait jamais été allumée dans l'autre onglet) :
+  ils embarquent désormais leur prémisse.
 - **Playwright** — `.claude/skills/run-miaou/verify-agent-unread-ghost.mjs`
   (2026-09-05) : la pastille fantôme après des agents terminés. Trois agents
   lancés dans le même tour, tous menés à terme, conversation lue, puis lecture

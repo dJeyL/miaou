@@ -110,6 +110,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `conv-generation-started` | `{ convId, tabId }` | affichée → `readonly-on` ; sinon `ignore` |
 | `conv-generation-ended` | `{ convId, tabId }` | affichée → `readonly-off` ; sinon `ignore` |
 | `storage-state` | `{ full }` | `storage-state` — indépendant de la conv et du Space ; tout `full` autre que `true` vaut levée |
+| `unread-updated` | `{}` | `unread-list` — relire `miaou-unread` en entier, indépendant de la conv et du Space |
 
 ### Émetteurs (livrés)
 
@@ -134,6 +135,8 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `applyImportedData` (main.js) | les deux | `full-reload` | `{}` (une fois, avant `location.reload()`) |
 | `setStorageFull` (storage.js), via `noteStorageWriteFailure` | IDB `tx.onabort` | `storage-state` | `{ full: true }` — au FRONT seulement : un onglet déjà plein ne rediffuse pas à chaque échec |
 | `setStorageFull` (storage.js), via `noteStorageSpaceFreed` | IDB `tx.oncomplete` d'une suppression (`removeConversationRecord`, `deleteResource`, `deleteResourcesByConversation` si non vide, `deleteSkillDb`) | `storage-state` | `{ full: false }` — à CHAQUE suppression, même si cet onglet n'était pas plein : un pair peut l'être sans que cet onglet, ouvert après la pose, le sache |
+
+| `saveUnreadConvIds` (storage.js), via `markConvUnread`/`markConvRead` (main.js) | localStorage | `unread-updated` | `{}` — seulement si l'état a changé ; l'élagage de démarrage écrit avant le branchement du canal, donc sans diffuser |
 
 **Ne diffusent PAS** (décidés, pas des oublis) :
 - `miaou-active-space` (`setActiveSpaceId`) — état **par onglet** ; deux onglets
@@ -197,6 +200,7 @@ inoffensif, les pairs rechargent de toute façon.
 | `reload-skills` | `loadSkillsCache()` ; `renderSkills()` si drawer ouvert (`isSkillsDrawerOpen`), sinon `syncSkillHintUI`. |
 | `full-reload` | `location.reload()`. |
 | `storage-state` | `setStorageFull(full, false)` : applique l'état « stockage plein » (lot AG) sans rediffuser ; au front local, le chat change d'expression et le toast de quota s'affiche ou se retire, comme dans l'onglet émetteur (décision S3 — le quota concerne tous les onglets). L'état est de session, jamais persisté : un onglet ouvert après la pose ne le connaît qu'à sa première écriture en échec, ou au prochain message. Cf. `docs/storage.md`. |
+| `unread-list` | `refreshUnreadConvs()` (relecture du stockage, jamais un delta) puis `renderConvList()` + `syncSpaceUI()` : les quatre surfaces de badges (cf. `docs/badges.md`). Pas de file pendant une génération : le fil n'est pas touché. Aussi déclenché par l'événement `storage` de la clé (`storageEventDecision`). |
 | `soft-lock` | pair affiche la même conv → l'ajouter à `_peersOnConv`, afficher le bandeau, **re-signaler** si pair nouveau (handshake borné). Soft-lock. |
 | `soft-unlock` | pair a fermé/quitté → retirer de `_peersOnConv`/`_peersGenerating` ; bandeau masqué si plus aucun pair. Soft-lock. |
 | `readonly-on` / `readonly-off` | Relais readonly (no-op tant que seul le soft-lock est branché). |
@@ -467,7 +471,8 @@ relu une seconde plus tard, localStorage était juste. 11 à 30 rafales sur 40 e
 **Correctif** : l'événement `storage`, émis dans les autres onglets quand la
 valeur y est visible, est traduit par le pur `storageEventDecision` (sync.js)
 en la même décision que le message du canal (`apply-settings` avec les SEULES
-clés qui ont changé, ou `space-list`) et passé au même `applySyncDecision`. Le
+clés qui ont changé, `space-list`, ou `unread-list` pour `miaou-unread`) et
+passé au même `applySyncDecision`. Le
 message du canal reste : il suffit presque toujours et porte des types
 qu'aucun événement `storage` ne voit ; la relecture tardive ne fait que
 corriger ce qu'il a pu appliquer trop tôt. L'application côté pair n'écrit
