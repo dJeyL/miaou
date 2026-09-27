@@ -2068,7 +2068,7 @@ function webSourceTip(source, url) {
   const domain = webRefDomain(url) || String(url);
   const lines = [s.site ? s.site + ' · ' + domain : domain];
   if (s.relayed) lines.push('Consultée par un agent');
-  else if (!s.consulted) lines.push('Page absente des outils de cette conversation');
+  else if (!s.consulted) lines.push('Page non consultée dans cette conversation');
   return {
     label: s.title || s.site || domain,
     detail: lines.join('\n'),

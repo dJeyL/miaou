@@ -1055,7 +1055,9 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
    (`.body a.web-ref`), sans quoi `.body a` gagne la cascade (invariant 8).
    La pastille ne change jamais de largeur : la flèche du survol se POSE sur la
    fin du libellé, qui s'efface dessous par un masque. Relayée par un agent :
-   même aspect que consultée, seule l'infobulle le dit. */
+   même aspect que consultée, seule l'infobulle le dit. Police entièrement
+   posée (style compris) : un marqueur écrit dans de l'italique ou du gras
+   hérite sinon de son contexte. */
 /* Alignement vertical : `middle` centre le groupe sur le milieu des
    minuscules du texte. Sur la ligne de base, c'était la base SYNTHÉTIQUE du
    premier enfant qui décidait — le bas de la favicon, qui n'a pas de ligne de
@@ -1069,7 +1071,7 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
   display: inline-flex; align-items: center; gap: 4px;
   min-width: 0; max-width: 170px; height: 19px;
   padding: 0 7px 0 5px; border-radius: 10px;
-  font-family: var(--sans); font-size: 11px; font-weight: 500; line-height: 1;
+  font-family: var(--sans); font-size: 11px; font-weight: 500; font-style: normal; line-height: 1;
   color: var(--text-2); background: var(--surface-3); border: 1px solid transparent;
   text-decoration: none; cursor: pointer;
   transition: color 120ms var(--ease), border-color 120ms var(--ease), background 120ms var(--ease);

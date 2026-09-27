@@ -966,9 +966,9 @@ Quelques repères pour te déplacer dans MIAOU :
   ouvre la page dans un nouvel onglet ; le survol donne son titre et son
   adresse. La pastille dit si la page a vraiment été lue dans la conversation :
   pleine, elle l'a été (par le modèle, ou par un agent qu'il a lancé, ce que le
-  survol précise) ; en **pointillé**, la page n'apparaît dans aucun des outils
-  de la conversation — elle a pu être citée de mémoire, ou venir de toi, et
-  c'est à vérifier. Quand un paragraphe cite beaucoup de sources, seules les
+  survol précise) ; en **pointillé**, la page n'a pas été consultée dans la
+  conversation — elle a pu être citée de mémoire, d'après le simple extrait
+  d'un résultat de recherche, ou venir de toi, et c'est à vérifier. Quand un paragraphe cite beaucoup de sources, seules les
   premières sont affichées, et « +N » déplie les autres. Copier la réponse ou l'exporter en Markdown donne des liens
   ordinaires au nom du site ; l'export HTML aussi.
 - **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône

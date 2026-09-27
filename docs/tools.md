@@ -1689,7 +1689,12 @@ s'y ajoute.
    `https?://` sans espace ni `]`, ce qui est AUSSI la garde contre
    `javascript:`/`data:` — ne pas l'assouplir. La consigne est dans la branche
    `<ACCES_WEB>` de `WEB_DOCTRINE` (conditionnée aux outils web), pas dans
-   `REFS_DOCTRINE`.
+   `REFS_DOCTRINE`. Elle pose l'interdit sur l'USAGE et non sur la citation
+   (« ce que tu ne peux pas citer, tu ne l'écris pas ») : formulée « seule une
+   page lue se cite, et donc s'utilise », elle laissait la sortie « je
+   n'écris pas le marqueur » à un modèle dont la lecture avait échoué, qui
+   affirmait alors l'extrait sans source (gemma4:26b). Elle nomme aussi le
+   repli (autre page, ou « pas pu vérifier »).
    - **Provenance** — `webSourceRegistry(thread)` (utils.js, pure) rend
      `Map(urlNormalisée → { consulted, relayed, title, site, favicon })`,
      dérivé du thread ENTIER et jamais de la projection émise (il survit à une

@@ -5429,7 +5429,7 @@ describe('resolveWebRefMarkers — pastilles', function() {
   it('non consultée : classe unverified et constat sans accusation', function() {
     var h = resolveWebRefMarkers('[web_ref:https://c.org/x]', reg());
     expect(h).toContain('class="web-ref unverified"');
-    expect(h).toContain('Page absente des outils de cette conversation');
+    expect(h).toContain('Page non consultée dans cette conversation');
     expect(h).toContain('&#10;');
   });
   it('relayée : classe relayed et mention de l\'agent', function() {

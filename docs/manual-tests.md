@@ -71,7 +71,7 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     `fetch_url` l'a fournie (globe sinon) ; le survol donne titre, site ·
     domaine, et l'icône à côté du titre ; une URL citée sans avoir été lue (à
     provoquer en demandant de citer un site non consulté) est en pointillé, et
-    son survol dit « Page absente des outils de cette conversation ». Puis
+    son survol dit « Page non consultée dans cette conversation ». Puis
     **évacuer les tool results** depuis l'inspecteur de contexte : aucune
     pastille ne change d'état. Puis **compacter** : même vérification. Copier
     la réponse et l'exporter en `.md` : liens `[domaine](url)`, aucun marqueur

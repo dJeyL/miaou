@@ -189,7 +189,7 @@ check('C. flèche affichée au survol', CA.tip && CA.tip.arrow === 'block', CA.t
 check('C. largeur inchangée au survol', CA.tip && Math.abs(CA.tip.hoverW - CA.rest.w) < 0.5, CA.tip && CA.rest.w + ' → ' + CA.tip.hoverW);
 const CC = await hoverPill('https://c.org/x');
 check('C. sans favicon : globe', CC.tip && CC.tip.globe && !CC.tip.imgSrc);
-check('C. non consultée : constat', CC.tip && /Page absente des outils de cette conversation/.test(CC.tip.detail || ''), CC.tip && CC.tip.detail);
+check('C. non consultée : constat', CC.tip && /Page non consultée dans cette conversation/.test(CC.tip.detail || ''), CC.tip && CC.tip.detail);
 const CD = await hoverPill('https://d.io/x');
 check('C. relayée : « Consultée par un agent »', CD.tip && /Consultée par un agent/.test(CD.tip.detail || ''), CD.tip && CD.tip.detail);
 await page.mouse.move(5, 5);

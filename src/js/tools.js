@@ -218,9 +218,11 @@ const WEB_DOCTRINE =
   "jamais reporté en fin de réponse. Un marqueur par page ; un paragraphe qui " +
   "s'appuie sur une page déjà citée plus haut la cite de nouveau. Il se suffit, " +
   "l'application l'affiche au nom du site : rien devant, ni « Source : », ni nom " +
-  "de site, ni deux-points. Seule une page lue avec fetch_url dans cette " +
-  "conversation se cite, et donc s'utilise : un résultat de recherche sert à " +
-  "choisir quoi lire, jamais à affirmer\n" +
+  "de site, ni deux-points. Aucune information du Web sans son marqueur : ce " +
+  "que tu ne peux pas citer, tu ne l'écris pas. Or seule une page lue avec " +
+  "fetch_url dans cette conversation se cite ; l'extrait d'un résultat de " +
+  "recherche n'est pas une lecture, il sert à choisir quoi lire. Si la lecture " +
+  "échoue, lis une autre page ou dis que tu n'as pas pu vérifier\n" +
   "</ACCES_WEB>\n\n" +
   "<SANS_ACCES_WEB>\n" +
   "Si aucun outil disponible ne te permet d'accéder au Web, indique-le si c'est " +
