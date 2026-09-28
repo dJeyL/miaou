@@ -348,9 +348,23 @@ ultérieures du même lot).
   est interactif, `data-filename` inclus). Le SVG **conserve son id** : le
   `<style>` interne de Mermaid scope chaque règle par `#<id>` (même raison que
   la lightbox E3) ; ids uniques par rendu (`xmmd` + compteur + suffixe
-  aléatoire), pas de collision entre diagrammes. Thème : celui de la session au
-  moment de l'export (`mermaidInit` courant), cohérent avec le `data-theme`
-  émis. `view.innerHTML = out.svg` : markup produit par **Mermaid strict**, pas
+  aléatoire), pas de collision entre diagrammes. **Thème : deux variantes par
+  diagramme.** Le `<style>` interne d'un SVG Mermaid porte des couleurs
+  résolues que les tokens ne recolorent pas ; chaque bloc est donc rendu DEUX
+  fois (`.mermaid-view.mermaid-for-dark` / `.mermaid-for-light`) et
+  `exportMermaidThemeCss()` masque l'inactive sur la case `#theme-switch`, par
+  le même `exportLightSelector` que tokens et Prism — la bascule suit donc
+  **sans JS**, dans les deux voies (conversation et conversion `.md`). Thème
+  forcé par une directive `%%{init}%%` propre au rendu
+  (`mermaidSourceWithTheme`, pure, insérée APRÈS un éventuel frontmatter), et
+  **jamais par `mermaidInit`** : la config globale est partagée avec le rendu
+  du fil à l'écran. Une source qui fixe elle-même son thème
+  (`mermaidSourcePinsTheme` : clé `theme` en directive ou frontmatter,
+  `themeVariables` seul exclu) n'est rendue qu'une fois, sans classe de
+  variante, donc toujours visible. Un échec de parse fait tomber les deux
+  rendus ensemble : jamais de variante seule, qui disparaîtrait à la bascule.
+  Coût : chaque SVG est embarqué deux fois.
+  `view.innerHTML = out.svg` : markup produit par **Mermaid strict**, pas
   de re-sanitisation — même posture que `renderMermaidUnder`
   (cf. `docs/rendering.md`), c'est la **deuxième exception sanctionnée** du
   chemin string→HTML de l'export après `formatToolAcksHtml` (piège 21).
@@ -417,8 +431,9 @@ ultérieures du même lot).
   en `<details>`, attachments (`.att-chip`/`.att-thumb`/`.att-icon`),
   diagrammes Mermaid embarqués (`.mermaid-view`/`.mermaid-src`, lot E4 — nés
   synchronisés avec le `.mermaid-view` de `chat.css` : padding, fond
-  `--code-bg`, centrage svg ; sans `display:none`/toggle, le SVG exporté est
-  toujours visible). **Dette
+  `--code-bg`, centrage svg ; sans toggle diagramme/source, le SVG exporté est
+  toujours visible — seule l'alternance des deux variantes de thème le masque,
+  règles composées hors de la feuille par `exportMermaidThemeCss`). **Dette
   assumée et mémorisée** : si
   `chat.css`/`tools.css`/`composer.css` évoluent (nouvelle classe, structure
   changée), `EXPORT_CSS` ne suit PAS automatiquement — seuls les tokens de

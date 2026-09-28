@@ -2513,6 +2513,47 @@ describe('mermaidThemeFor', function() {
   });
 });
 
+describe('mermaidSourcePinsTheme', function() {
+  it('source nue → false', function() {
+    expect(mermaidSourcePinsTheme('graph TD\n  A-->B')).toBe(false);
+    expect(mermaidSourcePinsTheme(null)).toBe(false);
+  });
+  it('directive init avec theme → true (quotes simples ou doubles)', function() {
+    expect(mermaidSourcePinsTheme("%%{init: {'theme': 'forest'}}%%\ngraph TD\n  A-->B")).toBe(true);
+    expect(mermaidSourcePinsTheme('%%{init: {"theme": "dark"}}%%\ngraph TD')).toBe(true);
+  });
+  it('themeVariables seul ne fixe pas le thème → false', function() {
+    expect(mermaidSourcePinsTheme("%%{init: {'themeVariables': {'primaryColor': '#f00'}}}%%\ngraph TD")).toBe(false);
+  });
+  it('frontmatter avec theme → true, sans theme → false', function() {
+    expect(mermaidSourcePinsTheme('---\nconfig:\n  theme: forest\n---\ngraph TD')).toBe(true);
+    expect(mermaidSourcePinsTheme('---\ntitle: Flux\n---\ngraph TD')).toBe(false);
+  });
+  it('le mot theme dans un label ne compte pas', function() {
+    expect(mermaidSourcePinsTheme('graph TD\n  A["theme: sombre"]-->B')).toBe(false);
+  });
+});
+
+describe('mermaidSourceWithTheme', function() {
+  it('sans frontmatter : directive en tête', function() {
+    expect(mermaidSourceWithTheme('graph TD\n  A-->B', 'dark'))
+      .toBe('%%{init: {"theme": "dark"}}%%\ngraph TD\n  A-->B');
+  });
+  it('avec frontmatter : directive APRÈS lui, frontmatter intact en tête', function() {
+    expect(mermaidSourceWithTheme('---\ntitle: Flux\n---\ngraph TD', 'default'))
+      .toBe('---\ntitle: Flux\n---\n%%{init: {"theme": "default"}}%%\ngraph TD');
+  });
+  it('frontmatter en fin de source sans retour final : saut de ligne ajouté', function() {
+    expect(mermaidSourceWithTheme('---\ntitle: x\n---', 'dark'))
+      .toBe('---\ntitle: x\n---\n%%{init: {"theme": "dark"}}%%\n');
+  });
+  it('les deux variantes ne diffèrent que par le thème de la directive', function() {
+    const src = 'sequenceDiagram\n  A->>B: hi';
+    expect(mermaidSourceWithTheme(src, 'dark').replace('"dark"', '"default"'))
+      .toBe(mermaidSourceWithTheme(src, 'default'));
+  });
+});
+
 describe('sanitizeMermaidSource', function() {
   it('strippe les balises de mise en forme, garde le texte', function() {
     expect(sanitizeMermaidSource('A["France <b>(2-0)</b>"]'))

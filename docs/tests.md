@@ -338,7 +338,10 @@ de DOM riche/Prism) : vérification manuelle (`docs/manual-tests.md`).
 **Rendu Mermaid et préviz sandboxée (lot E, cf. `docs/rendering.md`)** : seuls
 les helpers purs sont couverts — `isMermaidLang` (casse, langues voisines,
 vide/`undefined`), `mermaidThemeFor` (`dark` → `dark`, tout le reste →
-`default`), `isPreviewableLang` (html/svg seuls, casse, xml/xhtml exclus) et
+`default`), `mermaidSourcePinsTheme` (directive ou frontmatter avec `theme`,
+`themeVariables` seul et mot `theme` dans un label exclus) et
+`mermaidSourceWithTheme` (directive en tête, ou après le frontmatter),
+`isPreviewableLang` (html/svg seuls, casse, xml/xhtml exclus) et
 `buildPreviewSrcdoc` (html passthrough byte-identique, svg enveloppé dans un
 document minimal, contenu vide/null), `diagramImageName` (remplacement
 d'extension, nom générique, assainissement via `sanitizeDownloadName`). Le

@@ -392,8 +392,10 @@ body[data-wide-tables="off"] .table-bleed { --table-bleed: 0px; }
 .tool-block-img { max-width: 100%; height: auto; display: block; border: 1px solid var(--border); border-radius: var(--r-sm); }
 /* Diagrammes Mermaid embarqués (lot E4). Né synchronisé avec .mermaid-view de
    chat.css (padding, fond, centrage svg) — dérive ensuite comme le reste de
-   cette feuille (piège 22). Pas de display:none/toggle ici : dans l'export le
-   SVG est TOUJOURS visible, la source vit repliée dans .mermaid-src. */
+   cette feuille (piège 22). Pas de toggle diagramme/source ici : dans l'export
+   le SVG est TOUJOURS visible, la source vit repliée dans .mermaid-src. Seule
+   l'une des deux variantes de thème l'est (exportMermaidThemeCss, hors de
+   cette feuille pour composer le sélecteur clair par exportLightSelector). */
 .mermaid-view { margin: 12px 0; padding: 14px; background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--r); overflow-x: auto; }
 .mermaid-view svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .mermaid-src { margin: -6px 0 12px; }
@@ -419,8 +421,11 @@ body[data-wide-tables="off"] .table-bleed { --table-bleed: 0px; }
    lecture, pas une app. */
 /* Bascule de thème SANS JavaScript (lot R révisé) : case masquée + label.
    La case doit rester focusable au clavier — d'où opacity/position plutôt que
-   display:none, qui la sortirait de l'ordre de tabulation. */
-#theme-switch { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+   display:none, qui la sortirait de l'ordre de tabulation. En fixed et non en
+   absolute : un clic sur le label lui donne le focus, et le navigateur amène à
+   l'écran l'élément focalisé — en absolute en tête de body, la page remontait
+   tout en haut à chaque bascule. Fixe, elle est toujours à l'écran. */
+#theme-switch { position: fixed; top: 0; left: 0; opacity: 0; width: 0; height: 0; pointer-events: none; }
 /* Le label est en tête de body (contrainte du sélecteur :has / frère) mais doit
    s'afficher dans le cartouche : on le cale en fixed sur la même ligne que la
    topbar. Sans cartouche il occupe la même place, en haut à droite du document
@@ -554,11 +559,9 @@ const EXPORT_SCRIPT = `
   }
   // Bascule de thème : les DEUX jeux de tokens sont embarqués par
   // serializeThemeTokens (:root sombre + html[data-theme="light"]), il suffit
-  // donc de basculer l'attribut. LIMITE CONNUE : les SVG Mermaid embarqués
-  // (embedExportMermaid) portent un <style> interne aux couleurs RÉSOLUES à
-  // l'export — ils ne suivent pas la bascule et gardent leur thème d'origine.
-  // Les recolorer imposerait d'embarquer Mermaid dans l'export (hors sujet) ;
-  // limite assumée, cf. docs/exports.md.
+  // donc de basculer l'attribut. Les SVG Mermaid, dont le style interne porte
+  // des couleurs résolues, sont embarqués en deux variantes (sombre, claire)
+  // que le CSS alterne sur la même case (embedExportMermaid).
   //
   // Le bouton est du HTML STATIQUE (case + label, cf. buildExportHtml) et la
   // bascule fonctionne SANS ce script — c'est le point du lot R révisé (les
@@ -830,19 +833,27 @@ async function renderExportBody(thread, convId) {
 // erreur de parse d'un bloc → CE bloc reste source surlignée, les autres
 // sont rendus. Pas de barre d'actions ni de toggle dans l'export (boutons
 // perdus à la sérialisation innerHTML, et aucun global MIAOU côté fichier).
+//
+// Bascule de thème du fichier exporté : le <style> interne d'un SVG Mermaid
+// porte des couleurs RÉSOLUES, que les tokens ne recolorent pas. Chaque bloc
+// est donc rendu DEUX fois, sombre et clair, et les deux vues sont embarquées ;
+// exportMermaidThemeCss masque l'inactive sur la case #theme-switch — sans JS,
+// comme le reste de la bascule. Thème forcé par une directive propre au rendu
+// (mermaidSourceWithTheme), jamais par mermaidInit : la config globale est
+// partagée avec le rendu du fil à l'écran. Une source qui impose son propre
+// thème n'est rendue qu'une fois, sans classe de variante (toujours visible).
+// Un échec de parse fait échouer les deux rendus ensemble : on n'embarque
+// jamais une variante seule, qui disparaîtrait à la bascule.
 async function embedExportMermaid(container) {
   const codes = container.querySelectorAll('code.language-mermaid');
   if (!codes.length) return;
   let mm;
   try { mm = await ensureMermaid(); }
   catch (e) { return; }
-  for (const code of codes) {
-    const pre = code.closest('pre');
-    if (!pre) continue;
+  const renderOne = async (source) => {
     const uid = 'xmmd' + (++_mermaidUid) + Math.random().toString(36).slice(2, 8);
-    let svg;
     try {
-      svg = (await mm.render(uid, sanitizeMermaidSource(code.textContent))).svg;   // même strip que l'écran (renderMermaidUnder)
+      return (await mm.render(uid, source)).svg;
     } catch (e) {
       // Même hygiène que renderMermaidUnder : Mermaid v11 peut laisser un
       // nœud d'erreur orphelin dans document.body.
@@ -850,20 +861,49 @@ async function embedExportMermaid(container) {
         const orphan = document.getElementById(id);
         if (orphan) orphan.remove();
       });
-      continue;
+      return null;
     }
-    const view = document.createElement('div');
-    view.className = 'mermaid-view';
-    view.innerHTML = svg;
+  };
+  for (const code of codes) {
+    const pre = code.closest('pre');
+    if (!pre) continue;
+    const source = sanitizeMermaidSource(code.textContent);   // même strip que l'écran (renderMermaidUnder)
+    let variants;
+    if (mermaidSourcePinsTheme(source)) {
+      const svg = await renderOne(source);
+      if (svg == null) continue;
+      variants = [{ svg, cls: '' }];
+    } else {
+      const dark = await renderOne(mermaidSourceWithTheme(source, 'dark'));
+      if (dark == null) continue;
+      const light = await renderOne(mermaidSourceWithTheme(source, 'default'));
+      if (light == null) continue;
+      variants = [{ svg: dark, cls: 'mermaid-for-dark' }, { svg: light, cls: 'mermaid-for-light' }];
+    }
+    for (const v of variants) {
+      const view = document.createElement('div');
+      view.className = v.cls ? 'mermaid-view ' + v.cls : 'mermaid-view';
+      view.innerHTML = v.svg;
+      pre.before(view);
+    }
     const details = document.createElement('details');
     details.className = 'mermaid-src';
     const summary = document.createElement('summary');
     summary.textContent = 'Source mermaid';
     details.appendChild(summary);
-    pre.before(view);
-    view.after(details);
+    pre.before(details);
     details.appendChild(pre);
   }
+}
+
+// Visibilité des deux variantes d'un diagramme exporté (cf. embedExportMermaid).
+// Sélecteur clair composé par exportLightSelector, comme les tokens et Prism :
+// une seule formule gouverne le thème clair de l'export. Sans la case (export
+// ancien relu, visionneuse sans :has()), la variante sombre reste seule.
+function exportMermaidThemeCss() {
+  return '.mermaid-for-light{display:none}' +
+    exportLightSelector('.mermaid-for-dark') + '{display:none}' +
+    exportLightSelector('.mermaid-for-light') + '{display:block}';
 }
 
 // Insère l'en-tête STATIQUE (langage seul) sur chaque <pre> de l'export. Ne pas
@@ -999,7 +1039,7 @@ async function convertMarkdownToHtmlFile(mdText, sourceName) {
   const { title, body } = extractMdTitle(mdText);
   const now = Date.now();
   const theme = document.documentElement.getAttribute('data-theme') || 'dark';
-  const styleCss = serializeThemeTokens() + EXPORT_CSS + prismThemeCssForExport();
+  const styleCss = serializeThemeTokens() + EXPORT_CSS + prismThemeCssForExport() + exportMermaidThemeCss();
   const bodyHtml = await renderMarkdownDocBody(body);
   const s = loadSettings();
   const scriptTag = (s.exportInteractive !== false)
@@ -1099,7 +1139,7 @@ async function exportConvHtml() {
     const theme = document.documentElement.getAttribute('data-theme') || 'dark';
     const now = Date.now();
     const dateDisplay = exportDateDisplay(now);
-    const styleCss = serializeThemeTokens() + EXPORT_CSS + prismThemeCssForExport();
+    const styleCss = serializeThemeTokens() + EXPORT_CSS + prismThemeCssForExport() + exportMermaidThemeCss();
     const bodyHtml = await runBackgroundTask('export HTML…',
       () => renderExportBody(currentThread, currentConvId));
     // `null` = le rendu a échoué (runBackgroundTask l'a tracé en console).

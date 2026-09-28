@@ -995,9 +995,13 @@ invalide).
     sur le CDN). L'indicateur d'activité « export HTML… » apparaît pendant la
     tentative puis disparaît.
 
-87. **Thèmes** : exporter seed-23 dans les deux thèmes → le SVG embarqué suit
-    le thème de l'export (fond `--code-bg`, couleurs Mermaid dark/neutral
-    cohérentes avec l'écran au moment de l'export).
+87. **Thèmes** : exporter seed-23 dans les deux thèmes → à l'ouverture, le
+    SVG embarqué suit le thème de l'export (fond `--code-bg`, couleurs Mermaid
+    cohérentes avec l'écran au moment de l'export). Basculer le thème du
+    fichier (bouton soleil/lune), **JS désactivé compris** : le diagramme
+    change de variante avec le reste de la page, un seul diagramme visible à
+    la fois. Idem pour un `.md` converti en HTML. Un diagramme qui fixe son
+    thème (`%%{init: {'theme': 'forest'}}%%`) garde le sien dans les deux.
 
 ## Palette de commandes (lot F)
 

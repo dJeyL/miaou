@@ -705,7 +705,8 @@ Tu peux sortir tes conversations de MIAOU de plusieurs manières :
   Sans clavier, l'entrée `Exporter la conversation (Markdown)` de la palette de
   commandes fait la même chose.
 
-Les pages HTML produites embarquent **les deux thèmes** (clair et sombre). Elles
+Les pages HTML produites embarquent **les deux thèmes** (clair et sombre),
+diagrammes compris. Elles
 s'ouvrent sur celui qui était actif au moment de l'export, et un bouton en haut
 à droite permet de basculer à la lecture ; ton choix est retenu et s'applique à
 tous tes exports, y compris ceux que tu produiras plus tard. Cette bascule

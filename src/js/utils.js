@@ -2482,6 +2482,38 @@ function mermaidThemeFor(resolved) {
   return resolved === 'dark' ? 'dark' : 'default';
 }
 
+// Frontmatter Mermaid en tête de source (même forme que celle que Mermaid
+// reconnaît : trois tirets, bloc, trois tirets). Partagé par les deux purs
+// ci-dessous, qui doivent voir le MÊME frontmatter.
+const MERMAID_FRONTMATTER_RE = /^-{3}[ \t]*\r?\n[\s\S]*?\r?\n-{3}[ \t]*(?:\r?\n|$)/;
+
+// La source impose-t-elle elle-même son thème Mermaid (clé `theme` dans une
+// directive %%{…}%% ou dans le frontmatter) ? Dans ce cas l'export ne rend
+// qu'une variante : forcer clair/sombre écraserait un choix explicite de
+// l'auteur du diagramme, et les deux rendus seraient de toute façon identiques.
+// `themeVariables` seul ne compte pas (\b exclut le préfixe) : il ajuste un
+// thème sans le choisir. Pure, testable en QuickJS.
+function mermaidSourcePinsTheme(src) {
+  const s = String(src == null ? '' : src);
+  if (/%%\{[\s\S]*?\btheme\b[\s\S]*?\}%%/.test(s)) return true;
+  const fm = s.match(MERMAID_FRONTMATTER_RE);
+  return !!fm && /^\s*theme\s*:/m.test(fm[0]);
+}
+
+// Source Mermaid dont le rendu est forcé dans `theme`, par une directive
+// d'init propre à CE rendu — jamais par mermaidInit, qui changerait la config
+// globale partagée avec le rendu du fil à l'écran. La directive se place APRÈS
+// un éventuel frontmatter, que Mermaid n'accepte qu'en toute première ligne.
+// Pure, testable en QuickJS.
+function mermaidSourceWithTheme(src, theme) {
+  const s = String(src == null ? '' : src);
+  const directive = '%%{init: {"theme": "' + theme + '"}}%%\n';
+  const fm = s.match(MERMAID_FRONTMATTER_RE);
+  if (!fm) return directive + s;
+  const head = /\n$/.test(fm[0]) ? fm[0] : fm[0] + '\n';
+  return head + directive + s.slice(fm[0].length);
+}
+
 // Nettoie la source mermaid AVANT parse/render : retire les balises HTML de mise
 // en forme inline (b/i/em/strong/u/mark/small) que le modèle glisse parfois dans
 // les labels malgré la doctrine (CODEBLOCK_DOCTRINE). En htmlLabels:false, ces
