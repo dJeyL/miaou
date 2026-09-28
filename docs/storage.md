@@ -51,7 +51,8 @@
   dès que des outils sont présents.
 > **Lot U-1 — les conversations et les résumés ne sont PLUS dans localStorage.**
 > Ils vivent dans les stores IndexedDB `conversations` et `summaries` (base
-> `miaou`, **v4**), décrits plus bas. Le quota localStorage (~5-10 Mo) était
+> `miaou`, v4 à leur arrivée, **v5** depuis le store `usage_stats`), décrits
+> plus bas. Le quota localStorage (~5-10 Mo) était
 > atteint en usage réel, avec perte silencieuse (un `setItem` qui jette laisse
 > la conversation courante non persistée). Les clés `miaou-conversations` et
 > `miaou-summaries` n'existent plus après migration (lot U-2, section
@@ -502,6 +503,13 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   pendant l'appel LLM. `pruneOrphanSummariesOnInit()` (main.js, au démarrage,
   avant `runBackfill()`) balaie les résidus d'une race antérieure à ce fix via
   la fonction pure `pruneOrphanSummaries(summaries, convs)` (storage.js).
+- **Store IDB `usage_stats`** (base v5) : statistiques de consommation de
+  tokens, une entrée par (jour, serveur, modèle, nature d'appel), keyPath
+  composé `['day', 'serverId', 'model', 'purpose']`. Incrémenté par
+  `recordModelUsage` (lecture et écriture dans UNE transaction `readwrite`, ce
+  qui sérialise deux onglets), lu en bloc par `readAllUsageStats`. Aucun
+  broadcast. Forme du record, règles de comptage et motifs :
+  `docs/usage-stats.md`.
 - `miaou-memories` : tableau `[{ id, content, created_at, updated_at, suppressed, scope? }]`.
   **Deux chemins d'écriture distincts** : édition directe utilisateur →
   `editMemory(id, newContent)` (in-place) ; écriture par le modèle →
@@ -654,9 +662,12 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   filtre `c.spaceId === x` réécrit localement. Les résumés (store `summaries`)
   ne portent **pas** de `spaceId` dupliqué : ils scopent via leur conversation
   (jointure sur l'id), cf. `docs/spaces.md` pour le détail des sites branchés.
-- **IndexedDB `miaou`** (**version 4**) : quatre object stores.
-  `onupgradeneeded` est idempotent (contains-check par store/index) →
-  migrations v1→v2→v3→v4 transparentes, chaque store intact à chaque palier.
+- **IndexedDB `miaou`** (version : `MIAOU_DB_VERSION`, storage.js). Les stores
+  sont ceux que déclare `onupgradeneeded`, qui fait foi ; ceux qui ont une
+  section ici : `skills`, `resources` ci-dessous, `conversations`,
+  `summaries` et `usage_stats` plus haut. `onupgradeneeded` est idempotent
+  (contains-check par store/index) → chaque palier de migration est
+  transparent, chaque store intact à chaque palier.
   Deux points d'ouverture coexistent (`openResourceDB` dans `resources.js`,
   `openConvDB` dans `storage.js`) : chacun déclare le schéma COMPLET dans son
   `onupgradeneeded`, puisque l'un ou l'autre peut être le premier à ouvrir la
@@ -872,7 +883,8 @@ est remplacé par `member` :
     "skills": [ { "slug": "…", "name": "…", "description": "…", "enabled": true, "content": "…", "autotrigger": false } ],
     "resources": [ { "id": "res_…", "conversationId": "…", "class": "…", "mime": "…", "name": "…", "size": 0, "createdAt": 0, "member": "resources/res_…", "originUrl": null } ],
     "conversations": [ { "id": "…", "title": "…", "timestamp": 0, "updatedAt": 0, "spaceId": "…", "messages": [ "…" ] } ],
-    "summaries": [ { "id": "…", "summary": "…", "keywords": [ "…" ], "messageCount": 0 } ]
+    "summaries": [ { "id": "…", "summary": "…", "keywords": [ "…" ], "messageCount": 0 } ],
+    "usageStats": [ { "day": "2026-09-28", "serverId": "srv_…", "model": "…", "purpose": "chat", "serverName": "…", "calls": 0, "unmeasured": 0, "inTokens": 0, "cachedTokens": 0, "cachedKnownCalls": 0, "outTokens": 0 } ]
   }
 }
 ```
@@ -917,6 +929,13 @@ est remplacé par `member` :
   le souligné qui la distingue d'une section de manifeste.
 - Un record **sans octets** (`data` absent) n'a **pas** de `member` : cas
   licite, traité sans exception.
+- **`idb.usageStats` : statistiques d'usage, sans bump de version.** Ajoutée
+  après la v3 comme **section optionnelle** : un lecteur antérieur l'ignore, et
+  son absence à l'import se lit « aucune statistique ». L'import **remplace**
+  alors les statistiques locales par rien, comme tout le reste (décision du lot
+  AJ : les garder à côté de serveurs réimportés pourrait les rattacher au mauvais
+  serveur, et une fusion jour par jour irait plus loin qu'une sauvegarde ne
+  promet). Forme du record : `docs/usage-stats.md`.
 - **Posture assumée (clefs en clair)** : les clefs API (`miaou-api-servers[].key`)
   et tokens MCP (`miaou-mcp-servers[].authorization_token`) sont exportés **tels
   quels, en clair**, même posture non-prod que leur stockage (cf. la posture non-prod, plus haut
@@ -936,8 +955,8 @@ est remplacé par `member` :
   en corps de fonction depuis les autres fichiers, même contrainte que
   `MAX_SUMMARIES` — cf. CLAUDE.md). `miaou-conversations` et `miaou-summaries`
   en ont été **retirées** au lot U-4.
-- `buildExportPayload(lsSnapshot, skills, resources, conversations, summaries)`
-  → objet complet ci-dessus. Reste **pure** : l'appelant lit IDB et lui passe
+- `buildExportPayload(lsSnapshot, skills, resources, conversations, summaries,
+  usageStats)` → objet complet ci-dessus. Reste **pure** : l'appelant lit IDB et lui passe
   les tableaux, comme il le faisait déjà pour `skills`/`resources`. Sections
   manquantes → défauts vides (tableau ou objet selon la clé), jamais
   d'exception.
@@ -963,6 +982,12 @@ est remplacé par `member` :
   jetterait). Une section a **autorité pour sa version** : un v2 dont `idb` est
   vide n'est pas complété depuis `localStorage` (un export v2 légitime peut
   n'avoir aucune conversation), et un v1 ignore une section `idb` qui traînerait.
+- `extractImportedUsageStats(payload)` → records du store `usage_stats` prêts
+  pour le `put`. Écarte tout record dont l'un des quatre champs de clef (keyPath
+  composé) est invalide, comme `extractImportedConvRecords` écarte un record
+  sans `id` ; reconstruit chaque record retenu par `mergeUsageStatsRecord`
+  (compteur absent ou non numérique ramené à 0, champ inconnu retiré). Section
+  absente → tableau vide.
 - `normalizeLegacySummaryMap(obj)` → conversion de forme seule, à partir d'un
   objet **déjà parsé** : `{ id: entry }` → tableau de records portant leur `id`
   (réaffirmé depuis la clé, qui fait foi). `null` sur un objet indexé
@@ -988,7 +1013,7 @@ est remplacé par `member` :
 `getAllResources()` (resources.js) lit tout le store `resources`, sur le
 modèle de `getAllSkillRecords()` (skills.js). `clearIdbStore(storeName)`
 (resources.js) vide un store par son nom (générique) — utilisé par l'import
-avant réinsertion complète, sur les quatre stores.
+avant réinsertion complète, sur chaque store.
 
 Côté conversations (storage.js) :
 
@@ -1001,6 +1026,9 @@ Côté conversations (storage.js) :
   cache. Deux appelants : la relecture de synchro (`refreshSummariesFromDB`) et
   l'export, qui doit écrire ce qui est **en base** et non l'index RAM de cet
   onglet.
+- `readAllUsageStats()` / `replaceUsageStatsFromImport(records)` — lecture
+  pour l'export et le rapport de stockage, réinsertion attendue à l'import
+  (après `clearIdbStore('usage_stats')`), sur le modèle des deux voisins.
 - `replaceConvRecordsFromImport(conversations, summaries)` — réinsertion en
   masse, les deux stores dans **une seule transaction**, comme la migration
   U-2 et pour la même raison : un état partiellement importé est inatteignable
@@ -1058,10 +1086,10 @@ Côté conversations (storage.js) :
   synchrones après le `onload`. `reader.onload` étant devenu `async`, le
   `try/catch` autour de `readBackupFromZip` est **obligatoire** — un `throw` non
   capturé y partirait en rejet silencieux et l'interface resterait muette.
-- `applyImportedData(payload)` : écrit les 7 clés localStorage (clé **absente**
+- `applyImportedData(payload)` : écrit les clés d'`EXPORT_KEYS` (clé **absente**
   du fichier → `removeItem`, pour ne pas laisser d'état résiduel incohérent
-  mélangeant deux exports), vide puis réinsère les **quatre** stores IDB
-  (`skills`, `resources`, `conversations`, `summaries`), puis
+  mélangeant deux exports), vide puis réinsère chaque store IDB (statistiques
+  d'usage comprises, vidées même quand le fichier n'en porte pas), puis
   `location.reload()` — l'état de session (caches, thread courant, statut MCP)
   se reconstruit proprement au boot, aucune resynchronisation manuelle à
   écrire. C'est aussi ce reload qui rend le cache RAM des conversations (U-1)

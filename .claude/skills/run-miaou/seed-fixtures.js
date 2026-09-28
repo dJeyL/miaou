@@ -514,14 +514,29 @@ export const SEED_DATA = {
   SKILL_SEEDS,
 };
 
-// Version du schéma IDB `miaou`. **Doit rester alignée sur `MIAOU_DB_VERSION`
-// (storage.js)** : depuis le fix `3210886`, les deux points d'ouverture de
-// l'application partagent une seule version, et un script qui ouvre la base sur
-// un littéral périmé bloque l'ouverture (`verify-context-inspector-cache-bar`
-// portait un `2` en dur). Le `onupgradeneeded` ci-dessous recrée les quatre
-// stores à l'identique de l'application, avec la même garde contains-check :
-// si MIAOU n'a jamais ouvert la base, le seed la crée sans casser la migration.
-export const MIAOU_DB_VERSION = 4;
+// Comptes DÉRIVÉS des fixtures, jamais recopiés dans un verify : un littéral
+// (« 26 conversations, 21 dans la sidebar ») a expiré en silence à l'ajout de
+// seed-10w, deux scripts sont restés rouges jusqu'au rejeu suivant.
+//   total        : conversations seedées (ce que l'export doit porter) ;
+//   defaultSpace : celles du Space par défaut, les seules que la sidebar
+//                  affiche au démarrage (les autres sont dans le Space « Pro »).
+export const SEED_COUNTS = {
+  total: SEEDS.length,
+  defaultSpace: SEEDS.filter(s => !SPACE_SEED_CONV_IDS.includes(s.id)).length,
+};
+
+// Version du schéma IDB `miaou` : lue DANS la page depuis la constante vivante
+// `MIAOU_DB_VERSION` (storage.js, nom nu — les `const` de portée script ne sont
+// pas sur `window`), jamais recopiée ici. Un littéral a déjà rendu la main deux
+// fois : `verify-context-inspector-cache-bar` portait un `2` en dur, puis ce
+// fichier un `4` au passage à v5 — et demander une version INFÉRIEURE à celle
+// de la base la fait rejeter (`VersionError`), ce qui rougit tout consommateur
+// du seed. Chaque corps de page lit `MIAOU_DB_VERSION` lui-même (ils sont
+// sérialisés, sans accès à ce module) : les seeds s'exécutent donc après le
+// chargement de l'appli (après `page.goto`), ce que font tous leurs appelants. Le `onupgradeneeded`
+// ci-dessous recrée les stores à l'identique de l'application, avec la même
+// garde contains-check : si MIAOU n'a jamais ouvert la base, le seed la crée
+// sans casser la migration — il doit donc suivre chaque store ajouté.
 
 // ── Corps exécuté DANS la page ───────────────────────────────────────────────
 // Ces fonctions sont sérialisées par Playwright (`page.evaluate(fn, arg)`) :
@@ -532,7 +547,8 @@ export const MIAOU_DB_VERSION = 4;
 // `page.reload()` directement, sans attente arbitraire.
 
 function pageSeedConversations(data) {
-  const { MODEL, SERVER, SPACE_SEED_ID, SPACE_SEED_CONV_IDS, SEEDS, MEMORY_SEEDS, DB_VERSION } = data;
+  const { MODEL, SERVER, SPACE_SEED_ID, SPACE_SEED_CONV_IDS, SEEDS, MEMORY_SEEDS } = data;
+  const DB_VERSION = MIAOU_DB_VERSION;   // constante vivante de l'appli, cf. en-tête
   const MEM_KEY = 'miaou-memories';
   const SPACES_KEY = 'miaou-spaces';
   const spaceConvIds = new Set(SPACE_SEED_CONV_IDS);
@@ -562,6 +578,9 @@ function pageSeedConversations(data) {
         }
         if (!db.objectStoreNames.contains('summaries')) {
           db.createObjectStore('summaries', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('usage_stats')) {
+          db.createObjectStore('usage_stats', { keyPath: ['day', 'serverId', 'model', 'purpose'] });
         }
       };
       req.onsuccess = function(e) { resolve(e.target.result); };
@@ -674,7 +693,8 @@ function pageSeedConversations(data) {
 }
 
 function pageSeedSkills(data) {
-  const { SKILL_SEEDS, DB_VERSION } = data;
+  const { SKILL_SEEDS } = data;
+  const DB_VERSION = MIAOU_DB_VERSION;   // constante vivante de l'appli, cf. en-tête
   return new Promise(function(resolve, reject) {
     const req = indexedDB.open('miaou', DB_VERSION);
     req.onsuccess = function(e) {
@@ -695,7 +715,7 @@ function pageSeedSkills(data) {
 // blob, sans dupliquer la conversation). Schéma exact de storeAttachment
 // (resources.js) : id `att_…` distinct de attId `att-N`.
 function pageSeedAttachments(data) {
-  const { DB_VERSION } = data;
+  const DB_VERSION = MIAOU_DB_VERSION;   // constante vivante de l'appli, cf. en-tête
   const enc = new TextEncoder();
   const RECORDS = [
     { id: 'att_seed10b_1', attId: 'att-1', conversationId: 'seed-10b', class: 'binary',
@@ -738,7 +758,6 @@ const pageArgs = () => ({
   SEEDS: SEED_DATA.SEEDS,
   MEMORY_SEEDS: SEED_DATA.MEMORY_SEEDS,
   SKILL_SEEDS: SEED_DATA.SKILL_SEEDS,
-  DB_VERSION: MIAOU_DB_VERSION,
 });
 
 /** Conversations, résumés, souvenirs et Espaces. N'ouvre pas les stores

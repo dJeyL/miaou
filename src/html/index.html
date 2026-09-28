@@ -374,7 +374,10 @@ if (window.requestAnimationFrame) {
         <label>Serveur actif</label>
         <div class="active-api-server-name" id="active-api-server-name">Aucun serveur configuré</div>
         <div class="hint" id="active-api-server-url"></div>
-        <button class="btn-ghost" onclick="openApiServers()">Gérer les serveurs API</button>
+        <div class="btn-row">
+          <button class="btn-ghost" onclick="openApiServers()">Gérer les serveurs API</button>
+          <button class="btn-ghost" onclick="openUsageStats()">Statistiques d'usage</button>
+        </div>
       </div>
           </div>
         </div>
@@ -701,7 +704,7 @@ if (window.requestAnimationFrame) {
           <div class="set-cat-body-inner">
       <div class="field">
         <label>Stockage local</label>
-        <span class="hint">Tout est stocké dans ce navigateur, sur cette machine&nbsp;: conversations, résumés, souvenirs, fichiers, skills et réglages. Rien n'est envoyé ailleurs — mais rien n'est sauvegardé ailleurs non plus. Effacer les données de navigation du site efface tout définitivement, et l'export ci-dessous est la seule parade. En navigation privée, MIAOU démarre à vide et ne garde rien à la fermeture de la fenêtre&nbsp;: les données habituelles ne sont ni visibles ni menacées.</span>
+        <span class="hint">Tout est stocké dans ce navigateur, sur cette machine&nbsp;: conversations, résumés, souvenirs, fichiers, skills, statistiques d'usage et réglages. Rien n'est envoyé ailleurs — mais rien n'est sauvegardé ailleurs non plus. Effacer les données de navigation du site efface tout définitivement, et l'export ci-dessous est la seule parade. En navigation privée, MIAOU démarre à vide et ne garde rien à la fermeture de la fenêtre&nbsp;: les données habituelles ne sont ni visibles ni menacées.</span>
         <div class="storage-report" id="storage-report">
           <div class="storage-report-total" id="storage-report-total">Mesure en cours…</div>
           <div class="storage-report-detail" id="storage-report-detail"></div>
@@ -797,6 +800,25 @@ if (window.requestAnimationFrame) {
       <span class="hint">Chaque serveur a sa propre URL, clef et modèle par défaut. MIAOU se reconnecte au dernier serveur actif utilisé.</span>
       <button class="btn-ghost cfg-add-btn" onclick="addApiServerCard()">Ajouter un serveur</button>
       <div class="cfg-list" id="api-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══ Statistiques d'usage (consommation de tokens) ═══
+       Déclaré APRÈS le drawer des serveurs API : il s'ouvre par-dessus lui
+       depuis le glyphe d'une fiche, et à z-index égal c'est l'ordre du DOM qui
+       décide qui passe devant. Corps rendu par renderUsageStats (usage-stats.js). -->
+  <div class="backdrop" id="usage-backdrop" onclick="closeUsageStats()"></div>
+  <div class="drawer drawer-wide" id="usage-drawer">
+    <div class="drawer-head">
+      <h2>Statistiques d'usage</h2>
+      <button class="icon-btn" onclick="closeUsageStats()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <span class="hint">Tokens consommés par les appels au modèle (conversations, agents, titrage, résumés, descriptions de fichiers…), d'après les compteurs renvoyés par chaque serveur. Chiffres tenus dans ce navigateur.</span>
+      <div class="usage-filters" id="usage-filters"></div>
+      <div class="usage-body" id="usage-body"></div>
     </div>
   </div>
 

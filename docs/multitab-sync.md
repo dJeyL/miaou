@@ -34,6 +34,13 @@ Hors périmètre : pas de Web Locks / élection de leader, pas de résolution de
 conflit, pas de sync cross-device (BroadcastChannel est same-browser), pas de
 miroir de streaming token-à-token.
 
+**Statistiques d'usage : aucun type de message, par choix.** Le store IDB
+`usage_stats` est incrémenté à chaque appel de complétion, dans n'importe quel
+onglet, sans broadcast. Aucun onglet n'affiche ces chiffres en continu : la vue
+relit le store à chaque ouverture. La concurrence des ÉCRITURES est tenue par
+IndexedDB (lecture et écriture dans une même transaction `readwrite`), pas par
+le canal. Cf. `docs/usage-stats.md`.
+
 ## Architecture (`src/js/sync.js`, `src/js/multitab.js`)
 
 Deux fichiers. `sync.js` porte le noyau pur et l'adaptateur `BroadcastChannel`,

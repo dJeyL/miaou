@@ -4962,6 +4962,8 @@ const _tApi = trackDrawer(openApiServers, closeApiServers);
 openApiServers = _tApi.open; closeApiServers = _tApi.close;
 const _tSkills = trackDrawer(openSkills, closeSkills);
 openSkills = _tSkills.open; closeSkills = _tSkills.close;
+const _tUsage = trackDrawer(openUsageStats, closeUsageStats);
+openUsageStats = _tUsage.open; closeUsageStats = _tUsage.close;
 
 // ── Command palette (Ctrl/Cmd+K, lot F) ─────────────────────────────────────
 // Overlay type Spotlight : input de filtrage + liste navigable au clavier. Le
@@ -5106,6 +5108,8 @@ const COMMANDS = [
     run: () => { closeCommandPalette(); openMcpServers(); } },
   { id: 'context', key: 'c', label: 'Inspecteur de contexte', keywords: ['context', 'contexte', 'tokens'],
     run: () => { closeCommandPalette(); openContextInspector(); } },
+  { id: 'usage', key: 'u', label: 'Statistiques d’usage', keywords: ['usage', 'statistiques', 'stats', 'consommation', 'tokens', 'quota'],
+    run: () => { closeCommandPalette(); openUsageStats(); } },
   { id: 'theme', key: 't', label: 'Basculer clair / sombre', keywords: ['theme', 'thème', 'dark', 'light', 'sombre', 'clair'],
     run: () => { toggleThemeLightDark(); closeCommandPalette(); } },
   { id: 'highlight', key: 'h', label: 'Basculer la coloration syntaxique', keywords: ['highlight', 'coloration', 'syntaxe', 'prism'],
@@ -6262,6 +6266,7 @@ const STORAGE_REPORT_LABELS = {
   summaries: 'Résumés',
   resources: 'Fichiers et pièces jointes',
   skills: 'Skills',
+  usageStats: 'Statistiques d\'usage',
   settings: 'Réglages, souvenirs, espaces',
 };
 
@@ -8401,6 +8406,12 @@ function cfgPillSelect(inputClass, options, value, onChange) {
   }
   btn.addEventListener('click', () => {
     if (menu.classList.contains('show')) { menu.classList.remove('show'); return; }
+    // Ouvrir ferme toute autre pilule ouverte : le fermeur global au clic
+    // (ui.js) épargne tout clic À L'INTÉRIEUR d'une `.cfg-pill-select`, donc
+    // celui qui ouvre une voisine aussi — les deux menus restaient superposés.
+    document.querySelectorAll('.cfg-pill-select .model-menu.show').forEach(m => {
+      if (m !== menu) m.classList.remove('show');
+    });
     renderOptions();
     menu.classList.add('show');
   });
@@ -8735,6 +8746,16 @@ function buildApiCard(server, isNew, isActive) {
     refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
     refreshBtn.addEventListener('click', () => onRefreshApiCard(originalId, refreshBtn));
     viewRow.appendChild(refreshBtn);
+
+    // Statistiques d'usage de CE serveur : drawer ouvert par-dessus, filtré.
+    // Glyphe « barres », réservé à cet usage (vocabulaire d'icônes).
+    const usageBtn = document.createElement('button');
+    usageBtn.className = 'icon-btn api-usage';
+    usageBtn.setAttribute('aria-label', 'Statistiques d’usage de ce serveur');   // d'auteur, AVANT setTip
+    setTip(usageBtn, 'Voir la consommation de tokens de ce serveur');
+    usageBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M7 16v-5"/><path d="M12 16V6"/><path d="M17 16v-8"/></svg>';
+    usageBtn.addEventListener('click', () => openUsageStats({ serverId: originalId }));
+    viewRow.appendChild(usageBtn);
   }
 
   const modBtn = document.createElement('button');

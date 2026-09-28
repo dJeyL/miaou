@@ -16,7 +16,7 @@ import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { seedAll } from './seed-fixtures.js';
+import { seedAll, SEED_COUNTS } from './seed-fixtures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -57,13 +57,13 @@ await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 10000 });
 await page.waitForTimeout(400);   // loadSkillsCache + rendus initiaux
 
-// 23 conversations seedées au total (seed-01..seed-21, dont seed-10b/seed-10c) ;
-// seed-01..05 portent spaceId=space-seed-pro (lot C, herméticité Spaces) et
-// sont donc absentes de la sidebar/liste par défaut (Space "default" actif) —
-// deux compteurs distincts : la vue filtrée (sidebar) vs le brut (export/import,
-// non filtré par Space, cf. validateImportPayload/storage.js).
-const CONV_COUNT_SIDEBAR = 21;
-const CONV_COUNT_TOTAL = 26;
+// Deux compteurs distincts : la vue filtrée (sidebar, Space « default » actif —
+// les conversations seedées dans le Space « Pro » en sont absentes, lot C) et le
+// brut (export/import, non filtré par Space, cf. validateImportPayload). Lus
+// dans SEED_COUNTS, jamais écrits en dur : les littéraux 21/26 ont expiré à
+// l'ajout de seed-10w.
+const CONV_COUNT_SIDEBAR = SEED_COUNTS.defaultSpace;
+const CONV_COUNT_TOTAL = SEED_COUNTS.total;
 
 // ── A. Boutons copier ────────────────────────────────────────────────────────
 await page.click('.conv-title:text("Cron — syntaxe et debugging")');

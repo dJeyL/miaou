@@ -24,6 +24,7 @@ Ce que tu peux faire ici :
 - **Compacter** une conversation devenue longue : son début est remplacé par un
   résumé pour que le modèle garde le fil, sans que rien soit supprimé.
 - **Exporter** une conversation en Markdown ou en page HTML autonome.
+- **Suivre ta consommation** de tokens, par serveur, modèle et période.
 - **Déléguer** : le modèle peut confier une tâche à un agent — une
   sous-conversation autonome qui travaille en parallèle pendant qu'il continue —
   et récupérer son résultat.
@@ -903,6 +904,51 @@ même si tu pars ailleurs**, et tu en retrouveras le résultat à ton retour.
 Pendant ce temps, une pastille en haut de la fenêtre indique ce qui est en cours
 et sur quelle conversation — clique-la pour y revenir.
 
+## consommation — statistiques de consommation de tokens
+
+MIAOU tient le compte de ce que tu consommes auprès de tes serveurs de modèles :
+à chaque appel, il additionne les **tokens** que le serveur déclare avoir lus
+(l'**entrée**, dont la part servie depuis son **cache**) et produits (la
+**sortie**), ainsi que le nombre de **requêtes**. Pratique pour se faire une
+idée de son usage, ou pour surveiller un quota chez un fournisseur externe.
+
+Tout appel au modèle compte, pas seulement tes messages : les réponses, bien
+sûr, mais aussi chaque tour d'outils (chaque fois que le modèle appelle des
+outils puis reprend la main, c'est une requête de plus), le travail des agents, et les appels que MIAOU fait de
+lui-même — titrage, résumés, descriptions de fichiers, astuces de l'accueil.
+
+Pour les consulter : **Réglages › Connexion › Statistiques d'usage**, la
+palette de commandes (touche `U`), ou le petit graphique en barres sur la fiche
+d'un serveur (Réglages › Connexion › Gérer les serveurs API), qui les ouvre
+directement sur ce serveur. Tu peux y choisir un serveur ou tous, un modèle ou
+tous, et une période. Les périodes sont glissantes (la dernière semaine, le
+dernier mois, etc., jusqu'à aujourd'hui), et seules celles qui montrent
+quelque chose de plus que la précédente sont proposées. Le tableau donne une
+ligne par modèle et le total. Un modèle de même nom servi par plusieurs
+serveurs a une ligne par serveur, avec le nom du serveur à côté de celui du
+modèle : choisir ce modèle dans le filtre, tous serveurs confondus, compare
+donc sa consommation d'un serveur à l'autre. Les grands nombres sont abrégés
+(« 12,3 k », « 1,23 M ») ; le survol d'une cellule donne la valeur exacte.
+
+Quelques lectures utiles :
+
+- **« n/d » dans la colonne du cache** : aucun appel de la sélection n'a
+  renvoyé ce détail — tous les serveurs ne le déclarent pas. Une **astérisque**
+  signale qu'une partie seulement des appels l'a renvoyé : le chiffre est alors
+  un minimum (le survol le précise).
+- **Appels non mesurés** : des requêtes comptées sans chiffres de tokens, parce
+  qu'elles ont été interrompues avant la fin (bouton Stop, coupure) ou que le
+  serveur ne les renvoie pas. Leurs tokens manquent aux totaux, d'où cette
+  colonne à part plutôt qu'un sous-comptage silencieux.
+- Un serveur **supprimé** reste consultable sous son dernier nom, avec la
+  mention « supprimé ».
+
+Les chiffres viennent des serveurs, pas d'une estimation de MIAOU : ce sont
+ceux qui comptent pour un quota. Ils sont gardés dans ce navigateur, font
+partie de la sauvegarde complète (sujet `donnees`), et ne se mettent à jour
+qu'à l'ouverture de l'écran. Pour savoir ce qu'un message envoie au modèle et
+comment l'alléger, voir plutôt le sujet `contexte`.
+
 ## interface — repères à l'écran
 
 Quelques repères pour te déplacer dans MIAOU :
@@ -1033,8 +1079,8 @@ Quelques repères pour te déplacer dans MIAOU :
   ouvrir une palette : tape pour filtrer, ↑/↓ pour naviguer, Entrée pour lancer,
   Échap pour fermer. Elle donne accès aux actions courantes sans la souris —
   nouvelle conversation, réglages, souvenirs, résumés, skills, serveurs MCP,
-  inspecteur de contexte, bascule de thème et de coloration, export de la
-  conversation. Certaines entrées ouvrent un **sous-mode** où la palette filtre
+  inspecteur de contexte, statistiques d'usage, bascule de thème et de
+  coloration, export de la conversation. Certaines entrées ouvrent un **sous-mode** où la palette filtre
   une liste dédiée : choisir un modèle, invoquer une skill, changer d'espace, ou
   rechercher une conversation — seule exception à l'étanchéité des Espaces
   (sujet `espaces`), cette recherche porte sur tous tes espaces (Échap revient en
@@ -1044,7 +1090,8 @@ Quelques repères pour te déplacer dans MIAOU :
     En résumé, `Ctrl/Cmd+K` puis : `N` nouvelle conversation, `F` rechercher une
     conversation, `M` changer de modèle, `K` invoquer une skill, `E` changer
     d'espace, `,` réglages, `P` souvenirs (profil), `R` résumés, `G` gérer les
-    skills, `S` serveurs MCP, `C` inspecteur de contexte, `T` thème clair/sombre,
+    skills, `S` serveurs MCP, `C` inspecteur de contexte, `U` statistiques
+    d'usage, `T` thème clair/sombre,
     `H` coloration syntaxique, `D` export Markdown, `W` export HTML.
 
 ## apparence — apparence : thème, fontes, couleurs
@@ -1262,8 +1309,9 @@ selon la taille de ce qu'il range :
 - **La base de données du navigateur** (`IndexedDB`, base `miaou`), bien plus
   vaste — sa limite est la place que le navigateur accorde sur le disque —,
   garde ce qui grossit avec l'usage : **tes conversations** et leurs
-  résumés, tes skills, et les fichiers de tes bibliothèques d'Espaces ainsi que
-  les pièces jointes de tes messages.
+  résumés, tes skills, les fichiers de tes bibliothèques d'Espaces ainsi que
+  les pièces jointes de tes messages, et les statistiques de ta consommation
+  de tokens.
 
 Les conversations ont vécu dans le stockage local jusqu'à ce qu'elles en
 saturent la capacité (quelques mégaoctets) ; elles sont désormais dans la base,
@@ -1272,7 +1320,7 @@ faire, et rien ne se perd.
 
 Pour savoir ce que tout cela pèse : **Réglages › Données** affiche l'espace
 occupé, la part du quota qu'il représente, et une ventilation par catégorie
-(conversations, résumés, fichiers, skills, réglages). Le chiffre est mesuré par
+(conversations, résumés, fichiers, skills, statistiques d'usage, réglages). Le chiffre est mesuré par
 MIAOU en pesant ses propres données ; l'occupation réelle de l'origine est
 légèrement supérieure, le navigateur ajoutant ses index et sa propre surcharge.
 Pour aller voir dans le menu du navigateur : outils de développement, onglet
@@ -1292,12 +1340,14 @@ chat — supprimer une conversation ne le soulage pas.
 
 **Sauvegarder et restaurer tout MIAOU.** Réglages › Données propose « Exporter
 les données » : un fichier `.zip` qui contient absolument tout — conversations,
-résumés, souvenirs, skills, fichiers, Espaces, serveurs et réglages. C'est la
+résumés, souvenirs, skills, fichiers, Espaces, serveurs, réglages et
+statistiques d'usage. C'est la
 seule vraie sauvegarde, et c'est aussi le seul moyen d'emporter ton MIAOU vers
 un autre navigateur ou une autre machine. « Importer les données » le relit et
 **remplace l'intégralité** de ce qui est en place (un récapitulatif s'affiche,
-avec une confirmation à donner deux fois). Les anciennes sauvegardes `.json`
-restent acceptées telles quelles.
+avec une confirmation à donner deux fois), statistiques d'usage comprises :
+une sauvegarde faite avant leur apparition les remet à zéro. Les anciennes
+sauvegardes `.json` restent acceptées telles quelles.
 
 Attention à un malentendu que l'archive invite : **compresser n'est pas
 chiffrer**. Un `.zip` s'ouvre avec n'importe quel outil, et il contient tes

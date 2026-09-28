@@ -810,6 +810,7 @@ async function driveAgentConversation(gen, apiMessages, tools) {
     await runConversation(apiMessages, {
       gen: gen,
       model: gen.model,
+      purpose: 'agent',   // statistiques d'usage (usage-stats.js)
       reasoningEffort: gen.reasoningEffort,
       agentTools: gen.agentTools,   // restreint body.tools tour après tour (api.js)
       // Points d'écriture PARTAGÉS (main.js) : ils muent toujours et peignent
@@ -1183,6 +1184,9 @@ async function driveDetachedConversation(gen, apiMessages) {
     await runConversation(apiMessages, {
       gen: gen,
       model: gen.model,
+      // C'est la conversation du PARENT qui travaille (réveil) : nature `chat`,
+      // pas `agent` — statistiques d'usage (usage-stats.js).
+      purpose: 'chat',
       reasoningEffort: gen.reasoningEffort,
       // Écriture du partiel par le point PARTAGÉ (main.js) : il mute toujours
       // et peint si l'utilisateur a ouvert cette conversation pendant qu'elle

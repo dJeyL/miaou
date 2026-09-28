@@ -1028,6 +1028,15 @@
 .api-view-row .api-refresh:hover:not(:disabled) { color: var(--text-1); }
 .api-view-row .api-refresh:disabled { opacity: .45; cursor: default; }
 .api-view-row .api-refresh svg { width: 15px; height: 15px; }
+/* Glyphe des statistiques d'usage : suit la relecture, même géométrie. C'est
+   lui, désormais, qui précède « Modifier » et lui retire le margin-left:auto. */
+.api-view-row .api-usage {
+  width: 28px; height: 28px;
+  color: var(--text-3);
+}
+.api-view-row .api-usage + .drawer-btn:last-child { margin-left: 0; }
+.api-view-row .api-usage:hover { color: var(--text-1); }
+.api-view-row .api-usage svg { width: 15px; height: 15px; }
 /* Serveur actif dans la catégorie Connexion : nom en gras, modèle par défaut
    à la suite (séparateur .inline-sep, même format que le thread). */
 .active-api-server-name { font-size: 13px; font-weight: 600; color: var(--text); }

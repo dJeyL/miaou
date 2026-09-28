@@ -1,0 +1,88 @@
+/* ─── Statistiques d'usage (drawer #usage-drawer) ─────────────────────────────
+   Consommation de tokens par serveur et par modèle, cf. docs/usage-stats.md.
+   Les filtres sont des pilules `.cfg-pill-select` (jamais de select natif). */
+
+.usage-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 2px;
+}
+
+/* Le corps du drawer défile, et une boîte qui défile rogne tout descendant
+   absolu qui la dépasse. Dimensionné à son contenu (base `.drawer-body`), il
+   était plus bas qu'un menu de filtre ouvert dès que le tableau était court :
+   la fin de la liste disparaissait. Étiré à toute la hauteur du drawer, il
+   laisse aux menus, ancrés en haut, la place de s'ouvrir. */
+#usage-drawer .drawer-body { flex: 1 1 auto; min-height: 0; }
+
+/* Menus des filtres à la largeur de leur contenu, au moins celle de la
+   pilule : la base `.model-menu` (left/right à 0) les calait sur la pilule,
+   et les noms de serveur et de modèle passaient à la ligne. Plafonnés pour
+   rester dans le drawer ; au-delà, retour à la ligne. Sélecteurs portant le
+   composant (invariant de surcharge : jamais une classe nue). */
+.usage-filters .cfg-pill-select .model-menu {
+  right: auto;
+  width: max-content;
+  min-width: 100%;
+  max-width: 300px;
+}
+.usage-filters .cfg-pill-select .model-opt { gap: 14px; }
+
+.usage-period {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.usage-empty {
+  font-size: 13px;
+  color: var(--text-2);
+  padding: 14px 0;
+}
+
+/* Chiffres tabulaires en mono : les colonnes restent alignées quand les
+   valeurs changent de largeur (même choix que le rapport de stockage). */
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.usage-table th {
+  text-align: right;
+  font-weight: 500;
+  color: var(--text-3);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-2);
+  white-space: nowrap;
+}
+.usage-table th:first-child { text-align: left; }
+.usage-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+}
+.usage-table .usage-model {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+/* Serveur d'un modèle homonyme (même nom servi par plusieurs serveurs), en
+   second texte dans la cellule du modèle. */
+.usage-table .usage-server {
+  color: var(--text-3);
+}
+.usage-table .usage-num {
+  text-align: right;
+  font-family: var(--mono);
+  /* Le mono est plus large que le texte à corps égal : réduit, il laisse sa
+     place au nom du modèle (notation compacte, cf. formatUsageCount). */
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.usage-table .usage-zero { color: var(--text-3); }
+.usage-table .usage-total td {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom: none;
+  border-top: 1px solid var(--border-2);
+}

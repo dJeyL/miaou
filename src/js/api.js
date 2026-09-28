@@ -424,6 +424,7 @@ async function silentCompletion(messages, opts) {
   const o = opts || {};
   const temperature = o.temperature == null ? 0.3 : o.temperature;
   const cfg = Object.assign({}, loadSettings(), activeApiConfig());
+  const server = activeApiServer();   // crédité par les statistiques (cf. streamCompletion)
   const url = cfg.url;
   // `o.model` : modèle EXPLICITE choisi par l'appelant, sinon celui du serveur
   // actif. Sert aux appels applicatifs qui doivent suivre le modèle que
@@ -448,6 +449,7 @@ async function silentCompletion(messages, opts) {
   const _attempt = async (extra) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), o.timeout || 30000);
+    let refused = false, answered = false;
     try {
       const res = await fetch(url + '/chat/completions', {
         method: 'POST',
@@ -459,12 +461,30 @@ async function silentCompletion(messages, opts) {
         signal: ctrl.signal,
       });
       if (!res.ok) {
+        refused = true;
         const err = new Error('silentCompletion ' + res.status);
         err.status = res.status;   // lu par serverVerdictOnFailure
         throw err;
       }
+      answered = true;
       const data = await res.json();
-      return (data.choices?.[0]?.message?.content ?? '').trim();
+      const content = (data.choices?.[0]?.message?.content ?? '').trim();
+      // Statistiques : UN enregistrement par essai servi. La cascade NOTHINK et
+      // le rejeu vision ne relancent que sur un refus, qui n'est pas compté.
+      // Posé APRÈS l'extraction du contenu, dernier geste qui puisse lever :
+      // une exception après l'enregistrement repasserait par le `catch` et
+      // compterait le même appel une seconde fois.
+      noteModelUsage(server, model, o.purpose, data.usage);
+      return content;
+    } catch (e) {
+      // Échec APRÈS l'envoi : timeout (abort du contrôleur local, requête
+      // partie, le backend a peut-être calculé) ou corps 2xx illisible (le
+      // backend a servi). Compté « non mesuré », puis l'erreur repart telle
+      // quelle. Une erreur réseau ou un refus HTTP ne passent pas le prédicat.
+      if (modelCallCounts({ answered, aborted: !!(e && e.name === 'AbortError'), refused })) {
+        noteModelUsage(server, model, o.purpose, null);
+      }
+      throw e;
     } finally {
       clearTimeout(timer);
     }
@@ -646,6 +666,9 @@ function activeChatTemperature() {
 async function streamCompletion(messages, opts) {
   const o = opts || {};
   const cfg = Object.assign({}, loadSettings(), activeApiConfig());
+  // Serveur capturé au MÊME instant que sa config : c'est lui que les
+  // statistiques créditent, même si le serveur actif change pendant l'appel.
+  const server = activeApiServer();
   const model = o.model || cfg.model;
   const body = {
     // Override par conversation (o.model) sinon modèle par défaut des réglages.
@@ -731,6 +754,7 @@ async function streamCompletion(messages, opts) {
   let aborted = false;
   let usage = null;
   let answered = false;   // le backend a accepté la requête (réponse 2xx avec corps)
+  let refused = false;    // le backend a refusé la requête (non-2xx) : rien consommé
 
   try {
     // Le chien de garde couvre AUSSI la connexion, pas seulement le flux : un
@@ -755,6 +779,7 @@ async function streamCompletion(messages, opts) {
     // serveur (revue du 2026-09-22, même règle que `serverVerdictOnFailure`).
     const verdict = !res.ok && httpStatusIsVerdict(res.status);
     if (!res.ok || !res.body) {
+      refused = true;
       // Hypothèse directe (pas de retry de diagnostic) : si reasoning_effort était
       // posé, on le tient pour responsable de l'échec — marqué pour (endpoint,
       // modèle), le sélecteur se masque pour la suite de la session, et on rejoue
@@ -841,7 +866,14 @@ async function streamCompletion(messages, opts) {
     // se termine identiquement (pas de rollback, piège 10) — seule l'étiquette
     // change.
     if (e && e.name === 'AbortError') aborted = true;
-    else throw e;
+    else {
+      // Flux 2xx coupé par autre chose qu'un abort (connexion réinitialisée en
+      // plein flux, hook de peinture qui lève) : le backend a servi, l'appel
+      // compte, sans mesure fiable. Enregistré ICI, parce que le `throw` saute
+      // le point d'enregistrement de fin de fonction.
+      if (modelCallCounts({ answered, refused })) noteModelUsage(server, model, o.purpose, null);
+      throw e;
+    }
   } finally {
     clearIdleWatchdog();
     // Ne retirer le controller de la génération que s'il est encore le nôtre :
@@ -853,6 +885,11 @@ async function streamCompletion(messages, opts) {
   // Le backend a servi ce modèle, donc l'a chargé : sa fenêtre servie est
   // lisible (AF-2 révisée). Même sur un Stop, le chargement a eu lieu.
   if (answered && typeof noteModelCalled === 'function') noteModelCalled(cfg.url, model);
+  // Statistiques : chaque tour est un appel, tours d'outils compris — à
+  // l'inverse de l'inspecteur, qui ne garde que le dernier. Un rejeu interne
+  // (plus haut) est sorti par son `return` avant ce point : seul le rejeu est
+  // compté, par sa propre invocation.
+  if (modelCallCounts({ answered, aborted, refused })) noteModelUsage(server, model, o.purpose, usage);
 
   return { content: contentBuffer, reasoning: reasoningBuffer, toolCalls: toolCalls.filter(Boolean), finishReason, aborted, stalled, usage };
 }
@@ -912,6 +949,9 @@ async function runConversation(messages, hooks) {
       // du tour en cours, pour un abort ciblé conversation par conversation.
       gen: h.gen,
       model: h.model,
+      // Nature d'appel pour les statistiques (usage-stats.js) : `chat` ou
+      // `agent`, posée par l'appelant de la boucle. Absente → `other`.
+      purpose: h.purpose,
       reasoningEffort: h.reasoningEffort,
       // Descripteurs byte-stables des images du tour courant : utilisés
       // uniquement si la dégradation vision-less doit remplacer les parts image.
@@ -1283,7 +1323,7 @@ async function generateTitle(thread, model) {
   const out = await silentCompletion([
     { role: 'system', content: TITLE_PROMPT },
     { role: 'user', content: convo },
-  ], { temperature: 0.2, timeout: 60000, model: model });
+  ], { temperature: 0.2, timeout: 60000, model: model, purpose: 'title' });
   return normalizeTitle(out);
 }
 
@@ -1297,7 +1337,7 @@ async function generateEarlyTitle(userText, model) {
   const out = await silentCompletion([
     { role: 'system', content: EARLY_TITLE_PROMPT },
     { role: 'user', content: String(userText == null ? '' : userText) },
-  ], { temperature: 0.2, timeout: 60000, model: model });
+  ], { temperature: 0.2, timeout: 60000, model: model, purpose: 'early-title' });
   return normalizeTitle(out);
 }
 
@@ -1310,7 +1350,7 @@ async function generateSummary(thread) {
   const out = await silentCompletion([
     { role: 'system', content: SUMMARY_PROMPT },
     { role: 'user', content: convo },
-  ], { temperature: 0.3, timeout: 60000, model: activeModel() });
+  ], { temperature: 0.3, timeout: 60000, model: activeModel(), purpose: 'summary' });
 
   const parsed = parseSummaryJSON(out);
   if (!parsed || typeof parsed.summary !== 'string') {
@@ -1345,7 +1385,7 @@ async function generateCompactionSummary(thread) {
   const out = await silentCompletion([
     { role: 'system', content: COMPACTION_PROMPT },
     { role: 'user', content: convo },
-  ], { temperature: 0.3, timeout: 90000, model: activeModel() });
+  ], { temperature: 0.3, timeout: 90000, model: activeModel(), purpose: 'compaction' });
 
   const parsed = parseSummaryJSON(out);
   if (!parsed || typeof parsed.summary !== 'string' || !parsed.summary.trim()) {

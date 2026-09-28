@@ -887,7 +887,8 @@ function openResourceDB() {
     // v2 : ajout du store `skills` (cf. skills.js). v3 (lot Cbis) : ajout de
     // l'index `by_space` sur `resources` existant, pour les fichiers de
     // bibliothèque d'espace (`spaceId` sur le record, `kind:'library'`).
-    // v4 (lot U-1) : stores `conversations` et `summaries`.
+    // v4 (lot U-1) : stores `conversations` et `summaries`. v5 : store
+    // `usage_stats` (statistiques de consommation, usage-stats.js).
     // onupgradeneeded est idempotent (contains-check par store/index) → chaque
     // palier ne touche que ce qui manque.
     //
@@ -920,6 +921,9 @@ function openResourceDB() {
       }
       if (!db.objectStoreNames.contains('summaries')) {
         db.createObjectStore('summaries', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('usage_stats')) {
+        db.createObjectStore('usage_stats', { keyPath: ['day', 'serverId', 'model', 'purpose'] });
       }
     };
     // Montée de version par un autre onglet : cf. releaseSupersededDb

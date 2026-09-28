@@ -22,6 +22,7 @@ JS_ORDER = [
     'docs.js',
     'sync.js',
     'storage.js',
+    'usage-stats.js',
     'agents.js',
     'resources.js',
     'skills.js',
@@ -50,6 +51,7 @@ CSS_ORDER = [
     'palette.css',
     'toasts.css',
     'tooltips.css',
+    'usage-stats.css',
     'responsive.css',
     'theme-light.css',
 ]

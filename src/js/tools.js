@@ -4088,7 +4088,7 @@ async function generateDidYouKnowTip() {
       out = await silentCompletion([
         { role: 'system', content: DID_YOU_KNOW_PROMPT },
         { role: 'user', content: formatDidYouKnowInput(src.topic, src.text) },
-      ], { temperature: 0.8, timeout: 60000, model: activeModel() });
+      ], { temperature: 0.8, timeout: 60000, model: activeModel(), purpose: 'did-you-know' });
     } catch (e) {
       return null;
     }

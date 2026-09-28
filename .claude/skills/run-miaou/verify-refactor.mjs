@@ -11,7 +11,7 @@ import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { seedAll } from './seed-fixtures.js';
+import { seedAll, SEED_COUNTS } from './seed-fixtures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -50,10 +50,11 @@ const sidebar = await page.evaluate(() => ({
   convs: document.querySelectorAll('#conv-list .conv').length,
   sections: Array.from(document.querySelectorAll('#conv-list .conv-section')).map(s => s.textContent),
 }));
-// 26 conversations seedées, dont 5 dans le Space « Pro » : la sidebar est
-// scopée au Space actif (default), d'où 21. Le « 20 » historique datait
-// d'un fixture de 20 conversations toutes hors Space.
-check('sidebar : 21 conversations seedées visibles dans le Space par défaut', sidebar.convs === 21);
+// La sidebar est scopée au Space actif (default) : les conversations seedées
+// dans le Space « Pro » n'y sont pas. Compte lu dans SEED_COUNTS, jamais écrit
+// ici en dur (le littéral précédent a expiré à l'ajout d'une fixture).
+check(`sidebar : ${SEED_COUNTS.defaultSpace} conversations seedées visibles dans le Space par défaut`,
+  sidebar.convs === SEED_COUNTS.defaultSpace);
 check('sidebar : section « Épinglé » en tête', sidebar.sections[0] === 'Épinglé');
 
 // ── 2. seed-18 : deux acks enrichis + conv_ref cliquable ─────────────────────
@@ -119,7 +120,7 @@ const afterDisarm = await page.evaluate(() => ({
   armed: !!document.querySelector('#conv-list .conv-del.armed'),
   convs: document.querySelectorAll('#conv-list .conv').length,
 }));
-check('conv-del : désarmé après timeout, rien supprimé', !afterDisarm.armed && afterDisarm.convs === 21);
+check('conv-del : désarmé après timeout, rien supprimé', !afterDisarm.armed && afterDisarm.convs === SEED_COUNTS.defaultSpace);
 
 // ── 6. Réglages + serveurs API (cartes cfg) ──────────────────────────────────
 await page.evaluate(() => openSettings());

@@ -2608,7 +2608,7 @@ function snapshotLocalStorageForExport() {
 }
 
 // Handler global (bouton « Exporter les données »). Snapshot localStorage +
-// lecture IDB (skills, resources, conversations, résumés), puis téléchargement
+// lecture de chaque store IDB, puis téléchargement
 // d'une archive zip : `manifest.json` porte tout l'état SAUF les octets
 // binaires, qui vivent chacun dans un membre `resources/<id>`.
 //
@@ -2641,11 +2641,12 @@ async function exportAllData() {
   const rawResources = await getAllResources();
   const conversations = await readAllConversationsFromDB();
   const summaries = await readAllSummariesFromDB();
+  const usageStats = await readAllUsageStats();
 
   // Séparation métadonnées / octets : `entries` va dans le manifeste (sans
   // `data`, avec un `member`), `members` devient les membres du zip.
   const index = buildResourceMemberIndex(rawResources);
-  const manifest = buildExportPayload(lsSnapshot, skills, index.entries, conversations, summaries);
+  const manifest = buildExportPayload(lsSnapshot, skills, index.entries, conversations, summaries, usageStats);
 
   let ff;
   try { ff = await ensureFflate(); }
@@ -2798,10 +2799,9 @@ function onImportFileSelected(input) {
   reader.readAsArrayBuffer(file);
 }
 
-// Applique un payload d'import validé : écrit les 7 clés localStorage (clé
+// Applique un payload d'import validé : écrit les clés d'`EXPORT_KEYS` (clé
 // absente du fichier → removeItem, pour ne pas laisser d'état résiduel
-// incohérent), vide puis réinsère les quatre stores IDB (skills, resources,
-// conversations, summaries), puis recharge la page — l'état de session (caches,
+// incohérent), vide puis réinsère chaque store IDB, puis recharge la page — l'état de session (caches,
 // thread courant, statut MCP) se reconstruit proprement au boot, aucune
 // resynchronisation manuelle à écrire. C'est aussi ce reload qui rend le cache
 // RAM des conversations (U-1) cohérent : il est réhydraté depuis les stores
@@ -2855,6 +2855,12 @@ async function applyImportedData(payload) {
   await clearIdbStore('conversations');
   await clearIdbStore('summaries');
   await replaceConvRecordsFromImport(convRecords.conversations, convRecords.summaries);
+  // Statistiques d'usage : remplacées comme le reste, y compris par RIEN quand
+  // la sauvegarde n'en porte pas. Les garder ici à côté de serveurs réimportés
+  // les rattacherait peut-être au mauvais serveur ; fusionner jour par jour va
+  // plus loin que ce qu'une sauvegarde promet.
+  await clearIdbStore('usage_stats');
+  await replaceUsageStatsFromImport(extractImportedUsageStats(payload));
   // Prévenir les autres onglets AVANT de recharger celui-ci : remplacement
   // intégral destructif → les pairs doivent repartir d'un état frais, pas
   // re-render par bribes sur les resources-updated émis pendant la réinsertion
@@ -4119,6 +4125,7 @@ async function dispatchSend(matches, continuation) {
     await runConversation(apiMessages, {
       gen,   // porteur de l'AbortController du tour (abort ciblé, lot T-1a)
       model,
+      purpose: 'chat',   // statistiques d'usage (usage-stats.js)
       reasoningEffort,
       imageDescriptors,   // descripteurs du tour courant pour la dégradation vision-less
       visionDisabled,     // brief A2 : modèle marqué sans vision → dégradation proactive
@@ -5369,6 +5376,7 @@ async function describeFileIfNeeded(fileId, onStatus, force) {
   ], {
     temperature: 0.2,
     timeout: 60000,
+    purpose: 'file-description',   // statistiques d'usage (usage-stats.js)
     // Le modèle COURANT (`activeModel()`, override du composer inclus), pas le
     // modèle par défaut du serveur : c'est celui que la pilule annonce comme
     // actif, et l'utilisateur attend que ce soit lui qui décrive (retour

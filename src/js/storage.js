@@ -855,7 +855,7 @@ function listEnabledMcpServers() {
 // système, pièces jointes) tombait en silence sur un historique déjà migré.
 // Bumper le schéma = changer CE nombre, et ajouter le palier aux DEUX
 // `onupgradeneeded`, qui doivent rester identiques.
-const MIAOU_DB_VERSION = 4;
+const MIAOU_DB_VERSION = 5;
 const CONV_MESSAGES_LRU_MAX = 12;
 
 let _convDbPromise = null;
@@ -903,7 +903,8 @@ function warnDbOpenBlocked() {
 function openConvDB() {
   if (_convDbPromise) return _convDbPromise;
   _convDbPromise = new Promise(function(resolve, reject) {
-    // v4 (lot U) : ajout des stores `conversations` et `summaries`. Comme les
+    // v4 (lot U) : ajout des stores `conversations` et `summaries`. v5 :
+    // store `usage_stats` (statistiques de consommation, usage-stats.js). Comme les
     // paliers précédents, `onupgradeneeded` est idempotent (contains-check par
     // store/index) → chaque palier ne touche que ce qui manque.
     const req = indexedDB.open('miaou', MIAOU_DB_VERSION);
@@ -929,6 +930,9 @@ function openConvDB() {
       }
       if (!db.objectStoreNames.contains('summaries')) {
         db.createObjectStore('summaries', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('usage_stats')) {
+        db.createObjectStore('usage_stats', { keyPath: ['day', 'serverId', 'model', 'purpose'] });
       }
     };
     req.onsuccess = function(e) {
@@ -1293,6 +1297,57 @@ async function readAllSummariesFromDB() {
   });
 }
 
+// ── Statistiques de consommation (store `usage_stats`) ─────────────────────
+// Incrément d'un record d'agrégat (purs dans usage-stats.js). Le `get` et le
+// `put` vivent dans UNE SEULE transaction `readwrite` : c'est ce qui sérialise
+// deux onglets qui génèrent en même temps — en localStorage, la
+// lecture-modification-écriture de l'un écraserait l'incrément de l'autre.
+//
+// Pas de `syncPost` : aucun onglet n'affiche ces chiffres en continu, la vue
+// relit le store à chaque ouverture (choix, pas oubli — docs/multitab-sync.md).
+// Pas d'ack ni de trace dans le fil non plus : c'est une télémétrie locale de
+// l'application, pas une écriture de contenu à l'initiative du modèle.
+//
+// Ne rejette JAMAIS (résout `true`/`false`) : l'appelant ne l'attend pas, et une
+// statistique ratée ne doit pas faire échouer une génération. Un quota plein
+// pose l'état « stockage plein » comme toute autre écriture (`onabort`).
+function recordModelUsage(key, delta, serverName) {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(false);
+  const k = usageStatsKey(key);
+  const label = k.join(' / ');
+  return openConvDB().then(function(db) {
+    return new Promise(function(resolve) {
+      const tx = db.transaction('usage_stats', 'readwrite');
+      const store = tx.objectStore('usage_stats');
+      const req = store.get(k);
+      req.onsuccess = function() {
+        store.put(mergeUsageStatsRecord(req.result, delta, key, serverName));
+      };
+      tx.oncomplete = function() { resolve(true); };
+      tx.onabort = function() {
+        noteStorageWriteFailure('statistique d\'usage', label, tx.error);
+        resolve(false);
+      };
+    });
+  }).catch(function(err) {
+    noteStorageWriteFailure('statistique d\'usage', label, err);
+    return false;
+  });
+}
+
+// Tous les records du store `usage_stats` (vue, export, rapport de stockage).
+// Le volume reste petit : une entrée par (jour, serveur, modèle, nature).
+async function readAllUsageStats() {
+  const db = await openConvDB();
+  return new Promise(function(resolve, reject) {
+    const tx = db.transaction('usage_stats', 'readonly');
+    const req = tx.objectStore('usage_stats').getAll();
+    req.onsuccess = function(e) { resolve(e.target.result || []); };
+    tx.onerror = function(e) { reject(e.target.error); };
+    tx.onabort = function() { reject(tx.error || new Error('transaction avortée')); };
+  });
+}
+
 // Réinsertion en masse des conversations et résumés d'un import (U-4). Les deux
 // stores sont écrits dans UNE SEULE transaction, comme la migration U-2 et pour
 // la même raison : c'est ce qui rend un état partiellement importé inatteignable
@@ -1316,6 +1371,25 @@ async function replaceConvRecordsFromImport(conversations, summaries) {
     tx.onerror = function(e) { reject(e.target.error); };
     tx.onabort = function() {
       noteStorageWriteFailure('import', 'conversations+résumés', tx.error);
+      reject(tx.error || new Error('transaction avortée'));
+    };
+  });
+}
+
+// Réinsertion des statistiques d'usage d'un import, dans une transaction.
+// L'appelant a vidé le store juste avant (remplacement intégral, même vers
+// rien) ; comme pour les conversations, la promesse est ATTENDUE, un échec ne
+// doit pas être masqué par le reload qui suit.
+async function replaceUsageStatsFromImport(records) {
+  const db = await openConvDB();
+  return new Promise(function(resolve, reject) {
+    const tx = db.transaction('usage_stats', 'readwrite');
+    const store = tx.objectStore('usage_stats');
+    for (const rec of (records || [])) store.put(rec);
+    tx.oncomplete = function() { resolve((records || []).length); };
+    tx.onerror = function(e) { reject(e.target.error); };
+    tx.onabort = function() {
+      noteStorageWriteFailure('import', 'statistiques d\'usage', tx.error);
       reject(tx.error || new Error('transaction avortée'));
     };
   });
@@ -2106,7 +2180,12 @@ const EXPORT_KEYS = [
 // `member` (le nom du membre du zip qui porte les octets bruts). C'est ce qui
 // supprime le base64 du chemin d'export. Cette fonction reste pure et ne
 // connaît pas le conteneur : elle reçoit ce qu'on lui donne.
-function buildExportPayload(lsSnapshot, skills, resources, conversations, summaries) {
+//
+// `usageStats` : records du store `usage_stats` (docs/usage-stats.md). Section
+// ajoutée SANS bump d'`EXPORT_FORMAT_VERSION` : c'est un champ optionnel en
+// plus, qu'un lecteur antérieur ignore, et dont l'absence à l'import se lit
+// comme « aucune statistique » (remplacement intégral, même vers rien).
+function buildExportPayload(lsSnapshot, skills, resources, conversations, summaries, usageStats) {
   const ls = lsSnapshot || {};
   return {
     format: 'miaou-export',
@@ -2126,8 +2205,30 @@ function buildExportPayload(lsSnapshot, skills, resources, conversations, summar
       resources: Array.isArray(resources) ? resources : [],
       conversations: Array.isArray(conversations) ? conversations : [],
       summaries: Array.isArray(summaries) ? summaries : [],
+      usageStats: Array.isArray(usageStats) ? usageStats : [],
     },
   };
+}
+
+// Records de statistiques d'usage d'un payload importé, prêts pour le `put`.
+// Pure, QuickJS-testable. Garde les seuls records dont les QUATRE champs de clef
+// (keyPath composé du store) sont valides — `day` au format `YYYY-MM-DD`, les
+// trois autres des chaînes, nature non vide —, comme `extractImportedConvRecords`
+// filtre sur `id` : un `put` sans clef valide avorterait toute la transaction
+// d'import. Chaque record retenu est reconstruit par `mergeUsageStatsRecord`
+// sur un record vide, ce qui ramène un compteur absent ou non numérique à 0 et
+// ne laisse passer aucun champ inconnu.
+// Section absente (sauvegarde antérieure aux statistiques) → tableau vide :
+// l'import REMPLACE les statistiques locales par rien, comme tout le reste.
+function extractImportedUsageStats(payload) {
+  const obj = payload || {};
+  const idb = (obj.idb && typeof obj.idb === 'object') ? obj.idb : {};
+  const arr = Array.isArray(idb.usageStats) ? idb.usageStats : [];
+  const isStr = v => typeof v === 'string';
+  return arr
+    .filter(r => r && isStr(r.day) && /^\d{4}-\d{2}-\d{2}$/.test(r.day) &&
+      isStr(r.serverId) && isStr(r.model) && isStr(r.purpose) && r.purpose.trim())
+    .map(r => mergeUsageStatsRecord(r, null, r, r.serverName));
 }
 
 // Extrait conversations et résumés d'un payload importé, QUELLE QUE SOIT sa
@@ -2348,6 +2449,7 @@ function buildStorageReport(parts, estimate) {
     summaries: parts.summaries || 0,
     resources: parts.resources || 0,
     skills: parts.skills || 0,
+    usageStats: parts.usageStats || 0,
   };
   let total = 0;
   for (const k of Object.keys(detail)) total += detail[k];
@@ -2422,9 +2524,10 @@ function measureSkillsBytes() {
 // dégrader l'affichage, pas le casser.
 async function collectStorageReport() {
   const settings = measureLocalStorageBytes();
-  let conversations = 0, summaries = 0, resources = 0, skills = 0;
+  let conversations = 0, summaries = 0, resources = 0, skills = 0, usageStats = 0;
   try { conversations = sumRecordBytes(await readAllConversationsFromDB()); } catch (e) {}
   try { summaries = sumRecordBytes(await readAllSummariesFromDB()); } catch (e) {}
+  try { usageStats = sumRecordBytes(await readAllUsageStats()); } catch (e) {}
   try { resources = await measureResourcesBytes(); } catch (e) {}
   try { skills = await measureSkillsBytes(); } catch (e) {}
   // Appelé pour son `quota` UNIQUEMENT (son `usage` est écarté, cf. la note en
@@ -2434,7 +2537,7 @@ async function collectStorageReport() {
     try { estimate = await navigator.storage.estimate(); } catch (e) {}
   }
   return buildStorageReport(
-    { settings, conversations, summaries, resources, skills },
+    { settings, conversations, summaries, resources, skills, usageStats },
     estimate
   );
 }

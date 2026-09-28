@@ -540,7 +540,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`,
   `miaou-unread` (non-lus des badges, hors export)) et
   IndexedDB (`skills`, `resources`, `conversations`, `summaries` — ces deux
-  derniers migrés depuis localStorage au lot U), champs de méta `snippet`
+  derniers migrés depuis localStorage au lot U —, et `usage_stats`, base v5,
+  cf. `docs/usage-stats.md`), champs de méta `snippet`
   (extrait de secours, lot AA) et `autoTitled` (titre écrit par la machine, qui
   autorise le retitrage de fin d'échange), plus le format d'export/import complet
   (`.zip` depuis le lot V-3) ; porte aussi la recherche plein-texte
@@ -888,6 +889,22 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   inspecteur restent figés sur la photo du dernier envoi ; et l'arbitrage des
   **deux surfaces d'annonce** (`syncCompactionActivitySurface` /
   `setBgActivitySuppressed`), chacune parlant là où l'autre se tait.
+- **`docs/usage-stats.md`** — statistiques de consommation de tokens (lot AJ) :
+  collecte aux deux seuls points réseau (`streamCompletion`, `silentCompletion`)
+  et jamais chez les appelants, qui ne passent que leur nature (`purpose`, sans
+  liste fermée, `'other'` par défaut) ; un tour = un appel, à l'inverse de
+  l'inspecteur ; prédicat unique `modelCallCounts` (réponse OU abort, jamais un
+  refus HTTP ni une erreur réseau) ; serveur capturé AU DÉBUT de l'appel ; store
+  `usage_stats` en agrégat (jour local, serveur, modèle, nature), incrément
+  `get`+`put` dans une transaction, `cachedKnownCalls` qui distingue un cache
+  inconnu d'un cache nul, aucun broadcast par choix ; consultation par un
+  drawer relu à chaque ouverture (trois entrées, dont le glyphe « barres » d'une
+  fiche serveur), échelles GLISSANTES calculées sur des dates civiles
+  (`usageScaleWindow`, repli du quantième par `usageAddMonths`), échelles
+  proposées selon la donnée la plus ancienne (`availableUsageScales`), totaux
+  par couple (serveur, modèle), serveur affiché sur les seuls homonymes et
+  filtre modèle par nom, et état du cache (`usageTotals`, `usageCacheState` :
+  « n/d », astérisque).
 - **`docs/toasts.md`** — toasts (lot AG) : critère « l'état sur la surface
   passive, le front en toast », API `showToast`/`dismissToast` (clé de cause,
   niveau, thème, texte en `textContent`, action, `persistent`), table fermée
