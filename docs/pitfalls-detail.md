@@ -375,7 +375,7 @@ HTML, ou à la synchro multi-onglets.
     dropdown. Lecture de rendu via `_modelsEntryOf(server)` (ne crée pas
     d'entrée, ne ressuscite pas une liste obsolète), création/actualisation via
     `_modelsEntry(server)`. Vérifié par
-    `.claude/skills/run-miaou/verify-models-cache-key.mjs` : `fetchModels` y est
+    `.claude/skills/run-miaou/verify-models-cache-key.mjs` : `/models` y est
     stubé pour répondre **selon la clef d'API**, donc deux serveurs partageant
     une URL et ne différant que par elle doivent voir chacun leur liste — la
     clef de cache est l'identité, pas un attribut commode. Le script couvre aussi
@@ -395,10 +395,14 @@ HTML, ou à la synchro multi-onglets.
     **couple** (serveur actif, modèle courant) : un même nom de modèle exposé par
     deux serveurs ne coche que celui en usage. Un serveur dont `/models` échoue
     reste visible avec une ligne d'état `.model-group-note.is-error` cliquable
-    (`retryServerModels`, force le re-fetch). **Le menu est réécrit en entier à
-    chaque arrivée de liste** (et à chaque retry) : `renderComposerModelOptions`
+    (`retryServerModels`, force le re-fetch) ; les modèles ajoutés à la main de ce
+    serveur restent proposés sous cette ligne. **La liste du menu est réécrite
+    en entier à chaque arrivée de liste** (et à chaque retry), jamais le champ de
+    filtre posé au-dessus d'elle hors de la zone qui défile
+    (`composerModelMenuSkeleton`) : `renderComposerModelOptions`
     est donc un **shell d'ancrage** autour de `renderComposerModelOptionsInner`
-    — il mémorise le décalage VISUEL de la ligne active (`offsetTop - scrollTop`)
+    — il mémorise le décalage VISUEL de la ligne active (`offsetTop - scrollTop`
+    de la liste)
     avant réécriture et le restaure après, sinon `scrollTop` retombe à 0 et la
     ligne active disparaît sous le pli pendant les chargements. Préserver le
     décalage, pas seulement la visibilité : des groupes s'insèrent AVANT la ligne
@@ -407,11 +411,13 @@ HTML, ou à la synchro multi-onglets.
     block: 'nearest' })` au premier rendu. Mesurable dès avant `.show` :
     `.model-menu` se cache en `visibility`/`opacity`, **jamais** `display: none`
     — la boîte existe, donc `offsetTop`/`scrollTop` sont lisibles. Fallback silencieux : le sélecteur
-    n'apparaît que si `showModelSelector` **ET** (la liste du serveur actif est
-    non vide **OU** un autre serveur est sélectionnable — sinon un serveur actif
-    injoignable masquerait un sélecteur qui a pourtant des modèles ailleurs). Aucun filtrage des modèles listés
-    (un modèle listé peut être non fonctionnel : pas de moyen de le savoir à
-    l'avance) ; **pas de retry/fallback** à l'envoi en cas d'erreur — l'erreur
+    n'apparaît que si `showModelSelector` **ET** (le serveur actif a des modèles
+    à proposer — `modelMenuOrder`, modèles ajoutés à la main compris, masqués
+    exclus — **OU** un autre serveur est sélectionnable — sinon un serveur actif
+    injoignable masquerait un sélecteur qui a pourtant des modèles ailleurs).
+    Aucun filtrage automatique des modèles listés (un modèle listé peut être non
+    fonctionnel : pas de moyen de le savoir à l'avance) : seul le masquage choisi
+    sur la fiche du serveur en retire (`isModelShown`, cf. `docs/model-props.md`) ; **pas de retry/fallback** à l'envoi en cas d'erreur — l'erreur
     s'affiche dans la bulle (catch existant de `dispatchSend`). Changer de modèle
     **ne touche jamais** l'historique ; passer le réglage à masqué **ne réinit-
     ialise pas** les overrides déjà posés (`syncModelUI` masque, l'override

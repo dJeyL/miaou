@@ -338,13 +338,34 @@
   max-width: calc(var(--col) / 2);
   transform: translateY(4px);
 }
-#composer-model-menu.show { transform: none; }
+/* `visibility` bascule sans délai à l'ouverture : pendant la transition héritée
+   de .model-menu, le menu resterait `hidden` et refuserait le focus que
+   toggleComposerModelMenu pose sur son champ de filtre. La fermeture garde la
+   transition. */
+#composer-model-menu.show { transform: none; transition: opacity 140ms var(--ease), transform 140ms var(--ease), visibility 0s; }
 /* Le libellé du BOUTON est abrégé (shortenModelLabel), la liste déroulée garde
    les noms COMPLETS : un identifiant plus large que la borne du menu doit donc
    revenir à la ligne plutôt que déborder. align-items: flex-start garde le ✓
    aligné sur la PREMIÈRE ligne du nom, pas centré sur un bloc à deux lignes. */
 #composer-model-menu .model-opt { align-items: flex-start; }
 #composer-model-menu .model-opt span:first-child { overflow-wrap: anywhere; }
+/* Champ de filtre hors de la zone qui défile : la liste seule défile, et les
+   en-têtes de groupe collent à SON haut, sous le champ, sans décalage calculé.
+   La liste est le repère des `offsetTop` de l'ancrage (position: relative). */
+.model-menu#composer-model-menu { display: flex; flex-direction: column; overflow: hidden; max-height: 260px; }
+#composer-model-menu .composer-model-filter { flex-shrink: 0; padding: 6px; border-bottom: 1px solid var(--border-2); }
+#composer-model-menu .composer-model-filter input {
+  width: 100%; box-sizing: border-box;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  padding: 5px 8px; font-family: var(--sans); font-size: 12px; color: var(--text);
+}
+#composer-model-menu .composer-model-filter input:focus { border-color: var(--accent-bd); outline: none; }
+#composer-model-menu .composer-model-list { position: relative; flex: 1; min-height: 0; overflow-y: auto; }
+#composer-model-menu .model-opt.kb { background: var(--surface-3); }
+/* Marques en texte : défaut en accent, modèle masqué montré en attente. */
+#composer-model-menu .model-opt-tag { font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
+#composer-model-menu .model-opt-tag.is-default { color: var(--accent); }
+#composer-model-menu .model-opt-tag.is-hidden { color: var(--pending); }
 /* Marque « lit les images » (lot AF) : dans la pilule et en queue de ligne du
    menu, avant le ✓. Une règle `display` sur la classe battrait le `[hidden]` de
    l'agent utilisateur : le cas masqué est donc réécrit explicitement. */

@@ -569,9 +569,10 @@ function usageStackGeometry(values, vmax, h, gap) {
 // un appel fait dans un autre onglet apparaît à la prochaine ouverture, et le
 // drawer ne se met pas à jour pendant qu'il est ouvert.
 //
-// Trois points d'entrée : palette (touche `u`), réglages › Connexion, et le
-// glyphe « barres » de chaque fiche serveur, qui ouvre le drawer filtré sur ce
-// serveur. Ouvert par-dessus les drawers des réglages et des serveurs sans les
+// Points d'entrée : palette (touche `u`), réglages › Connexion, le glyphe
+// « barres » de chaque fiche serveur, qui ouvre le drawer filtré sur ce
+// serveur, et celui de chaque ligne de son tableau des modèles, filtré en plus
+// sur le modèle. Ouvert par-dessus les drawers des réglages et des serveurs sans les
 // fermer (empilement, Échap les dépile un par un — trackDrawer, ui.js).
 let _usageRecords = [];
 let _usageFilter = { serverId: null, model: null };
@@ -586,7 +587,12 @@ let _usageSeq = 0;
 
 async function openUsageStats(opts) {
   const o = opts || {};
-  _usageFilter = { serverId: typeof o.serverId === 'string' ? o.serverId : null, model: null };
+  // `model` (glyphe d'une ligne du tableau des modèles) : filtre par nom, comme la
+  // pilule. Un modèle sans statistiques retombe sur « tous » au rendu.
+  _usageFilter = {
+    serverId: typeof o.serverId === 'string' ? o.serverId : null,
+    model: typeof o.model === 'string' && o.model ? o.model : null,
+  };
   $('usage-drawer').classList.add('show');
   $('usage-backdrop').classList.add('show');
   const body = $('usage-body');

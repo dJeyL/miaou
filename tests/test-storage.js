@@ -1622,6 +1622,27 @@ describe('mergeListedModelProps / modelPropsEntry (purs)', function() {
     m = mergeListedModelProps(m, 's1', U, ['a'], { a: vis });
     expect(modelPropsEntry(m, 's1', U, 'b')).toBe(null);
   });
+  it('un modèle ajouté à la main (sparedIds) garde son record hors de la liste', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['a', 'b'], { a: vis, b: vis });
+    m = mergeListedModelProps(m, 's1', U, ['a'], { a: vis }, null, ['b']);
+    expect(modelPropsEntry(m, 's1', U, 'b')).toEqual(vis);
+    // Contraste : sans l'épargne, le même geste l'oublie.
+    var n = mergeListedModelProps({}, 's1', U, ['a', 'b'], { a: vis, b: vis });
+    n = mergeListedModelProps(n, 's1', U, ['a'], { a: vis }, null, []);
+    expect(modelPropsEntry(n, 's1', U, 'b')).toBe(null);
+  });
+  it('épargner un modèle inconnu ne crée aucun record ; un modèle épargné ET listé suit la lecture', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['a'], { a: vis }, null, ['z']);
+    expect(modelPropsEntry(m, 's1', U, 'z')).toBe(null);
+    var noVis = modelPropsRecord(null, null, { vision: false, tools: true, thinking: true });
+    m = mergeListedModelProps(m, 's1', U, ['a'], { a: noVis }, null, ['a']);
+    expect(modelPropsEntry(m, 's1', U, 'a').caps.vision).toBe(false);
+  });
+  it('épargne sans effet quand l\'URL a changé', function() {
+    var m = mergeListedModelProps({}, 's1', U, ['b'], { b: vis });
+    m = mergeListedModelProps(m, 's1', 'https://autre/v1', ['a'], { a: unk }, null, ['b']);
+    expect(modelPropsEntry(m, 's1', 'https://autre/v1', 'b')).toBe(null);
+  });
   it('URL changée : l\'ancienne entrée ne vaut plus', function() {
     var m = mergeListedModelProps({}, 's1', U, ['a'], { a: vis });
     expect(modelPropsEntry(m, 's1', 'https://autre/v1', 'a')).toBe(null);
@@ -1770,5 +1791,261 @@ describe('writeLocalStorage (lot AG, S2) — le quota ne remonte plus au handler
     }
     expect(logged >= 2).toBe(true);
     expect(isStorageFull()).toBe(false);   // quota localStorage ≠ quota IDB (S2)
+  });
+});
+
+describe('catalogue de modèles : champs serveur (normalizeApiServer)', function() {
+  it('défauts : tout affiché, aucune exception, aucun modèle ajouté à la main', function() {
+    var s = normalizeApiServer({ name: 'S', url: 'u' });
+    expect(s.modelVisibility).toEqual({ newHidden: false, except: [] });
+    expect(s.handcraftedModels).toEqual([]);
+  });
+  it('newHidden vrai seulement si strictement true ; noms trimés, non vides, dédoublonnés', function() {
+    var s = normalizeApiServer({ name: 'S', url: 'u',
+      modelVisibility: { newHidden: 'oui', except: [' a ', 'a', '', 3, null, 'b'] },
+      handcraftedModels: ['x', ' x', 'y', {}, ''] });
+    expect(s.modelVisibility).toEqual({ newHidden: false, except: ['a', 'b'] });
+    expect(s.handcraftedModels).toEqual(['x', 'y']);
+    expect(normalizeApiServer({ url: 'u', modelVisibility: { newHidden: true } }).modelVisibility)
+      .toEqual({ newHidden: true, except: [] });
+  });
+  it('valeurs malformées : repli sur les défauts', function() {
+    var s = normalizeApiServer({ url: 'u', modelVisibility: 'tout', handcraftedModels: 'x' });
+    expect(s.modelVisibility).toEqual({ newHidden: false, except: [] });
+    expect(s.handcraftedModels).toEqual([]);
+  });
+  it('les champs survivent à une renormalisation (upsert d\'un enregistrement lu)', function() {
+    var once = normalizeApiServer({ id: 's1', url: 'u', modelVisibility: { newHidden: true, except: ['a'] }, handcraftedModels: ['h'] });
+    var twice = normalizeApiServer(once);
+    expect(twice.modelVisibility).toEqual({ newHidden: true, except: ['a'] });
+    expect(twice.handcraftedModels).toEqual(['h']);
+  });
+});
+
+describe('catalogue de modèles : visibilité (modelHiddenByUser / isModelShown)', function() {
+  var showAll = { model: 'def', modelVisibility: { newHidden: false, except: ['h1'] } };
+  var hideAll = { model: 'def', modelVisibility: { newHidden: true, except: ['s1'] } };
+
+  it('mode « tout afficher » : except liste les masqués, un nouveau modèle est affiché', function() {
+    expect(isModelShown(showAll, 'h1', '')).toBe(false);
+    expect(isModelShown(showAll, 'nouveau', '')).toBe(true);
+  });
+  it('mode « tout masquer » : except liste les affichés, un nouveau modèle est masqué', function() {
+    expect(isModelShown(hideAll, 's1', '')).toBe(true);
+    expect(isModelShown(hideAll, 'nouveau', '')).toBe(false);
+  });
+  it('le défaut est toujours visible, même listé en exception ou en mode tout masquer', function() {
+    expect(isModelShown(hideAll, 'def', '')).toBe(true);
+    var odd = { model: 'def', modelVisibility: { newHidden: false, except: ['def'] } };
+    expect(modelHiddenByUser(odd, 'def')).toBe(false);
+  });
+  it('le modèle actif (pinnedModel) reste montré tout en restant masqué par l\'utilisateur', function() {
+    expect(isModelShown(showAll, 'h1', 'h1')).toBe(true);
+    expect(modelHiddenByUser(showAll, 'h1')).toBe(true);
+    expect(isModelShown(showAll, 'h1', 'autre')).toBe(false);
+  });
+  it('serveur sans champ (enregistré avant) : tout visible', function() {
+    expect(isModelShown({ model: 'def' }, 'x', '')).toBe(true);
+  });
+  it('correspondance exacte : l\'alias Ollama :latest n\'est pas une exception', function() {
+    var s = { model: '', modelVisibility: { newHidden: false, except: ['llama3'] } };
+    expect(isModelShown(s, 'llama3:latest', '')).toBe(true);
+  });
+});
+
+describe('catalogue de modèles : liste effective (serverModelEntries)', function() {
+  it('listés dans l\'ordre du serveur, puis ajoutés à la main non listés', function() {
+    var out = serverModelEntries({ model: 'b', handcraftedModels: ['h', 'a'] }, ['b', 'a']);
+    expect(out).toEqual([{ id: 'b', origin: 'listed' }, { id: 'a', origin: 'listed' }, { id: 'h', origin: 'handcrafted' }]);
+  });
+  it('un ajouté à la main apparu dans la liste y est rangé, sans marque (la liste l\'emporte)', function() {
+    var out = serverModelEntries({ handcraftedModels: ['a'] }, ['a']);
+    expect(out).toEqual([{ id: 'a', origin: 'listed' }]);
+  });
+  it('un ajouté à la main sorti de la liste reprend sa marque', function() {
+    var out = serverModelEntries({ handcraftedModels: ['a'] }, ['b']);
+    expect(out).toEqual([{ id: 'b', origin: 'listed' }, { id: 'a', origin: 'handcrafted' }]);
+  });
+  it('défaut ni listé ni ajouté à la main : « absent », en queue', function() {
+    var out = serverModelEntries({ model: 'd' }, ['a']);
+    expect(out).toEqual([{ id: 'a', origin: 'listed' }, { id: 'd', origin: 'absent' }]);
+  });
+  it('défaut ajouté à la main : « handcrafted », pas « absent »', function() {
+    var out = serverModelEntries({ model: 'd', handcraftedModels: ['d'] }, ['a']);
+    expect(out).toEqual([{ id: 'a', origin: 'listed' }, { id: 'd', origin: 'handcrafted' }]);
+  });
+  it('liste inconnue (null) : seuls les ajoutés à la main, jamais d\'« absent »', function() {
+    var out = serverModelEntries({ model: 'd', handcraftedModels: ['h'] }, null);
+    expect(out).toEqual([{ id: 'h', origin: 'handcrafted' }]);
+  });
+  it('liste connue mais vide : le défaut est « absent »', function() {
+    expect(serverModelEntries({ model: 'd' }, [])).toEqual([{ id: 'd', origin: 'absent' }]);
+  });
+});
+
+describe('catalogue de modèles : ordres (modelTableOrder / modelMenuOrder)', function() {
+  var server = { model: 'd', modelVisibility: { newHidden: false, except: ['m1', 'h'] }, handcraftedModels: ['h', 'k'] };
+  var entries = serverModelEntries(server, ['m1', 'a', 'd', 'b']);
+  function ids(arr) { return arr.map(function(e) { return e.id; }); }
+
+  it('tableau : défaut, puis affichés, puis masqués, ordre effectif dans chaque tranche', function() {
+    expect(ids(modelTableOrder(server, entries))).toEqual(['d', 'a', 'b', 'k', 'm1', 'h']);
+  });
+  it('tableau : le modèle actif masqué reste dans la tranche des masqués', function() {
+    expect(ids(modelTableOrder(server, entries)).indexOf('m1')).toBe(4);
+  });
+  it('tableau : un défaut « absent » vient en tête', function() {
+    var s = { model: 'x' };
+    expect(ids(modelTableOrder(s, serverModelEntries(s, ['a', 'b'])))).toEqual(['x', 'a', 'b']);
+  });
+  it('menu : défaut en tête, masqués exclus', function() {
+    expect(ids(modelMenuOrder(server, entries, ''))).toEqual(['d', 'a', 'b', 'k']);
+  });
+  it('menu : le modèle actif masqué est montré, à sa place', function() {
+    expect(ids(modelMenuOrder(server, entries, 'm1'))).toEqual(['d', 'm1', 'a', 'b', 'k']);
+  });
+  it('menu : un défaut « absent » est exclu', function() {
+    var s = { model: 'x' };
+    expect(ids(modelMenuOrder(s, serverModelEntries(s, ['a']), ''))).toEqual(['a']);
+  });
+  it('menu : mode tout masquer, seuls le défaut et les exceptions', function() {
+    var s = { model: 'd', modelVisibility: { newHidden: true, except: ['b'] } };
+    expect(ids(modelMenuOrder(s, serverModelEntries(s, ['a', 'b', 'd']), ''))).toEqual(['d', 'b']);
+  });
+});
+
+describe('catalogue de modèles : filtre (modelFilterMatches)', function() {
+  it('requête vide ou blanche : tout correspond', function() {
+    expect(modelFilterMatches('', 'qwen', 'Ollama')).toBe(true);
+    expect(modelFilterMatches('   ', 'qwen', 'Ollama')).toBe(true);
+  });
+  it('sous-chaîne insensible à la casse, sur le modèle OU le serveur', function() {
+    expect(modelFilterMatches('QWE', 'qwen3:8b', 'Mac mini')).toBe(true);
+    expect(modelFilterMatches('mini', 'qwen3:8b', 'Mac mini')).toBe(true);
+    expect(modelFilterMatches('gpt', 'qwen3:8b', 'Mac mini')).toBe(false);
+  });
+  it('plusieurs mots : chacun doit être trouvé, dans l\'un ou l\'autre nom', function() {
+    expect(modelFilterMatches('ollama qwen', 'qwen3:8b', 'Ollama local')).toBe(true);
+    expect(modelFilterMatches('ollama mistral', 'qwen3:8b', 'Ollama local')).toBe(false);
+  });
+  it('nom de serveur absent : toléré', function() {
+    expect(modelFilterMatches('qwen', 'qwen3', undefined)).toBe(true);
+    expect(modelFilterMatches('ollama', 'qwen3', '')).toBe(false);
+  });
+});
+
+describe('catalogue de modèles : bascule de visibilité (toggleModelVisibility)', function() {
+  it('mode tout afficher : masquer puis réafficher', function() {
+    var s = { model: 'd', modelVisibility: { newHidden: false, except: [] } };
+    var p = toggleModelVisibility(s, 'a');
+    expect(p.modelVisibility).toEqual({ newHidden: false, except: ['a'] });
+    expect(isModelShown(Object.assign({}, s, p), 'a', '')).toBe(false);
+    var q = toggleModelVisibility(Object.assign({}, s, p), 'a');
+    expect(q.modelVisibility).toEqual({ newHidden: false, except: [] });
+  });
+  it('mode tout masquer : cocher affiche', function() {
+    var s = { model: 'd', modelVisibility: { newHidden: true, except: [] } };
+    var p = toggleModelVisibility(s, 'a');
+    expect(isModelShown(Object.assign({}, s, p), 'a', '')).toBe(true);
+  });
+  it('le défaut ne se bascule pas', function() {
+    expect(toggleModelVisibility({ model: 'd' }, 'd')).toBe(null);
+  });
+});
+
+describe('catalogue de modèles : ajout à la main (addHandcraftedModel)', function() {
+  it('nom vide : rien à faire', function() {
+    expect(addHandcraftedModel({ model: 'd' }, '  ', ['a'])).toBe(null);
+  });
+  it('ajoute un nom trimé, à la suite', function() {
+    var p = addHandcraftedModel({ model: 'd', handcraftedModels: ['x'] }, ' y ', ['a']);
+    expect(p.handcraftedModels).toEqual(['x', 'y']);
+    expect(p.refusal).toBe(undefined);
+  });
+  it('refuse un modèle listé, en le nommant', function() {
+    var p = addHandcraftedModel({ model: 'd' }, 'a', ['a']);
+    expect(p.refusal).toContain('a');
+    expect(p.handcraftedModels).toBe(undefined);
+  });
+  it('refuse un modèle déjà ajouté à la main', function() {
+    expect(addHandcraftedModel({ handcraftedModels: ['x'] }, 'x', null).refusal).toContain('x');
+  });
+  it('accepte le défaut absent de la liste', function() {
+    var p = addHandcraftedModel({ model: 'd' }, 'd', ['a']);
+    expect(p.handcraftedModels).toEqual(['d']);
+  });
+  it('mode tout masquer : inscrit aux exceptions, donc au menu', function() {
+    var s = { model: 'd', modelVisibility: { newHidden: true, except: ['b'] } };
+    var p = addHandcraftedModel(s, 'k', ['b', 'd']);
+    expect(p.modelVisibility).toEqual({ newHidden: true, except: ['b', 'k'] });
+    var next = Object.assign({}, s, p);
+    expect(modelMenuOrder(next, serverModelEntries(next, ['b', 'd']), '').map(function(e) { return e.id; })).toContain('k');
+  });
+  it('mode tout afficher : une ancienne exception ne le masque pas', function() {
+    var s = { model: 'd', modelVisibility: { newHidden: false, except: ['k', 'b'] } };
+    var p = addHandcraftedModel(s, 'k', ['b']);
+    expect(p.modelVisibility).toEqual({ newHidden: false, except: ['b'] });
+  });
+});
+
+describe('catalogue de modèles : retrait (removeHandcraftedModel)', function() {
+  it('retire le nom et le sort des exceptions', function() {
+    var s = { model: 'd', handcraftedModels: ['k', 'j'], modelVisibility: { newHidden: true, except: ['k', 'b'] } };
+    var p = removeHandcraftedModel(s, 'k');
+    expect(p.handcraftedModels).toEqual(['j']);
+    expect(p.modelVisibility).toEqual({ newHidden: true, except: ['b'] });
+  });
+  it('refuse le défaut, en disant quoi faire d\'abord', function() {
+    var p = removeHandcraftedModel({ model: 'k', handcraftedModels: ['k'] }, 'k');
+    expect(p.refusal).toContain('autre modèle');
+    expect(p.handcraftedModels).toBe(undefined);
+  });
+  it('nom inconnu : rien à faire', function() {
+    expect(removeHandcraftedModel({ handcraftedModels: ['k'] }, 'z')).toBe(null);
+  });
+});
+
+describe('catalogue de modèles : réglages par ligne', function() {
+  it('vision : off pose false, on retire l\'entrée, les autres modèles restent', function() {
+    var s = { vision: { autre: false } };
+    expect(setModelVisionOff(s, 'm', true).vision).toEqual({ autre: false, m: false });
+    expect(setModelVisionOff({ vision: { m: false, autre: false } }, 'm', false).vision).toEqual({ autre: false });
+  });
+  it('fenêtre : entier positif posé, vide ou invalide retire', function() {
+    var s = { contextWindows: { autre: 8192, m: 4096 } };
+    expect(setModelContextWindow(s, 'm', ' 65536 ').contextWindows).toEqual({ autre: 8192, m: 65536 });
+    expect(setModelContextWindow(s, 'm', '').contextWindows).toEqual({ autre: 8192 });
+    expect(setModelContextWindow(s, 'm', '12abc').contextWindows).toEqual({ autre: 8192 });
+    expect(setModelContextWindow(s, 'm', '0').contextWindows).toEqual({ autre: 8192 });
+  });
+  it('sans modèle : rien à faire', function() {
+    expect(setModelContextWindow({}, '', '1')).toBe(null);
+    expect(setModelVisionOff({}, ' ', true)).toBe(null);
+  });
+});
+
+describe('catalogue de modèles : choix du composer et de la palette (modelMenuChoices)', function() {
+  var a = { id: 'a', name: 'Mac mini', model: 'd', modelVisibility: { newHidden: false, except: ['h'] }, handcraftedModels: ['k'] };
+  var b = { id: 'b', name: 'Bureau', model: 'x', handcraftedModels: ['kb'] };
+  function ids(g) { return g.entries.map(function(e) { return e.id; }); }
+  it('un groupe par serveur, défaut en tête, masqués exclus', function() {
+    var r = modelMenuChoices([a, b], { a: ['h', 'z', 'd'], b: ['x', 'y'] }, 'a', 'd', '');
+    expect(ids(r[0])).toEqual(['d', 'z', 'k']);
+    expect(ids(r[1])).toEqual(['x', 'y', 'kb']);
+  });
+  it('le modèle actif masqué reste proposé, sur le serveur actif seulement', function() {
+    var r = modelMenuChoices([a, b], { a: ['h', 'd'], b: ['h', 'x'] }, 'a', 'h', '');
+    expect(ids(r[0])).toEqual(['d', 'h', 'k']);
+    var r2 = modelMenuChoices([a], { a: ['h', 'd'] }, 'b', 'h', '');
+    expect(ids(r2[0])).toEqual(['d', 'k']);
+  });
+  it('liste non lue : seuls les modèles ajoutés à la main', function() {
+    var r = modelMenuChoices([b], {}, 'a', '', '');
+    expect(ids(r[0])).toEqual(['kb']);
+  });
+  it('filtre sur le modèle OU le serveur', function() {
+    var r = modelMenuChoices([a, b], { a: ['z', 'd'], b: ['x', 'y'] }, 'a', 'd', 'bureau y');
+    expect(ids(r[0])).toEqual([]);
+    expect(ids(r[1])).toEqual(['y']);
   });
 });

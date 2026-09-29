@@ -349,9 +349,7 @@
 .seg:hover { color: var(--text); }
 .seg.active { background: var(--accent-dim); color: var(--accent); }
 
-/* model dropdown — ancré sur le champ (et non sur tout le .field, ce qui
-   laissait apparaître la légende entre le champ et la liste). */
-.select-anchor { position: relative; display: flex; flex-direction: column; }
+/* Menu déroulant (sélecteur de modèle du composer, pilules des formulaires). */
 .model-menu {
   position: absolute;
   top: calc(100% + 2px);
@@ -949,9 +947,6 @@
 .cfg-field select:focus,
 .cfg-field textarea:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
 .cfg-field .hint { font-size: 11px; color: var(--text-3); }
-/* Valeur figée à la place d'un choix (lot AF : vision déclarée par le serveur). */
-.cfg-field .cfg-fixed { font-size: 12px; color: var(--text-2); }
-.cfg-field .cfg-fixed[hidden] { display: none; }
 /* Séparateur de section dans un drawer body plat (pas de collapse — écran
    Space) : même vocabulaire visuel que .conv-section (sidebar). */
 .drawer-section-title {
@@ -1037,6 +1032,106 @@
 .api-view-row .api-usage + .drawer-btn:last-child { margin-left: 0; }
 .api-view-row .api-usage:hover { color: var(--text-1); }
 .api-view-row .api-usage svg { width: 15px; height: 15px; }
+
+/* Catalogue des modèles (partie vue de la fiche). Le nom est la seule colonne
+   élastique : les noms longs reviennent à la ligne plutôt que d'être tronqués. */
+.api-catalogue { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.api-catalogue-toggle {
+  display: flex; align-items: center; gap: 6px; align-self: flex-start;
+  background: none; border: none; padding: 2px 0; cursor: pointer;
+  font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--text-2);
+}
+.api-catalogue-toggle:hover { color: var(--text); }
+.api-catalogue-toggle svg { width: 12px; height: 12px; transform: rotate(-90deg); transition: transform 140ms var(--ease); }
+.api-catalogue.open .api-catalogue-toggle svg { transform: none; }
+.api-catalogue-count { font-weight: 400; color: var(--text-3); }
+.api-catalogue-body { display: flex; flex-direction: column; gap: 8px; }
+.api-catalogue-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.api-catalogue-mode { flex: 1; min-width: 180px; font-size: 11px; color: var(--text-3); }
+.api-catalogue-note { font-size: 11.5px; color: var(--text-3); padding: 4px 2px; }
+.api-catalogue-note.err { color: var(--err); }
+.api-catalogue-note .spin { width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; }
+.api-catalogue-filter,
+.api-catalogue-add input {
+  width: 100%; box-sizing: border-box;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 6px 9px; font-family: var(--sans); font-size: 12px; color: var(--text);
+}
+.api-catalogue-filter:focus,
+.api-catalogue-add input:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
+.api-catalogue-add { display: flex; gap: 6px; }
+.api-catalogue-add input { flex: 1; }
+
+.api-models { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.api-models th {
+  font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3);
+  text-align: left; padding: 0 4px 5px; border-bottom: 1px solid var(--border-2);
+}
+.api-models td { padding: 5px 4px; border-bottom: 1px solid var(--border); vertical-align: middle; font-size: 12px; }
+.api-models .c { text-align: center; }
+.api-models .r { text-align: right; }
+.api-models col.c-def { width: 26px; }
+.api-models col.c-caps { width: 62px; }
+.api-models col.c-ctx { width: 50px; }
+.api-models col.c-menu { width: 38px; }
+.api-models col.c-act { width: 54px; }
+/* Masqués : atténués, et séparés des affichés par un filet pointillé. */
+.api-model-row.is-hidden td.name,
+.api-model-row.is-hidden td.caps,
+.api-model-row.is-hidden td.ctx { opacity: .45; }
+.api-models-sep td { padding: 0; height: 0; border-bottom: 1px dashed var(--border-2); }
+.api-model-name { overflow-wrap: anywhere; color: var(--text); }
+.api-model-tag { display: inline-block; margin-left: 6px; font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
+.api-model-tag.absent { color: var(--pending); }
+
+.api-model-default {
+  width: 14px; height: 14px; padding: 0; border-radius: 50%;
+  border: 1.5px solid var(--border-2); background: none; cursor: pointer;
+  display: inline-grid; place-items: center; vertical-align: middle;
+}
+.api-model-default:hover { border-color: var(--text-2); }
+.api-model-default.on { border-color: var(--accent); cursor: default; }
+.api-model-default.on::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+.api-models td.caps { white-space: nowrap; }
+.api-model-cap { display: inline-grid; place-items: center; width: 17px; height: 17px; vertical-align: middle; color: var(--text-2); }
+.api-model-cap svg { width: 13px; height: 13px; }
+.api-model-cap.no { color: var(--text-3); opacity: .35; }
+.api-model-cap.unk { color: var(--text-3); font-size: 11px; font-weight: 600; }
+.api-model-cap.manual-off { color: var(--pending); }
+
+.api-models td.ctx { font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; }
+.api-models td.ctx.unk { color: var(--text-3); }
+/* Saisie : couleur de texte pleine, pour la distinguer d'une valeur lue. */
+.api-models td.ctx.user { color: var(--text); }
+
+.api-model-shown-wrap { display: inline-flex; }
+.api-model-shown { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.api-model-shown:disabled { cursor: default; opacity: .6; }
+
+.api-model-acts { display: inline-flex; justify-content: flex-end; }
+.api-model-acts .icon-btn { width: 22px; height: 22px; color: var(--text-3); }
+.api-model-acts .icon-btn:hover { color: var(--text); }
+.api-model-acts .icon-btn svg { width: 13px; height: 13px; }
+.api-model-expand svg { transition: transform 140ms var(--ease); }
+.api-model-row.expanded .api-model-expand svg { transform: rotate(180deg); }
+
+.api-model-detail td { background: var(--surface); padding: 10px 12px 12px 34px; }
+.api-model-panel { display: flex; flex-direction: column; gap: 9px; }
+.api-model-field { display: flex; flex-direction: column; gap: 4px; }
+.api-model-field-label { font-size: 11px; font-weight: 500; color: var(--text-2); }
+.api-model-fixed { font-size: 12px; color: var(--text-2); }
+.api-model-hint { font-size: 11px; color: var(--text-3); }
+.seg-group.api-model-vision { align-self: flex-start; }
+.seg-group.api-model-vision .seg { font-size: 11.5px; padding: 3px 8px; }
+.api-model-ctx-input {
+  width: 140px; box-sizing: border-box;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 5px 8px; font-family: var(--sans); font-size: 12px; color: var(--text);
+}
+.api-model-ctx-input:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
+.api-model-panel-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.api-model-refusal { font-size: 11px; color: var(--err); }
 /* Serveur actif dans la catégorie Connexion : nom en gras, modèle par défaut
    à la suite (séparateur .inline-sep, même format que le thread). */
 .active-api-server-name { font-size: 13px; font-weight: 600; color: var(--text); }

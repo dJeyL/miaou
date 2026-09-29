@@ -4834,60 +4834,8 @@ function renderMsgAttachments(attachments, conversationId) {
     `</div>`;
 }
 
-// ── Dropdown modèle (liste via l'API) ───────────────────────────────────────
-// Réutilisé par carte serveur API (buildApiCard) : opère sur les éléments
-// input/menu de LA carte plutôt que sur des ids fixes, une carte MCP-like
-// pouvant en principe être éditée en même temps qu'une autre.
-let _models = [];
-
-async function openApiModelMenu(inputEl, menuEl, urlEl, keyEl) {
-  menuEl.classList.add('show');
-  menuEl.innerHTML = `<div class="model-loading"><span class="spin"></span>Interrogation de l'API…</div>`;
-  const url = urlEl.value.trim();
-  const key = keyEl.value.trim();
-  if (!url) {
-    menuEl.innerHTML = `<div class="model-error">URL non renseignée — saisie manuelle</div>`;
-    return;
-  }
-  try {
-    const models = await fetchModels({ url, key });
-    _models = models;
-    if (!models.length) {
-      menuEl.innerHTML = `<div class="model-error">Aucun modèle exposé — saisie manuelle</div>`;
-      return;
-    }
-    renderApiModelOptions(models, inputEl, menuEl, true);
-  } catch (e) {
-    menuEl.innerHTML = `<div class="model-error">API injoignable — saisie manuelle</div>`;
-  }
-}
-
-function renderApiModelOptions(models, inputEl, menuEl, scrollToSelected) {
-  const cur = inputEl.value.trim();
-  menuEl.innerHTML = '';
-  models.forEach(m => {
-    const o = document.createElement('div');
-    o.className = 'model-opt' + (m === cur ? ' selected' : '');
-    o.innerHTML = `<span>${escHtml(m)}</span><span class="check">✓</span>`;
-    o.onmousedown = (ev) => { ev.preventDefault(); inputEl.value = m; menuEl.classList.remove('show'); };
-    menuEl.appendChild(o);
-  });
-  if (scrollToSelected) {
-    const sel = menuEl.querySelector('.selected');
-    if (sel) sel.scrollIntoView({ block: 'nearest' });
-  }
-}
-
-function onApiModelInput(inputEl, menuEl) {
-  const q = inputEl.value.trim().toLowerCase();
-  renderApiModelOptions(_models.filter(m => m.toLowerCase().includes(q)), inputEl, menuEl);
-}
-
-// Ferme tout menu modèle de carte API ouvert au clic ailleurs.
+// Ferme les menus déroulants ouverts au clic ailleurs.
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('.api-model-anchor')) {
-    document.querySelectorAll('#api-list .api-model-anchor .model-menu.show').forEach(m => m.classList.remove('show'));
-  }
   if (!e.target.closest('#composer-model')) {
     const cm = $('composer-model-menu');
     if (cm) cm.classList.remove('show');
@@ -5054,17 +5002,17 @@ function cmdkRootPlaceholder() {
 // le sélecteur du composer (tous les serveurs non désactivés déjà en cache — la
 // palette ne déclenche pas de fetch, elle liste ce qui est connu). Le nom du
 // serveur apparaît en note dès qu'il y a plus d'un serveur sélectionnable.
+// Même prédicat de visibilité et même correspondance que le menu du composer
+// (`modelMenuChoices`) : un modèle masqué n'apparaît ni dans l'un ni dans
+// l'autre, et « bureau qwen » trouve les qwen du serveur Bureau.
 function cmdkModelItems(query) {
-  const q = (query || '').toLowerCase();
   const cur = activeModel();
   const activeId = (activeApiServer() || {}).id;
   const servers = listSelectableApiServers();
   const multi = servers.length > 1;
   const items = [];
-  servers.forEach(s => {
-    const e = _modelsEntryOf(s);
-    (e.models || []).forEach(m => {
-      if (q && m.toLowerCase().indexOf(q) < 0) return;
+  modelMenuChoices(servers, composerModelLists(servers), activeId, cur, query || '').forEach(({ server: s, entries }) => {
+    entries.forEach(({ id: m }) => {
       items.push({
         label: m,
         note: multi ? (s.name || s.url) : '',
@@ -5729,6 +5677,22 @@ async function readOllamaShow(server, model) {
   return true;
 }
 
+// Serveur reconnu comme un Ollama à la dernière lecture de sa liste (même
+// endpoint) : seule condition pour offrir « Lire les propriétés » sur une ligne.
+function ollamaRecognized(server) {
+  const st = server && _ollamaNative[server.id];
+  return !!(st && st.stamp === _serverStamp(server) && st.root);
+}
+
+// Lecture explicite d'une ligne du catalogue : relit `/api/show` même si ce
+// modèle l'a déjà été depuis la dernière lecture de la liste.
+function readOllamaShowOnDemand(server, model) {
+  if (!ollamaRecognized(server)) return Promise.resolve(false);
+  const m = String(model || '').trim();
+  _ollamaNative[server.id].shown.delete(m);
+  return readOllamaShow(server, m);
+}
+
 // Changement de modèle (appelée par `syncModelUI`, par où passent tous les
 // changements) : lit `/api/show` du modèle actif s'il ne l'a pas été depuis la
 // dernière lecture de la liste. Sans effet hors d'un Ollama reconnu.
@@ -5890,13 +5854,16 @@ function syncModelUI() {
   const box = $('composer-model');
   if (box) {
     // Visible dès que le réglage est actif ET qu'il y a quelque chose à proposer :
-    // soit la liste du serveur actif est chargée, soit un autre serveur est
+    // soit le serveur actif a des modèles à offrir, soit un autre serveur est
     // sélectionnable (sa liste sera chargée à l'ouverture du menu). Sans ce
     // second cas, un serveur actif injoignable masquerait un sélecteur qui a
     // pourtant des modèles à offrir ailleurs.
-    const models = activeServerModels();
-    const others = listSelectableApiServers().filter(s => s.id !== (activeApiServer() || {}).id);
-    const show = !!(loadSettings().showModelSelector && ((models && models.length) || others.length));
+    // Ce qui est proposé pour le serveur actif compte les modèles ajoutés à la
+    // main (un serveur qui ne liste rien peut en avoir) et ignore les masqués.
+    const active = activeApiServer();
+    const offered = active ? modelMenuOrder(active, serverModelEntries(active, activeServerModels()), activeModel()) : [];
+    const others = listSelectableApiServers().filter(s => s.id !== (active || {}).id);
+    const show = !!(loadSettings().showModelSelector && (offered.length || others.length));
     box.hidden = !show;
   }
   // La fenêtre de contexte dépend du (serveur, modèle) depuis le lot AF : tout
@@ -5923,12 +5890,20 @@ function toggleComposerModelMenu() {
   // clavier ni un appel programmatique. La fermeture (menu déjà ouvert) reste
   // permise inconditionnellement — au-dessus de cette ligne, exprès.
   if (isComposerReadonly()) return;
+  // Chaque ouverture repart d'un filtre vide, la ligne du clavier sur le modèle
+  // en usage.
+  const input = composerModelMenuSkeleton(menu).input;
+  input.value = '';
+  _composerModelKb = -1;
   renderComposerModelOptions();   // ancre déjà la ligne active dans la vue
   menu.classList.add('show');
+  // Focus sur le filtre : possible dès maintenant parce que ce menu devient
+  // visible sans transition de `visibility` (composer.css).
+  input.focus({ preventScroll: true });
   // Les serveurs non actifs sont interrogés à l'ouverture, pas au démarrage :
   // re-rendu à l'arrivée des réponses, si le menu est toujours ouvert. Le
   // re-rendu préserve la position visuelle de la ligne active (cf.
-  // renderComposerModelOptions) : la liste ne saute pas sous le curseur.
+  // renderComposerModelOptions) et ne touche pas au champ de filtre.
   loadAllServerModels(false).then(changed => {
     if (changed && menu.classList.contains('show')) renderComposerModelOptions();
   });
@@ -5945,55 +5920,135 @@ function retryServerModels(serverId) {
   });
 }
 
-// Re-rendu du menu SANS déplacer ce que l'utilisateur a sous les yeux. Le menu
-// est réécrit en entier à chaque arrivée de liste d'un serveur non actif (et à
+// Ligne du menu désignée au clavier (↑ ↓ Entrée depuis le filtre) : index dans
+// l'ordre du DOM des `.model-opt`, -1 = la ligne du modèle en usage.
+let _composerModelKb = -1;
+
+// Squelette du menu, posé une fois : le champ de filtre, hors de la zone qui
+// défile, puis la liste. Les re-rendus (arrivée des listes des autres serveurs,
+// réessai) ne réécrivent QUE la liste : le champ garde sa saisie, son curseur et
+// le focus.
+function composerModelMenuSkeleton(menu) {
+  let wrap = menu.querySelector('.composer-model-filter');
+  let list = menu.querySelector('.composer-model-list');
+  if (!wrap || !list) {
+    menu.innerHTML = '';
+    wrap = document.createElement('div');
+    wrap.className = 'composer-model-filter';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Filtrer (modèle ou serveur)';
+    input.spellcheck = false;
+    input.setAttribute('aria-label', 'Filtrer les modèles');
+    input.addEventListener('input', () => { _composerModelKb = 0; renderComposerModelOptions(true); });
+    input.addEventListener('keydown', onComposerModelFilterKey);
+    wrap.appendChild(input);
+    list = document.createElement('div');
+    list.className = 'composer-model-list';
+    menu.append(wrap, list);
+  }
+  return { input: wrap.querySelector('input'), list };
+}
+
+// Clavier du filtre. Échap vide d'abord le filtre, puis ferme le menu : un
+// niveau par pression, comme la cascade globale, qui ne le voit donc pas.
+function onComposerModelFilterKey(ev) {
+  const menu = $('composer-model-menu');
+  const opts = menu ? [...menu.querySelectorAll('.composer-model-list .model-opt')] : [];
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    ev.preventDefault();
+    if (!opts.length) return;
+    let i = _composerModelKb >= 0 ? _composerModelKb : opts.findIndex(o => o.classList.contains('selected'));
+    if (i < 0) i = ev.key === 'ArrowDown' ? -1 : opts.length;
+    i = Math.max(0, Math.min(opts.length - 1, i + (ev.key === 'ArrowDown' ? 1 : -1)));
+    setComposerModelKb(opts, i);
+  } else if (ev.key === 'Enter') {
+    ev.preventDefault();
+    const o = opts[_composerModelKb >= 0 ? _composerModelKb : opts.findIndex(x => x.classList.contains('selected'))];
+    if (o && o._pick) o._pick();
+  } else if (ev.key === 'Escape') {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (ev.target.value) {
+      ev.target.value = '';
+      _composerModelKb = -1;
+      renderComposerModelOptions(true);
+    } else {
+      menu.classList.remove('show');
+      const btn = $('composer-model-btn');
+      if (btn) btn.focus({ preventScroll: true });
+    }
+  }
+}
+
+function setComposerModelKb(opts, i) {
+  _composerModelKb = i;
+  opts.forEach((o, k) => o.classList.toggle('kb', k === i));
+  if (opts[i]) opts[i].scrollIntoView({ block: 'nearest' });
+}
+
+// Re-rendu de la liste SANS déplacer ce que l'utilisateur a sous les yeux. Elle
+// est réécrite en entier à chaque arrivée de liste d'un serveur non actif (et à
 // chaque retry) : sans ancrage, `scrollTop` retombe à 0 et la ligne active
 // disparaît sous le pli. On ré-ancre sur l'élément sélectionné en préservant son
-// décalage VISUEL (distance au haut du menu), pas seulement sa visibilité : la
-// liste ne glisse pas sous le curseur quand des groupes s'insèrent AVANT lui.
-// Repli sur le `scrollTop` brut quand il n'y a pas de ligne sélectionnée (aucun
-// modèle actif dans la liste, ou premier rendu).
-function renderComposerModelOptions() {
+// décalage VISUEL (distance au haut de la liste), pas seulement sa visibilité :
+// la liste ne glisse pas sous le curseur quand des groupes s'insèrent AVANT lui.
+// Repli sur le `scrollTop` brut quand il n'y a pas de ligne sélectionnée.
+// `fromFilter` : la saisie a changé, on repart du haut.
+function renderComposerModelOptions(fromFilter) {
   const menu = $('composer-model-menu');
   if (!menu) return;
-  const prevSel = menu.querySelector('.model-opt.selected');
-  // Décalage de la ligne active par rapport au haut de la zone scrollable, tel
-  // qu'il est perçu à l'écran juste avant réécriture.
-  const prevOffset = prevSel ? (prevSel.offsetTop - menu.scrollTop) : null;
-  const prevScroll = menu.scrollTop;
+  const { list } = composerModelMenuSkeleton(menu);
+  const prevSel = list.querySelector('.model-opt.selected');
+  const prevOffset = prevSel ? (prevSel.offsetTop - list.scrollTop) : null;
+  const prevScroll = list.scrollTop;
   renderComposerModelOptionsInner();
-  const nextSel = menu.querySelector('.model-opt.selected');
+  const opts = [...list.querySelectorAll('.model-opt')];
+  if (_composerModelKb >= opts.length) _composerModelKb = opts.length - 1;
+  if (_composerModelKb >= 0) opts[_composerModelKb].classList.add('kb');
+  if (fromFilter) { list.scrollTop = 0; return; }
+  const nextSel = list.querySelector('.model-opt.selected');
   if (nextSel && prevOffset !== null) {
-    menu.scrollTop = nextSel.offsetTop - prevOffset;
+    list.scrollTop = nextSel.offsetTop - prevOffset;
   } else if (nextSel) {
     // Premier rendu (ou apparition de la sélection) : amener la ligne active
     // dans la vue, sans forcer si elle y est déjà (`block: 'nearest'`).
     nextSel.scrollIntoView({ block: 'nearest' });
   } else {
-    menu.scrollTop = prevScroll;
+    list.scrollTop = prevScroll;
   }
+}
+
+function composerModelLists(servers) {
+  const lists = {};
+  for (const s of servers) lists[s.id] = _modelsEntryOf(s).models || null;
+  return lists;
 }
 
 function renderComposerModelOptionsInner() {
   const menu = $('composer-model-menu');
+  const { input, list } = composerModelMenuSkeleton(menu);
+  const query = input.value;
   const cur = activeModel();
   const activeId = (activeApiServer() || {}).id;
   const servers = listSelectableApiServers();
-  menu.innerHTML = '';
+  list.innerHTML = '';
   // Groupes visuels seulement s'il y a plusieurs serveurs : à un seul serveur,
   // l'en-tête n'apporte rien et le menu garde son apparence historique.
   const grouped = servers.length > 1;
-  servers.forEach(s => {
+  const choices = modelMenuChoices(servers, composerModelLists(servers), activeId, cur, query);
+  let shown = 0;
+  choices.forEach(({ server: s, entries }) => {
     const e = _modelsEntryOf(s);
-    if (grouped) menu.appendChild(buildModelGroupHeader(s, e));
-    const models = e.models || [];
-    if (!models.length) {
-      if (e.error) menu.appendChild(buildModelGroupNote(s, 'Liste indisponible — réessayer'));
-      else if (e.pending) menu.appendChild(buildModelGroupNote(s, 'Interrogation…'));
-      else if (e.models) menu.appendChild(buildModelGroupNote(s, 'Aucun modèle exposé'));
-      return;
-    }
-    models.forEach(m => {
+    // Sous un filtre, un groupe sans correspondance disparaît, en-tête compris.
+    if (query.trim() && !entries.length) return;
+    if (grouped) list.appendChild(buildModelGroupHeader(s, e));
+    // En erreur ou en chargement, la note précède les modèles ajoutés à la
+    // main, qui restent proposés : un serveur qui ne liste rien peut servir.
+    if (e.error) list.appendChild(buildModelGroupNote(s, 'Liste indisponible — réessayer'));
+    else if (e.pending) list.appendChild(buildModelGroupNote(s, 'Interrogation…'));
+    else if (e.models && !entries.length) list.appendChild(buildModelGroupNote(s, 'Aucun modèle exposé'));
+    entries.forEach(({ id: m, origin }) => {
       // « Sélectionné » = le couple (serveur actif, modèle courant) : le même nom
       // de modèle exposé par deux serveurs ne doit cocher que celui en usage.
       const isSel = m === cur && s.id === activeId;
@@ -6003,11 +6058,24 @@ function renderComposerModelOptionsInner() {
       const vs = modelVisionState(s, m);
       const cam = (vs.source === 'declared' && vs.enabled)
         ? `<span class="model-opt-vision"${tipAttrs('Lit les images (déclaré par le serveur)')}>${ICON_CAMERA}</span>` : '';
-      o.innerHTML = `<span>${escHtml(m)}</span><span class="model-opt-trail">${cam}<span class="check">✓</span></span>`;
-      o.onmousedown = (ev) => { ev.preventDefault(); pickComposerModel(m, s.id); };
-      menu.appendChild(o);
+      // Marques en texte : le défaut du serveur, le modèle de la conversation
+      // montré bien que masqué, un modèle ajouté à la main.
+      const tag = m === s.model ? '<span class="model-opt-tag is-default">défaut</span>'
+        : modelHiddenByUser(s, m) ? `<span class="model-opt-tag is-hidden"${tipAttrs('Masqué sur ce serveur, montré parce que c’est le modèle de cette conversation')}>masqué</span>`
+        : origin === 'handcrafted' ? `<span class="model-opt-tag"${tipAttrs('Ajouté à la main sur la fiche du serveur')}>à la main</span>` : '';
+      o.innerHTML = `<span class="model-opt-name">${escHtml(m)}</span><span class="model-opt-trail">${tag}${cam}<span class="check">✓</span></span>`;
+      o._pick = () => pickComposerModel(m, s.id);
+      o.onmousedown = (ev) => { ev.preventDefault(); o._pick(); };
+      list.appendChild(o);
+      shown++;
     });
   });
+  if (!shown && query.trim()) {
+    const n = document.createElement('div');
+    n.className = 'model-group-note';
+    n.textContent = 'Aucun modèle ne correspond.';
+    list.appendChild(n);
+  }
 }
 
 function buildModelGroupHeader(server, entry) {
@@ -7173,6 +7241,19 @@ function closeContextInspector() {
 // serveur, « théorique » pour une valeur annoncée ou saisie.
 function formatTokenCount(n) {
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f');
+}
+
+// Forme compacte d'une fenêtre, pour une cellule étroite (tableau des modèles) :
+// « 32 k », « 1 M », « 1,5 M », en puissances de 1024 comme les valeurs que les
+// serveurs déclarent le plus souvent. La valeur exacte va en infobulle.
+function formatContextWindowCompact(n) {
+  if (!(n > 0)) return '';
+  const M = 1048576;
+  if (n >= M) {
+    const v = n / M;
+    return (Number.isInteger(v) ? String(v) : v.toFixed(1).replace('.', ',')) + ' M';
+  }
+  return Math.max(1, Math.round(n / 1024)) + ' k';
 }
 
 function contextWindowSourceLabel(info, now) {
@@ -8659,6 +8740,12 @@ function syncActiveApiServerUI() {
 function renderApiServers() {
   const wrap = $('api-list');
   if (!wrap) return;
+  // La liste est réécrite en entier, y compris par des re-rendus que
+  // l'utilisateur n'a pas demandés (lecture native, autre onglet) : le champ du
+  // catalogue qui avait le focus le retrouve, et le drawer ne remonte pas.
+  const focus = apiCatalogueFocusSnapshot();
+  const scroller = wrap.closest('.drawer-body');
+  const scrollTop = scroller ? scroller.scrollTop : 0;
   wrap.innerHTML = '';
   const servers = loadApiServers();
   if (!servers.length) {
@@ -8670,6 +8757,8 @@ function renderApiServers() {
     const activeId = (activeApiServer() || {}).id;
     for (const s of servers) wrap.appendChild(buildApiCard(s, false, s.id === activeId));
   }
+  if (scroller) scroller.scrollTop = scrollTop;
+  apiCatalogueFocusRestore(focus);
 }
 
 function addApiServerCard() {
@@ -8686,10 +8775,640 @@ function addApiServerCard() {
   wrap.insertBefore(buildApiCard(blank, true, false), wrap.firstChild);
 }
 
+// ── Catalogue de modèles d'une fiche serveur ────────────────────────────────
+// Tableau de la partie VUE : défaut, visibilité au menu du composer et de la
+// palette, modèles ajoutés à la main, capacités et fenêtre connues. Les gestes
+// sont immédiats (main.js, `onApiModel*`) et relisent l'enregistrement frais.
+//
+// État de VUE par serveur, tenu HORS du DOM : la liste des fiches est réécrite
+// en entier par `renderApiServers` (gestes de fiche, lecture native via
+// `onModelPropsChanged`, synchro multi-onglets), qui détruirait sinon un tableau
+// déplié, son filtre ou un bouton armé. Rien de cet état n'est persisté, et rien
+// ne s'écrit sans geste explicite (aucun champ n'enregistre au blur).
+const _apiCatalogueView = Object.create(null);
+// Au-delà, le tableau offre un champ de filtre.
+const API_CATALOGUE_FILTER_MIN = 10;
+// Promesses de liste auxquelles un rafraîchissement du catalogue est déjà
+// accroché : un re-rendu pendant le chargement n'en empile pas un de plus.
+const _apiCatalogueHooked = new WeakSet();
+let _apiCapGlyphSeq = 0;
+
+const API_GLYPH_CAMERA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>';
+// Appareil barré (« Sans vision » réglé à la main) : le trait part d'en bas à
+// gauche.
+const API_GLYPH_CAMERA_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/><path d="M3 21 21 3"/></svg>';
+// Clé : même glyphe que les traces d'appel d'outil, même sens (« outils »).
+const API_GLYPH_TOOLS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
+const API_GLYPH_BARS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M7 16v-5"/><path d="M12 16V6"/><path d="M17 16v-8"/></svg>';
+const API_GLYPH_CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+
+// Bulle de pensée du sélecteur de raisonnement. Son masque porte un id, qui doit
+// être propre à chaque instance : `url(#…)` résout sur la PREMIÈRE occurrence du
+// document, et celle du composer peut être masquée.
+function apiThinkingGlyph() {
+  const id = 'api-cap-think-' + (++_apiCapGlyphSeq);
+  return '<svg viewBox="0 0 16 16" fill="currentColor"><mask id="' + id + '"><rect width="16" height="16" fill="white"/><circle cx="5.2" cy="7.1" r="0.8" fill="black"/><circle cx="8" cy="7.1" r="0.8" fill="black"/><circle cx="10.8" cy="7.1" r="0.8" fill="black"/></mask><g mask="url(#' + id + ')"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>';
+}
+
+// Tout tableau arrive replié. Le déplier charge sa liste si elle ne l'est pas :
+// c'est le seul chemin qui charge celle d'un serveur mis de côté.
+function apiCatalogueView(server) {
+  const id = (server && server.id) || '';
+  let w = _apiCatalogueView[id];
+  if (!w) {
+    w = _apiCatalogueView[id] = {
+      open: false, filter: '', expanded: new Set(),
+      armed: null, armTimer: null, addDraft: '', addErr: null, refusal: null,
+      ctxDrafts: Object.create(null), reading: new Set(), readFailed: new Set(),
+    };
+  }
+  return w;
+}
+
+function apiCardEl(serverId) {
+  const list = $('api-list');
+  if (!list) return null;
+  for (const c of list.querySelectorAll('.api-card')) if (c.dataset.serverId === serverId) return c;
+  return null;
+}
+
+// Focus d'un champ du catalogue : clé portée par `data-cat-focus`, retrouvée
+// après re-rendu dans la fiche du même serveur, curseur compris.
+function apiCatalogueFocusSnapshot() {
+  const a = document.activeElement;
+  if (!a || !a.dataset || !a.dataset.catFocus) return null;
+  const card = a.closest('.api-card');
+  if (!card) return null;
+  let start = null, end = null;
+  try { start = a.selectionStart; end = a.selectionEnd; } catch (e) { /* champ numérique */ }
+  return { serverId: card.dataset.serverId, key: a.dataset.catFocus, start, end };
+}
+
+function apiCatalogueFocusRestore(snap) {
+  if (!snap) return;
+  const card = apiCardEl(snap.serverId);
+  if (!card) return;
+  let el = null;
+  for (const x of card.querySelectorAll('[data-cat-focus]')) if (x.dataset.catFocus === snap.key) { el = x; break; }
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  try { if (snap.start != null) el.setSelectionRange(snap.start, snap.end); } catch (e) { /* champ numérique */ }
+}
+
+// Re-rendu du seul catalogue d'une fiche, depuis l'enregistrement frais : un
+// geste du tableau ne réécrit pas les autres fiches (dont une en édition).
+// `opts.animate` (gestes du tableau) : les lignes qui changent de place y
+// glissent au lieu de sauter. Pas pour la frappe dans le filtre, où des lignes
+// disparaissent à chaque touche.
+function refreshApiCatalogue(serverId, opts) {
+  const card = apiCardEl(serverId);
+  const old = card && card.querySelector('.api-catalogue');
+  const server = getApiServer(serverId);
+  if (!old || !server) return;
+  const focus = apiCatalogueFocusSnapshot();
+  const before = (opts && opts.animate) ? apiCatalogueRowTops(old) : null;
+  const next = buildApiCatalogue(server);
+  old.replaceWith(next);
+  apiCatalogueFocusRestore(focus);
+  if (before) apiCatalogueSlideRows(next, before);
+}
+
+// Position verticale de chaque ligne (et de son panneau déplié), par modèle.
+function apiCatalogueRowTops(root) {
+  const tops = new Map();
+  for (const tr of root.querySelectorAll('tr.api-model-row, tr.api-model-detail')) {
+    tops.set((tr.classList.contains('api-model-detail') ? 'd:' : 'r:') + tr.dataset.model, tr.getBoundingClientRect().top);
+  }
+  return tops;
+}
+
+// Technique FLIP : chaque ligne déjà présente part de son ancienne position et
+// glisse vers la nouvelle. Une ligne nouvelle apparaît sans mouvement. Rien
+// sous le réglage « Animations » coupé (motionReduced).
+const API_CATALOGUE_SLIDE_MS = 180;
+function apiCatalogueSlideRows(root, before) {
+  if (motionReduced() || typeof Element.prototype.animate !== 'function') return;
+  for (const [key, top] of apiCatalogueRowTops(root)) {
+    if (!before.has(key)) continue;
+    const dy = before.get(key) - top;
+    if (Math.abs(dy) < 1) continue;
+    const tr = root.querySelector((key.startsWith('d:') ? 'tr.api-model-detail' : 'tr.api-model-row') +
+      '[data-model="' + CSS.escape(key.slice(2)) + '"]');
+    if (tr) tr.animate([{ transform: 'translateY(' + dy + 'px)' }, { transform: 'none' }],
+      { duration: API_CATALOGUE_SLIDE_MS, easing: 'cubic-bezier(.4, 0, .2, 1)' });
+  }
+}
+
+function apiCatalogueArm(serverId, key) {
+  const w = _apiCatalogueView[serverId];
+  if (!w) return;
+  clearTimeout(w.armTimer);
+  w.armed = key;
+  w.armTimer = setTimeout(() => { w.armed = null; refreshApiCatalogue(serverId); }, ARM_DELETE_MS);
+  refreshApiCatalogue(serverId);
+}
+
+function apiCatalogueDisarm(w) {
+  clearTimeout(w.armTimer);
+  w.armed = null;
+}
+
+// État de la liste d'un serveur, lu dans le cache de session (`_modelsById`).
+function apiCatalogueListState(server) {
+  const e = _modelsEntryOf(server);
+  if (e.models) return { state: 'ok', ids: e.models };
+  if (e.pending) return { state: 'pending', ids: null };
+  if (e.error) return { state: 'error', ids: null, error: e.error };
+  return { state: 'unloaded', ids: null };
+}
+
+// Tableau déplié : sa liste doit être chargée. Sans effet si elle l'est, si elle
+// a échoué (on réessaie à la main) ou si le chargement est déjà accroché.
+function apiCatalogueEnsureList(server) {
+  const e = _modelsEntryOf(server);
+  if (e.models || e.error) return;
+  const p = e.pending || loadServerModels(server);
+  if (_apiCatalogueHooked.has(p)) return;
+  _apiCatalogueHooked.add(p);
+  p.then(() => refreshApiCatalogue(server.id));
+}
+
+function apiCatalogueRetry(serverId) {
+  const s = getApiServer(serverId);
+  if (!s) return;
+  const p = loadServerModels(s, true);
+  _apiCatalogueHooked.add(p);
+  p.then(() => refreshApiCatalogue(serverId));
+  refreshApiCatalogue(serverId);
+}
+
+function apiCatalogueNote(text, cls) {
+  const n = document.createElement('div');
+  n.className = 'api-catalogue-note' + (cls ? ' ' + cls : '');
+  n.textContent = text;
+  return n;
+}
+
+function apiCatalogueButton(label, onClick, cls) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'drawer-btn' + (cls ? ' ' + cls : '');
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+// Bouton à confirmation dont l'armement vit dans l'état de vue (et non sur le
+// nœud, comme `armThenRun`) : il survit donc aux re-rendus.
+function apiCatalogueArmedButton(serverId, w, key, label, tip, onConfirm, cls) {
+  const armed = w.armed === key;
+  const b = apiCatalogueButton(armed ? 'Confirmer ?' : label, () => {
+    if (w.armed !== key) { apiCatalogueArm(serverId, key); return; }
+    apiCatalogueDisarm(w);
+    onConfirm();
+  }, cls);
+  if (armed) b.classList.add('armed');
+  setTip(b, armed ? 'Cliquer à nouveau pour confirmer' : tip);
+  return b;
+}
+
+function buildApiCatalogue(server) {
+  const w = apiCatalogueView(server);
+  const sid = server.id;
+  const cat = document.createElement('div');
+  cat.className = 'api-catalogue' + (w.open ? ' open' : '');
+  if (w.open) apiCatalogueEnsureList(server);
+  const ls = apiCatalogueListState(server);
+  const entries = serverModelEntries(server, ls.ids);
+  const counted = ls.state === 'ok' || ls.state === 'error';
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'api-catalogue-toggle';
+  toggle.setAttribute('aria-expanded', w.open ? 'true' : 'false');
+  toggle.innerHTML = API_GLYPH_CHEVRON;
+  toggle.appendChild(document.createTextNode('Modèles' + (counted ? ' (' + entries.length + ')' : '')));
+  if (counted) {
+    const shown = entries.filter(e => e.origin !== 'absent' && isModelShown(server, e.id, '')).length;
+    const c = document.createElement('span');
+    c.className = 'api-catalogue-count';
+    c.textContent = ' · ' + shown + ' au menu';
+    toggle.appendChild(c);
+  }
+  toggle.addEventListener('click', () => { w.open = !w.open; refreshApiCatalogue(sid); });
+  cat.appendChild(toggle);
+  if (!w.open) return cat;
+
+  const body = document.createElement('div');
+  body.className = 'api-catalogue-body';
+  cat.appendChild(body);
+  if (ls.state === 'pending' || ls.state === 'unloaded') {
+    const n = apiCatalogueNote('Interrogation du serveur…');
+    n.insertAdjacentHTML('afterbegin', '<span class="spin"></span>');
+    body.appendChild(n);
+    return cat;
+  }
+  if (ls.state === 'error') {
+    // Liste illisible : le tableau reste utile pour les modèles ajoutés à la
+    // main, et c'est aussi là qu'on tape le nom d'un modèle que ce serveur ne
+    // liste pas.
+    const row = document.createElement('div');
+    row.className = 'api-catalogue-bar';
+    row.appendChild(apiCatalogueNote('Liste des modèles indisponible : ' + ls.error, 'err'));
+    row.appendChild(apiCatalogueButton('Réessayer', () => apiCatalogueRetry(sid)));
+    body.appendChild(row);
+  }
+
+  // Mode : ce que deviendront les modèles qui APPARAÎTRONT. Les deux gestes
+  // vident aussi la liste d'exceptions, d'où la confirmation.
+  const vis = normalizeModelVisibility(server.modelVisibility);
+  const bar = document.createElement('div');
+  bar.className = 'api-catalogue-bar';
+  const mode = document.createElement('span');
+  mode.className = 'api-catalogue-mode';
+  mode.textContent = vis.newHidden
+    ? 'Mode « tout masquer » : les modèles qui apparaîtront sur ce serveur arriveront masqués.'
+    : 'Les modèles qui apparaîtront sur ce serveur arriveront au menu.';
+  bar.appendChild(mode);
+  bar.appendChild(apiCatalogueArmedButton(sid, w, '*show', 'Tout afficher',
+    'Proposer tous les modèles au menu, y compris ceux qui apparaîtront. Vide la liste des masqués.',
+    () => onApiModelsSetMode(sid, false)));
+  bar.appendChild(apiCatalogueArmedButton(sid, w, '*hide', 'Tout masquer',
+    'Retirer du menu tous les modèles sauf le défaut, y compris ceux qui apparaîtront. Vide la liste des affichés.',
+    () => onApiModelsSetMode(sid, true)));
+  body.appendChild(bar);
+
+  if (entries.length > API_CATALOGUE_FILTER_MIN) {
+    const f = document.createElement('input');
+    f.type = 'text';
+    f.className = 'api-catalogue-filter';
+    f.placeholder = 'Filtrer les modèles';
+    f.spellcheck = false;
+    f.value = w.filter;
+    f.dataset.catFocus = 'filter';
+    f.addEventListener('input', () => { w.filter = f.value; refreshApiCatalogue(sid); });
+    body.appendChild(f);
+  } else {
+    w.filter = '';
+  }
+
+  const table = document.createElement('table');
+  table.className = 'api-models';
+  table.innerHTML = '<colgroup><col class="c-def"><col><col class="c-caps"><col class="c-ctx"><col class="c-menu"><col class="c-act"></colgroup>';
+  const head = document.createElement('thead');
+  const hr = document.createElement('tr');
+  const th = (text, cls, tip) => {
+    const c = document.createElement('th');
+    if (cls) c.className = cls;
+    c.textContent = text;
+    if (tip) setTip(c, tip);
+    hr.appendChild(c);
+  };
+  th('Déf.', 'c', 'Modèle par défaut du serveur');
+  th('Modèle');
+  th('Capacités', 'c');
+  th('Fenêtre', 'r', 'Fenêtre de contexte, dernière connue');
+  th('Menu', 'c', 'Proposé au sélecteur du composer et dans la palette');
+  th('');
+  head.appendChild(hr);
+  table.appendChild(head);
+  const tbody = document.createElement('tbody');
+  // Le serveur est connu (c'est sa fiche) : le filtre ne porte que sur le nom.
+  const rows = modelTableOrder(server, entries).filter(e => modelFilterMatches(w.filter, e.id, ''));
+  let prevHidden = false;
+  rows.forEach((e, i) => {
+    const hidden = modelHiddenByUser(server, e.id);
+    if (i > 0 && hidden && !prevHidden) {
+      const sep = document.createElement('tr');
+      sep.className = 'api-models-sep';
+      sep.innerHTML = '<td colspan="6"></td>';
+      tbody.appendChild(sep);
+    }
+    prevHidden = hidden;
+    tbody.appendChild(buildApiModelRow(server, e, hidden, w));
+    if (w.expanded.has(e.id)) tbody.appendChild(buildApiModelPanel(server, e, w));
+  });
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 6;
+    td.appendChild(apiCatalogueNote(entries.length ? 'Aucun modèle ne correspond.' : 'Aucun modèle.'));
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  body.appendChild(table);
+
+  // Ajout d'un modèle que le serveur ne liste pas. Entrée ou « Ajouter ».
+  const add = document.createElement('div');
+  add.className = 'api-catalogue-add';
+  const ai = document.createElement('input');
+  ai.type = 'text';
+  ai.placeholder = 'Ajouter un modèle non listé';
+  ai.spellcheck = false;
+  ai.value = w.addDraft;
+  ai.dataset.catFocus = 'add';
+  ai.setAttribute('aria-label', 'Nom d’un modèle non listé');
+  ai.addEventListener('input', () => { w.addDraft = ai.value; });
+  const ab = apiCatalogueButton('Ajouter', () => {
+    const refusal = onApiModelAdd(sid, ai.value);
+    w.addErr = refusal || null;
+    if (!refusal) w.addDraft = '';
+    refreshApiCatalogue(sid, { animate: true });
+  });
+  ai.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); ab.click(); } });
+  add.append(ai, ab);
+  body.appendChild(add);
+  if (w.addErr) body.appendChild(apiCatalogueNote(w.addErr, 'err'));
+  return cat;
+}
+
+function apiModelCapCell(state, glyph, texts) {
+  const sp = document.createElement('span');
+  sp.className = 'api-model-cap';
+  if (state === true) { sp.innerHTML = glyph; setTip(sp, texts[0] + ' (déclaré par le serveur)'); }
+  else if (state === false) { sp.classList.add('no'); sp.innerHTML = glyph; setTip(sp, texts[1] + ' (déclaré par le serveur)'); }
+  else if (state === 'manual-off') {
+    sp.classList.add('manual-off');
+    sp.innerHTML = API_GLYPH_CAMERA_OFF;
+    setTip(sp, 'Sans vision (réglé à la main) : les images sont remplacées par un descripteur');
+  } else { sp.classList.add('unk'); sp.textContent = '?'; setTip(sp, texts[2]); }
+  return sp;
+}
+
+function buildApiModelRow(server, e, hidden, w) {
+  const sid = server.id;
+  const isDef = e.id === server.model;
+  const tr = document.createElement('tr');
+  tr.className = 'api-model-row' + (hidden ? ' is-hidden' : '') + (w.expanded.has(e.id) ? ' expanded' : '');
+  tr.dataset.model = e.id;
+
+  // Défaut : geste immédiat. Choisir un masqué le rend visible (le défaut l'est
+  // toujours) ; l'ancien défaut reprend l'état que dit la liste d'exceptions.
+  const td0 = document.createElement('td');
+  td0.className = 'c';
+  const rb = document.createElement('button');
+  rb.type = 'button';
+  rb.className = 'api-model-default' + (isDef ? ' on' : '');
+  rb.setAttribute('aria-pressed', isDef ? 'true' : 'false');
+  if (!isDef) rb.addEventListener('click', () => onApiModelSetDefault(sid, e.id));
+  setTip(rb, isDef ? 'Modèle par défaut' : 'Choisir comme modèle par défaut');
+  td0.appendChild(rb);
+  tr.appendChild(td0);
+
+  const td1 = document.createElement('td');
+  td1.className = 'name';
+  const nm = document.createElement('span');
+  nm.className = 'api-model-name';
+  nm.textContent = e.id;
+  td1.appendChild(nm);
+  if (e.origin === 'handcrafted' || e.origin === 'absent') {
+    const tag = document.createElement('span');
+    tag.className = 'api-model-tag' + (e.origin === 'absent' ? ' absent' : '');
+    tag.textContent = e.origin === 'absent' ? 'absent de la liste' : 'ajouté à la main';
+    setTip(tag, e.origin === 'absent'
+      ? 'Modèle par défaut que le serveur ne liste pas. Choisir un autre défaut, ou l’ajouter à la main s’il existe.'
+      : 'Saisi à la main : le serveur ne le liste pas');
+    td1.appendChild(tag);
+  }
+  tr.appendChild(td1);
+
+  const props = modelPropsFor(server, e.id);
+  const caps = props.caps || {};
+  const td2 = document.createElement('td');
+  td2.className = 'c caps';
+  const manualOff = (caps.vision == null) && !!(server.vision && server.vision[e.id] === false);
+  td2.appendChild(apiModelCapCell(manualOff ? 'manual-off' : caps.vision, API_GLYPH_CAMERA,
+    ['Lit les images', 'Ne lit pas les images', 'Vision inconnue']));
+  td2.appendChild(apiModelCapCell(caps.tools, API_GLYPH_TOOLS,
+    ['Appelle des outils', 'N’appelle pas d’outils', 'Outils : inconnu']));
+  td2.appendChild(apiModelCapCell(caps.thinking, apiThinkingGlyph(),
+    ['Raisonne', 'Ne raisonne pas', 'Raisonnement inconnu']));
+  tr.appendChild(td2);
+
+  // Fenêtre résolue, arrêtée AVANT le défaut de l'installation : le tableau dit
+  // ce qu'on sait de CE modèle, pas un repli commun à tous.
+  const td3 = document.createElement('td');
+  td3.className = 'r ctx';
+  const info = resolveContextWindow(props, serverModelContextWindow(server, e.id), 0, MODEL_PROPS_SESSION_START);
+  if (info.value) {
+    td3.textContent = formatContextWindowCompact(info.value);
+    const src = contextWindowSourceLabel(info, Date.now());
+    setTip(td3, { label: formatTokenCount(info.value) + ' tokens', detail: src.charAt(0).toUpperCase() + src.slice(1) });
+    if (info.source === 'user') td3.classList.add('user');
+  } else {
+    td3.textContent = '?';
+    td3.classList.add('unk');
+    setTip(td3, 'Fenêtre inconnue : ni déclarée, ni mesurée, ni saisie');
+  }
+  tr.appendChild(td3);
+
+  // Case « Menu » : c'est elle qui bascule la visibilité, pas la ligne entière.
+  // L'infobulle est sur l'enveloppe : une case désactivée ne reçoit pas le survol.
+  const td4 = document.createElement('td');
+  td4.className = 'c';
+  const wrapCb = document.createElement('span');
+  wrapCb.className = 'api-model-shown-wrap';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'api-model-shown';
+  cb.checked = isDef || !hidden;
+  cb.disabled = isDef || e.origin === 'absent';
+  cb.setAttribute('aria-label', 'Proposer ' + e.id + ' au menu');
+  cb.addEventListener('change', () => onApiModelToggleShown(sid, e.id));
+  wrapCb.appendChild(cb);
+  setTip(wrapCb, isDef ? 'Le modèle par défaut est toujours proposé'
+    : e.origin === 'absent' ? 'Absent de la liste : rien à proposer'
+    : hidden ? 'Masqué : absent du composer et de la palette'
+    : 'Proposé au composer et dans la palette');
+  td4.appendChild(wrapCb);
+  tr.appendChild(td4);
+
+  const td5 = document.createElement('td');
+  td5.className = 'r';
+  const acts = document.createElement('span');
+  acts.className = 'api-model-acts';
+  const st = document.createElement('button');
+  st.type = 'button';
+  st.className = 'icon-btn api-model-usage';
+  st.innerHTML = API_GLYPH_BARS;
+  st.setAttribute('aria-label', 'Statistiques d’usage de ' + e.id);   // d'auteur, AVANT setTip
+  setTip(st, 'Consommation de tokens de ce modèle');
+  st.addEventListener('click', () => openUsageStats({ serverId: sid, model: e.id }));
+  acts.appendChild(st);
+  const ch = document.createElement('button');
+  ch.type = 'button';
+  ch.className = 'icon-btn api-model-expand';
+  ch.innerHTML = API_GLYPH_CHEVRON;
+  ch.setAttribute('aria-expanded', w.expanded.has(e.id) ? 'true' : 'false');
+  ch.setAttribute('aria-label', 'Réglages de ' + e.id);   // d'auteur, AVANT setTip
+  setTip(ch, 'Réglages de ce modèle');
+  ch.addEventListener('click', () => {
+    if (w.expanded.has(e.id)) w.expanded.delete(e.id); else w.expanded.add(e.id);
+    refreshApiCatalogue(sid);
+  });
+  acts.appendChild(ch);
+  td5.appendChild(acts);
+  tr.appendChild(td5);
+  return tr;
+}
+
+// Panneau dépliable d'une ligne : réglages de CE modèle sur ce serveur (vision,
+// fenêtre saisie), lecture de ses propriétés, retrait s'il est ajouté à la main.
+function buildApiModelPanel(server, e, w) {
+  const sid = server.id;
+  const model = e.id;
+  const props = modelPropsFor(server, model);
+  const tr = document.createElement('tr');
+  tr.className = 'api-model-detail';
+  tr.dataset.model = model;
+  const td = document.createElement('td');
+  td.colSpan = 6;
+  const panel = document.createElement('div');
+  panel.className = 'api-model-panel';
+  const field = (label) => {
+    const f = document.createElement('div');
+    f.className = 'api-model-field';
+    const l = document.createElement('span');
+    l.className = 'api-model-field-label';
+    l.textContent = label;
+    f.appendChild(l);
+    return f;
+  };
+  const hint = (text) => {
+    const h = document.createElement('span');
+    h.className = 'api-model-hint';
+    h.textContent = text;
+    return h;
+  };
+
+  // Vision : réglage manuel seulement quand le serveur ne la déclare pas. Une
+  // déclaration fait foi dans les deux sens (resolveModelVision).
+  const fv = field('Vision (images)');
+  const declared = props.caps ? props.caps.vision : null;
+  if (declared === true || declared === false) {
+    const fixed = document.createElement('span');
+    fixed.className = 'api-model-fixed';
+    fixed.textContent = declared ? 'Lit les images' : 'Ne lit pas les images';
+    fv.appendChild(fixed);
+    fv.appendChild(hint('Déclaré par le serveur pour ce modèle\u00a0: MIAOU s’y fie, sans réglage manuel.' +
+      (declared ? '' : ' Les images sont remplacées par un descripteur textuel.')));
+  } else {
+    const off = !!(server.vision && server.vision[model] === false);
+    const segs = document.createElement('div');
+    segs.className = 'seg-group api-model-vision';
+    segs.setAttribute('role', 'group');
+    segs.setAttribute('aria-label', 'Vision de ' + model);
+    for (const [label, val] of [['Activée', false], ['Sans vision', true]]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'seg' + (off === val ? ' active' : '');
+      b.dataset.visionOff = val ? '1' : '0';
+      b.setAttribute('aria-pressed', off === val ? 'true' : 'false');
+      b.textContent = label;
+      if (off !== val) b.addEventListener('click', () => onApiModelSetVisionOff(sid, model, val));
+      segs.appendChild(b);
+    }
+    fv.appendChild(segs);
+    fv.appendChild(hint('Le serveur ne dit pas si ce modèle lit les images. S’il ne les lit pas, ' +
+      'choisir «\u00a0Sans vision\u00a0»\u00a0: MIAOU enverra un descripteur textuel à la place.'));
+  }
+  panel.appendChild(fv);
+
+  // Fenêtre saisie : brouillon tenu dans l'état de vue (il survit aux
+  // re-rendus), appliqué au bouton ou à Entrée, jamais au blur.
+  const fc = field('Fenêtre de contexte (tokens)');
+  const saved = serverModelContextWindow(server, model);
+  const draftKey = model;
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.inputMode = 'numeric';
+  inp.className = 'api-model-ctx-input';
+  inp.placeholder = 'ex. 128000';
+  inp.spellcheck = false;
+  inp.value = Object.prototype.hasOwnProperty.call(w.ctxDrafts, draftKey) ? w.ctxDrafts[draftKey] : (saved ? String(saved) : '');
+  inp.dataset.catFocus = 'ctx:' + model;
+  inp.setAttribute('aria-label', 'Fenêtre de contexte de ' + model);
+  inp.addEventListener('input', () => { w.ctxDrafts[draftKey] = inp.value; });
+  const apply = apiCatalogueButton('Appliquer', () => {
+    delete w.ctxDrafts[draftKey];
+    onApiModelSetContextWindow(sid, model, inp.value);
+    refreshApiCatalogue(sid);
+  }, 'api-model-ctx-apply');
+  inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); apply.click(); } });
+  const rowc = document.createElement('div');
+  rowc.className = 'api-model-panel-acts';
+  rowc.append(inp, apply);
+  fc.appendChild(rowc);
+  const detected = resolveContextWindow(props, null, 0, MODEL_PROPS_SESSION_START);
+  fc.appendChild(hint(contextWindowCardHint(model, detected, BUILD_DEFAULT_CONTEXT_WINDOW, Date.now())));
+  panel.appendChild(fc);
+
+  const row = document.createElement('div');
+  row.className = 'api-model-panel-acts';
+  // Lecture à la demande, ligne par ligne, sur un Ollama reconnu seulement :
+  // ailleurs, la liste (`/models`) a déjà dit tout ce que le serveur sait.
+  if (e.origin !== 'absent' && ollamaRecognized(server)) {
+    const busy = w.reading.has(model);
+    const rd = apiCatalogueButton(busy ? 'Lecture…' : 'Lire les propriétés', async () => {
+      w.reading.add(model);
+      w.readFailed.delete(model);
+      refreshApiCatalogue(sid);
+      let wrote = false;
+      try { wrote = await onApiModelReadProps(sid, model); }
+      finally {
+        w.reading.delete(model);
+        if (!wrote) w.readFailed.add(model);
+        refreshApiCatalogue(sid);
+      }
+    }, 'api-model-read');
+    rd.disabled = busy;
+    setTip(rd, 'Interroge /api/show pour ce seul modèle');
+    row.appendChild(rd);
+  }
+  if (e.origin === 'handcrafted') {
+    // Le refus (modèle par défaut) se dit au premier clic, sans armer : il n'y a
+    // rien à confirmer. Relu sur l'enregistrement frais.
+    const key = 'rm:' + model;
+    const armed = w.armed === key;
+    const del = apiCatalogueButton(armed ? 'Confirmer\u00a0?' : 'Retirer', () => {
+      const fresh = getApiServer(sid);
+      const r = fresh ? removeHandcraftedModel(fresh, model) : null;
+      if (r && r.refusal) {
+        apiCatalogueDisarm(w);
+        w.refusal = { model, text: r.refusal };
+        refreshApiCatalogue(sid);
+        return;
+      }
+      w.refusal = null;
+      if (w.armed !== key) { apiCatalogueArm(sid, key); return; }
+      apiCatalogueDisarm(w);
+      const refusal = onApiModelRemove(sid, model);
+      if (refusal) w.refusal = { model, text: refusal };
+      else w.expanded.delete(model);
+      refreshApiCatalogue(sid, { animate: true });
+    }, 'danger api-model-remove' + (armed ? ' armed' : ''));
+    setTip(del, armed ? 'Cliquer à nouveau pour confirmer' : 'Retirer ce modèle ajouté à la main');
+    row.appendChild(del);
+  }
+  if (w.readFailed.has(model)) row.appendChild(hint('Le serveur n’a pas rendu les propriétés de ce modèle.'));
+  if (w.refusal && w.refusal.model === model) {
+    const r = document.createElement('span');
+    r.className = 'api-model-refusal';
+    r.textContent = w.refusal.text;
+    row.appendChild(r);
+  }
+  if (row.children.length) panel.appendChild(row);
+  td.appendChild(panel);
+  tr.appendChild(td);
+  return tr;
+}
+
 function buildApiCard(server, isNew, isActive) {
   const card = document.createElement('div');
   card.className = 'cfg-card api-card' + (isNew ? ' is-editing' : '');
   const originalId = server.id || '';
+  card.dataset.serverId = originalId;
 
   // ── SECTION VUE ───────────────────────────────────────────────────────────
   const viewSection = document.createElement('div');
@@ -8765,6 +9484,9 @@ function buildApiCard(server, isNew, isActive) {
   viewRow.appendChild(modBtn);
 
   viewSection.appendChild(viewRow);
+  // Catalogue des modèles : dans la VUE, gestes immédiats. Une fiche neuve n'en
+  // a pas, faute d'URL enregistrée pour lister.
+  if (!isNew) viewSection.appendChild(buildApiCatalogue(server));
   card.appendChild(viewSection);
 
   // ── SECTION ÉDITION ───────────────────────────────────────────────────────
@@ -8783,84 +9505,10 @@ function buildApiCard(server, isNew, isActive) {
   const urlI  = mkInput('api-url', 'text', server.url, 'http://host-interne/v1');
   const keyHintInfo = apiKeyFieldHint();
   const keyI  = mkInput('api-key', 'password', server.key, keyHintInfo.placeholder);
-  const modelI = mkInput('api-model', 'text', server.model, 'gemma4:26b-nvfp4');
 
   editSection.appendChild(cfgField('Nom', nameI));
   editSection.appendChild(cfgField('URL de l\'API', urlI, 'Endpoint compatible OpenAI, terminant par /v1.'));
   editSection.appendChild(cfgField('Clef API', keyI, keyHintInfo.hint));
-
-  // Le champ modèle enrobe l'input dans une ancre de dropdown (.model-menu) :
-  // on construit l'ancre puis on la confie à cfgField comme « input ».
-  const modelAnchor = document.createElement('div');
-  modelAnchor.className = 'select-anchor api-model-anchor';
-  const modelMenu = document.createElement('div');
-  modelMenu.className = 'model-menu';
-  modelI.addEventListener('focus', () => openApiModelMenu(modelI, modelMenu, urlI, keyI));
-  modelI.addEventListener('input', () => onApiModelInput(modelI, modelMenu));
-  modelAnchor.append(modelI, modelMenu);
-  editSection.appendChild(cfgField('Modèle par défaut', modelAnchor,
-    'Choisissez parmi les modèles exposés par l\'API.'));
-
-  // Flag vision manuel (brief A2) : mitigation du silent-failure Ollama
-  // (un modèle sans projecteur vision accepte l'image sans erreur puis lit le
-  // placeholder [img-0] comme du texte). Réglé par (serveur, modèle courant) ;
-  // « Sans vision » remplace proactivement les parts image par un descripteur.
-  // Valeur initiale sur le modèle actuellement saisi. `.api-vision` (hidden)
-  // porte 'on'/'off', lu par onSaveApiCard. Pas de select natif (cfgPillSelect).
-  const visionPill = cfgPillSelect('api-vision', [
-    { value: 'on', label: 'Activée' },
-    { value: 'off', label: 'Sans vision' },
-  ], 'on');
-  // Quand le serveur DÉCLARE la vision du modèle (lot AF), la déclaration fait
-  // foi dans les deux sens : la pilule cède la place à un libellé figé, et ne
-  // propose plus de choix. Elle reste dans le DOM, portant le flag MANUEL tel
-  // qu'il est persisté, pour qu'enregistrer la fiche ne le modifie pas.
-  const visionFixed = document.createElement('span');
-  visionFixed.className = 'cfg-fixed';
-  const visionField = cfgField('Vision (images)', visionPill.root, ' ');
-  visionField.insertBefore(visionFixed, visionPill.root);
-  const visionHint = visionField.querySelector('.hint');
-  // Le flag suit le modèle : changer de modèle réévalue l'état affiché depuis la
-  // déclaration du serveur, puis la map `vision` (un modèle non réglé : « activée »).
-  const syncVisionField = () => {
-    const m = modelI.value.trim();
-    const manualOff = !!(server.vision && server.vision[m] === false);
-    visionPill.setValue(manualOff ? 'off' : 'on');
-    const declared = m ? modelPropsFor(server, m).caps.vision : null;
-    const isDeclared = declared === true || declared === false;
-    visionPill.root.style.display = isDeclared ? 'none' : '';
-    visionFixed.hidden = !isDeclared;
-    if (isDeclared) {
-      visionFixed.textContent = declared ? 'Lit les images' : 'Ne lit pas les images';
-      visionHint.textContent = 'Déclaré par le serveur pour ce modèle : MIAOU s\'y fie, sans réglage manuel.' +
-        (declared ? '' : ' Les images sont remplacées par un descripteur textuel.');
-    } else {
-      visionHint.textContent = 'Le serveur ne dit pas si ce modèle lit les images. S\'il ne les lit pas, ' +
-        'choisir « Sans vision » : MIAOU enverra un descripteur textuel à la place.';
-    }
-  };
-  syncVisionField();
-  modelI.addEventListener('change', syncVisionField);
-  editSection.appendChild(visionField);
-
-  // Fenêtre de contexte saisie (lot AF), par (serveur, modèle courant) comme la
-  // vision. Le hint dit ce que le serveur déclare ou ce qu'on a mesuré, et ce que
-  // devient la saisie face à cela (cf. resolveContextWindow, storage.js).
-  const ctxI = mkInput('api-context-window', 'number', serverModelContextWindow(server, server.model) || '', 'ex. 128000');
-  ctxI.min = '0'; ctxI.step = '1000';
-  const ctxField = cfgField('Fenêtre de contexte (tokens)', ctxI, ' ');
-  const ctxHint = ctxField.querySelector('.hint');
-  const syncCtxHint = () => {
-    const m = modelI.value.trim();
-    const detected = m ? resolveContextWindow(modelPropsFor(server, m), null, 0, MODEL_PROPS_SESSION_START) : null;
-    ctxHint.textContent = contextWindowCardHint(m, detected, BUILD_DEFAULT_CONTEXT_WINDOW, Date.now());
-  };
-  syncCtxHint();
-  modelI.addEventListener('change', () => {
-    ctxI.value = serverModelContextWindow(server, modelI.value.trim()) || '';
-    syncCtxHint();
-  });
-  editSection.appendChild(ctxField);
 
   // Flag `disabled` : un serveur mis de côté n'est plus interrogé pour peupler le
   // sélecteur serveur/modèle du composer, ni retenu comme repli d'activeApiServer().

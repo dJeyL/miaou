@@ -535,7 +535,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `docs/agents.md` et `docs/storage.md` pour 29).
 - **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
   `miaou-memories`, `miaou-mcp-servers` (+ sa sentinelle de seed de build
-  `miaou-mcp-seeded`), `miaou-api-servers`, `miaou-model-props` (cache
+  `miaou-mcp-seeded`), `miaou-api-servers` (dont `modelVisibility` et
+  `handcraftedModels`, écrits par gestes immédiats et repris de l'enregistrement
+  frais par le formulaire, et l'élagage des props qui épargne les modèles
+  ajoutés à la main), `miaou-model-props` (cache
   des propriétés déclarées, hors export),
   `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`,
   `miaou-unread` (non-lus des badges, hors export)) et
@@ -602,7 +605,17 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   modèle actif (`ensureActiveModelShown` en fin de `syncModelUI`), `/api/ps`
   relu après un appel par `noteModelCalled`, accrochée aux deux seuls points
   réseau `silentCompletion`/`streamCompletion`, appariement sur la forme
-  `:latest`, et le glyphe de relecture de la fiche serveur.
+  `:latest`, et le glyphe de relecture de la fiche serveur ; porte enfin le
+  **catalogue de modèles** (tableau repliable de la partie vue de la fiche,
+  `buildApiCatalogue`) — gestes immédiats par `applyApiServerModelsPatch`
+  (relecture fraîche, écriture sans await) sur les purs `toggleModelVisibility`,
+  `addHandcraftedModel`, `removeHandcraftedModel`, `setModelVisionOff`,
+  `setModelContextWindow` ; fenêtre du tableau arrêtée avant le défaut de build ;
+  panneau de ligne (vision, fenêtre appliquée au bouton ou à Entrée et JAMAIS au
+  blur, `/api/show` d'une ligne par `readOllamaShowOnDemand`) ; état de vue hors
+  du DOM (`_apiCatalogueView`, focus et curseur restaurés après re-rendu) ; et le
+  pur `modelMenuChoices`, point de passage commun du menu du composer (filtre
+  hors de la liste qui défile, ↑ ↓ Entrée, Échap en deux temps) et de la palette.
 - **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
   (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,
   `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de
@@ -898,8 +911,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `usage_stats` en agrégat (jour local, serveur, modèle, nature), incrément
   `get`+`put` dans une transaction, `cachedKnownCalls` qui distingue un cache
   inconnu d'un cache nul, aucun broadcast par choix ; consultation par un
-  drawer relu à chaque ouverture (trois entrées, dont le glyphe « barres » d'une
-  fiche serveur), échelles GLISSANTES calculées sur des dates civiles
+  drawer relu à chaque ouverture (entrées dont le glyphe « barres » d'une fiche
+  serveur et de chaque ligne de son tableau des modèles), échelles GLISSANTES calculées sur des dates civiles
   (`usageScaleWindow`, repli du quantième par `usageAddMonths`), échelles
   proposées selon la donnée la plus ancienne (`availableUsageScales`), totaux
   par couple (serveur, modèle), serveur affiché sur les seuls homonymes et

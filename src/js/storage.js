@@ -401,6 +401,222 @@ function normalizeApiServer(s) {
     vision,
     contextWindows,
     promptOrder: normalizePromptOrder(o.promptOrder),
+    // Visibilité des modèles au composer et à la palette, à double mode :
+    // `newHidden: false` (défaut) → `except` liste les MASQUÉS, tout nouveau
+    // modèle arrive affiché ; `newHidden: true` → `except` liste les AFFICHÉS,
+    // tout nouveau modèle arrive masqué. Lue par le seul `isModelShown`.
+    modelVisibility: normalizeModelVisibility(o.modelVisibility),
+    // Modèles saisis à la main, absents (ou pas encore présents) de la liste du
+    // serveur. Entrée conservée même si la liste finit par les exposer : elle
+    // reprend effet s'ils en sortent (`serverModelEntries`).
+    handcraftedModels: normalizeModelNameList(o.handcraftedModels),
+  };
+}
+
+// Pure : noms de modèles trimés, non vides, sans doublon, ordre conservé. Toute
+// valeur qui n'est pas un tableau donne une liste vide.
+function normalizeModelNameList(v) {
+  if (!Array.isArray(v)) return [];
+  const out = [];
+  for (const x of v) {
+    if (typeof x !== 'string') continue;
+    const n = x.trim();
+    if (n && out.indexOf(n) < 0) out.push(n);
+  }
+  return out;
+}
+
+function normalizeModelVisibility(v) {
+  const o = (v && typeof v === 'object') ? v : {};
+  return { newHidden: o.newHidden === true, except: normalizeModelNameList(o.except) };
+}
+
+// Pure : le modèle est-il masqué par l'utilisateur sur ce serveur ? Le modèle
+// par défaut ne l'est jamais, quoi que disent les exceptions (un modèle masqué
+// puis devenu le défaut garde son entrée, sans effet). Correspondance EXACTE
+// des noms, jamais l'alias Ollama `:latest` : deux noms, deux lignes.
+function modelHiddenByUser(server, model) {
+  const m = String(model || '');
+  if (!server || !m || m === server.model) return false;
+  const vis = normalizeModelVisibility(server.modelVisibility);
+  const listed = vis.except.indexOf(m) >= 0;
+  return vis.newHidden ? !listed : listed;
+}
+
+// Prédicat UNIQUE de visibilité au composer et à la palette. `pinnedModel` est
+// le modèle actif de la conversation ouverte, que l'appelant passe pour le seul
+// serveur actif ('' pour les autres) : masqué ou non, il reste montré.
+function isModelShown(server, model, pinnedModel) {
+  const m = String(model || '');
+  if (pinnedModel && m === pinnedModel) return true;
+  return !modelHiddenByUser(server, m);
+}
+
+// Pure : liste effective d'un serveur, `[{id, origin}]`.
+//   'listed'      — exposé par le serveur (ordre du serveur) ; un modèle aussi
+//                   ajouté à la main y est rangé : la liste l'emporte ;
+//   'handcrafted' — ajouté à la main et absent de la liste (ordre d'ajout) ;
+//   'absent'      — le défaut, ni listé ni ajouté à la main, rendu seulement
+//                   quand la liste est connue.
+// `listedIds` vaut null tant que la liste n'est pas chargée (ou en erreur) :
+// seuls les modèles ajoutés à la main sortent alors, jamais d'« absent ».
+function serverModelEntries(server, listedIds) {
+  const s = server || {};
+  const known = Array.isArray(listedIds);
+  const listed = known ? listedIds : [];
+  const out = [];
+  const seen = new Set();
+  for (const id of listed) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, origin: 'listed' });
+  }
+  for (const id of normalizeModelNameList(s.handcraftedModels)) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, origin: 'handcrafted' });
+  }
+  const def = String(s.model || '').trim();
+  if (known && def && !seen.has(def)) out.push({ id: def, origin: 'absent' });
+  return out;
+}
+
+// Pure : ordre du tableau de la fiche — le défaut, puis les affichés, puis les
+// masqués ; l'ordre effectif dans chaque tranche. Le tableau montre l'état
+// réel : pas d'exception pour le modèle actif.
+function modelTableOrder(server, entries) {
+  const def = String((server && server.model) || '');
+  const head = [], shown = [], hidden = [];
+  for (const e of (entries || [])) {
+    if (def && e.id === def) head.push(e);
+    else if (modelHiddenByUser(server, e.id)) hidden.push(e);
+    else shown.push(e);
+  }
+  return head.concat(shown, hidden);
+}
+
+// Pure : ordre du menu du composer — le défaut en tête, puis l'ordre effectif ;
+// masqués exclus (sauf `pinnedModel`, cf. `isModelShown`), et le défaut absent
+// de la liste aussi : le menu ne propose que ce que le serveur connaît ou ce
+// qu'on a ajouté à la main.
+function modelMenuOrder(server, entries, pinnedModel) {
+  const def = String((server && server.model) || '');
+  const head = [], rest = [];
+  for (const e of (entries || [])) {
+    if (e.origin === 'absent') continue;
+    if (!isModelShown(server, e.id, pinnedModel)) continue;
+    if (def && e.id === def) head.push(e); else rest.push(e);
+  }
+  return head.concat(rest);
+}
+
+// Pure : correspondance du filtre de modèles, partagée par le composer et la
+// palette. Chaque mot de la requête (insensible à la casse) doit se trouver dans
+// le nom du modèle OU dans celui du serveur — « ollama qwen » trouve les qwen du
+// serveur Ollama. Requête vide : tout correspond.
+function modelFilterMatches(query, modelName, serverName) {
+  const words = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const m = String(modelName || '').toLowerCase();
+  const s = String(serverName || '').toLowerCase();
+  return words.every(w => m.indexOf(w) >= 0 || s.indexOf(w) >= 0);
+}
+
+// Pure : ce que proposent le menu du composer ET la palette, par serveur, dans
+// l'ordre de `modelMenuOrder`. Point de passage commun des deux listes : même
+// prédicat de visibilité, même correspondance du filtre. `listsById` : liste de
+// chaque serveur (null tant qu'elle n'est pas lue : ses modèles ajoutés à la
+// main sont alors seuls proposés) ; le modèle actif de la conversation
+// (`activeModelName`) reste proposé sur le seul serveur actif, même masqué.
+// Rend `[{server, entries}]`, un groupe par serveur, même vide.
+function modelMenuChoices(servers, listsById, activeServerId, activeModelName, query) {
+  const lists = listsById || {};
+  return (servers || []).map(s => {
+    const listed = Object.prototype.hasOwnProperty.call(lists, s.id) ? lists[s.id] : null;
+    const pin = s.id === activeServerId ? String(activeModelName || '') : '';
+    const entries = modelMenuOrder(s, serverModelEntries(s, listed), pin)
+      .filter(e => modelFilterMatches(query, e.id, s.name));
+    return { server: s, entries };
+  });
+}
+
+// ── Gestes du catalogue de modèles (fiche serveur) ─────────────────────────
+// Purs : chacun rend les champs à écrire (`{handcraftedModels, modelVisibility}`
+// ou `{modelVisibility}`), ou `{refusal}` quand le geste est refusé, ou null
+// quand il n'y a rien à faire. L'appelant les applique à l'enregistrement FRAIS
+// (`getApiServer`) sans await entre la lecture et l'écriture : le formulaire de
+// la fiche est un second écrivain du même enregistrement.
+
+// Bascule l'appartenance d'un modèle à la liste d'exceptions du mode courant :
+// masquer un affiché, afficher un masqué. Sans effet sur le défaut, toujours
+// visible.
+function toggleModelVisibility(server, model) {
+  const m = String(model || '').trim();
+  const vis = normalizeModelVisibility(server && server.modelVisibility);
+  if (!m || m === String((server && server.model) || '')) return null;
+  const i = vis.except.indexOf(m);
+  const except = i >= 0 ? vis.except.filter(x => x !== m) : vis.except.concat([m]);
+  return { modelVisibility: { newHidden: vis.newHidden, except } };
+}
+
+// Ajout d'un modèle non listé. Refusé si le nom est déjà une ligne du tableau
+// (listé ou déjà ajouté) ; un défaut « absent de la liste » peut en revanche
+// être ajouté, c'est même la façon de le garder. En mode « tout masquer », le
+// modèle est inscrit dans les exceptions : on ne l'ajoute pas pour le voir
+// disparaître du menu. `listedIds` : liste du serveur, null si inconnue.
+function addHandcraftedModel(server, name, listedIds) {
+  const n = String(name || '').trim();
+  if (!n) return null;
+  const entries = serverModelEntries(server, listedIds);
+  if (entries.some(e => e.id === n && e.origin !== 'absent')) {
+    return { refusal: '« ' + n + ' » est déjà dans le tableau.' };
+  }
+  const handcraftedModels = normalizeModelNameList(server && server.handcraftedModels).concat([n]);
+  const vis = normalizeModelVisibility(server && server.modelVisibility);
+  let except = vis.except;
+  if (vis.newHidden && except.indexOf(n) < 0) except = except.concat([n]);
+  // En mode « tout afficher », une exception laissée par un ancien retrait ne
+  // doit pas faire arriver masqué un modèle qu'on vient d'ajouter.
+  if (!vis.newHidden) except = except.filter(x => x !== n);
+  return { handcraftedModels, modelVisibility: { newHidden: vis.newHidden, except } };
+}
+
+// Flag vision manuel d'un modèle : `off` pose `false` (« Sans vision »),
+// sinon retire l'entrée (retour à « inconnu = envoyer »), jamais de `true`.
+function setModelVisionOff(server, model, off) {
+  const m = String(model || '').trim();
+  if (!m) return null;
+  const vision = Object.assign({}, (server && server.vision) || {});
+  if (off) vision[m] = false; else delete vision[m];
+  return { vision };
+}
+
+// Fenêtre saisie pour un modèle, depuis le texte du champ : un entier
+// strictement positif la pose, tout le reste (vide compris) la retire.
+function setModelContextWindow(server, model, raw) {
+  const m = String(model || '').trim();
+  if (!m) return null;
+  const contextWindows = Object.assign({}, (server && server.contextWindows) || {});
+  const s = String(raw == null ? '' : raw).trim();
+  const n = /^[0-9]+$/.test(s) ? parseInt(s, 10) : NaN;
+  if (Number.isInteger(n) && n > 0) contextWindows[m] = n; else delete contextWindows[m];
+  return { contextWindows };
+}
+
+// Retrait d'un modèle ajouté à la main : il quitte aussi la liste d'exceptions,
+// pour ne laisser aucune trace qui reprendrait effet à un ajout ultérieur.
+// Refusé sur le modèle par défaut, avec la marche à suivre.
+function removeHandcraftedModel(server, name) {
+  const n = String(name || '').trim();
+  const list = normalizeModelNameList(server && server.handcraftedModels);
+  if (!n || list.indexOf(n) < 0) return null;
+  if (n === String((server && server.model) || '')) {
+    return { refusal: 'C’est le modèle par défaut : cocher d’abord un autre modèle dans la colonne « Déf. », puis le retirer.' };
+  }
+  const vis = normalizeModelVisibility(server && server.modelVisibility);
+  return {
+    handcraftedModels: list.filter(x => x !== n),
+    modelVisibility: { newHidden: vis.newHidden, except: vis.except.filter(x => x !== n) },
   };
 }
 
@@ -655,9 +871,10 @@ function recordModelProps(server, recordsById) {
 // superposé au persisté (`mergeModelProps` : ce que la lecture sait remplace,
 // une inconnue n'efface rien — le `/v1/models` d'Ollama, entièrement inconnu,
 // laisse donc intact ce que `/api/show` avait appris). Les modèles absents de
-// la liste sont oubliés : la liste fait foi de ce qui existe. `knownServerIds`
-// (Set, optionnel) élague les serveurs supprimés depuis.
-function mergeListedModelProps(map, serverId, url, ids, propsById, knownServerIds) {
+// la liste sont oubliés : la liste fait foi de ce qui existe — sauf ceux de
+// `sparedIds` (modèles ajoutés à la main), qui gardent leur record tel quel.
+// `knownServerIds` (Set, optionnel) élague les serveurs supprimés depuis.
+function mergeListedModelProps(map, serverId, url, ids, propsById, knownServerIds, sparedIds) {
   const out = {};
   for (const id of Object.keys(map || {})) {
     if (id === serverId) continue;
@@ -670,6 +887,9 @@ function mergeListedModelProps(map, serverId, url, ids, propsById, knownServerId
   const props = propsById || {};
   for (const modelId of (ids || [])) {
     models[modelId] = mergeModelProps(prev[modelId] || null, props[modelId] || null);
+  }
+  for (const modelId of (sparedIds || [])) {
+    if (!Object.prototype.hasOwnProperty.call(models, modelId) && prev[modelId]) models[modelId] = prev[modelId];
   }
   out[serverId] = { url: u, models };
   return out;
@@ -685,11 +905,17 @@ function mergeOneModelProps(map, serverId, url, modelId, record) {
   return Object.assign({}, map || {}, { [serverId]: { url: u, models } });
 }
 
-// Écrit une lecture réussie de la liste d'un serveur.
+// Écrit une lecture réussie de la liste d'un serveur. Les modèles ajoutés à la
+// main se relisent sur l'enregistrement FRAIS, pas sur `server` : l'appelant
+// l'a capturé au lancement du fetch, et un ajout fait pendant la lecture serait
+// sinon élagué à la réponse.
 function recordListedModelProps(server, ids, propsById) {
   if (!server || !server.id) return;
-  const known = new Set(loadApiServers().map(s => s.id));
-  saveModelProps(mergeListedModelProps(loadModelProps(), server.id, server.url, ids, propsById, known));
+  const servers = loadApiServers();
+  const known = new Set(servers.map(s => s.id));
+  const fresh = servers.find(s => s.id === server.id);
+  const spared = normalizeModelNameList(fresh && fresh.handcraftedModels);
+  saveModelProps(mergeListedModelProps(loadModelProps(), server.id, server.url, ids, propsById, known, spared));
 }
 
 // Propriétés connues d'un modèle sur un serveur. Toujours un record : un modèle

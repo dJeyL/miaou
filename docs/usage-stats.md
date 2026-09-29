@@ -135,10 +135,13 @@ l'application, jamais un outil du modèle.
 Drawer `#usage-drawer` (`drawer-wide`), rendu par `renderUsageStats`
 (usage-stats.js), styles dans `src/css/usage-stats.css`.
 
-**Trois entrées** : la palette (touche `u`), le bouton « Statistiques d'usage »
-de Réglages › Connexion, et le glyphe « barres » de chaque fiche du drawer des
+**Entrées** : la palette (touche `u`), le bouton « Statistiques d'usage » de
+Réglages › Connexion, le glyphe « barres » de chaque fiche du drawer des
 serveurs API (`.api-usage`, absent d'une fiche neuve comme la relecture), qui
-ouvre la vue **filtrée sur ce serveur**. Le glyphe est réservé à cet usage. Le
+ouvre la vue **filtrée sur ce serveur**, et le même glyphe sur chaque ligne du
+tableau des modèles de la fiche (`.api-model-usage`), filtrée sur le serveur ET
+le modèle (`openUsageStats({serverId, model})` ; un modèle sans statistiques
+retombe sur « tous les modèles »). Le glyphe est réservé à cet usage. Le
 drawer s'ouvre par-dessus les réglages et les serveurs sans rien fermer ; il
 est suivi par `trackDrawer` (ui.js), donc Échap le referme seul. Il est déclaré
 APRÈS le drawer des serveurs dans `index.html` : à z-index égal, c'est l'ordre
@@ -339,7 +342,7 @@ ouvert se refermerait.
   en ajouter changerait ce que mesurent les autres verify (inspecteur de
   contexte).
 - Playwright (`.claude/skills/run-miaou/verify-usage-stats-view.mjs`) : la
-  vue sur un store seedé — état vide, les trois entrées, échelles proposées et
+  vue sur un store seedé — état vide, les entrées palette, réglages et fiche, échelles proposées et
   défaut, tableau (« n/d », astérisque et son infobulle), serveur supprimé dans
   le filtre, ouverture filtrée depuis une fiche, empilement et Échap, et les
   modèles homonymes (une ligne par serveur, suffixe sur les seuls homonymes,

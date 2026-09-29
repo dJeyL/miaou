@@ -252,6 +252,8 @@ Détail : [docs/mcp.md](docs/mcp.md).
   fontes — cf. [docs/palettes.md](docs/palettes.md) et [docs/fonts.md](docs/fonts.md).
 - Sélecteur de modèle par conversation (optionnel, masqué par défaut) : change le
   modèle de la conversation courante sans toucher au défaut.
+- **Catalogue de modèles** par serveur : défaut, capacités, fenêtre, modèles
+  masqués du sélecteur ou ajoutés à la main — cf. [docs/model-props.md](docs/model-props.md).
 - État configuré / non configuré explicite : le composer se verrouille tant que
   l'API n'est pas renseignée (voir `require_api_key` pour les endpoints sans
   authentification).

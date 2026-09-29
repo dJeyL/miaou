@@ -909,3 +909,18 @@ describe('formatModelCapsLine (inspecteur, lot AF)', function() {
     expect(formatModelCapsLine(unk, { enabled: false, source: 'manual' })).toContain('Marqué «\u00a0Sans vision\u00a0»');
   });
 });
+
+describe('fenêtre de contexte : forme compacte (formatContextWindowCompact)', function() {
+  it('kilo en puissances de 1024', function() {
+    expect(formatContextWindowCompact(32768)).toBe('32 k');
+    expect(formatContextWindowCompact(131072)).toBe('128 k');
+  });
+  it('méga entier ou à une décimale, virgule française', function() {
+    expect(formatContextWindowCompact(1048576)).toBe('1 M');
+    expect(formatContextWindowCompact(1572864)).toBe('1,5 M');
+  });
+  it('rien de connu : chaîne vide', function() {
+    expect(formatContextWindowCompact(0)).toBe('');
+    expect(formatContextWindowCompact(null)).toBe('');
+  });
+});

@@ -86,7 +86,11 @@ fermer. `cmdkModeItems(query)` route selon `_cmdkMode` et renvoie des items
 `{ label, note?, hint?, current?, run() }` :
 
 - **model** : `cmdkModelItems(query)` — mêmes couples (serveur, modèle) que le
-  sélecteur composer, sur tous les serveurs non désactivés déjà en cache
+  sélecteur composer, par le même pur `modelMenuChoices` : même prédicat de
+  visibilité (un modèle masqué sur la fiche du serveur n'y figure pas, sauf le
+  modèle de la conversation), modèles ajoutés à la main compris, et même
+  correspondance (`modelFilterMatches` : chaque mot dans le nom du modèle OU du
+  serveur). Sur tous les serveurs non désactivés déjà en cache
   (`_modelsById`) ; la palette **ne déclenche aucun fetch**, elle liste ce qui
   est connu (peut être vide → l'entrée racine est `enabled`-gated). Le nom du
   serveur apparaît en `note` dès qu'il y a plus d'un serveur sélectionnable.

@@ -10,10 +10,16 @@
 //   3. la pilule rapporte l'occupation au maximum déclaré (262144), sans saisie
 //   4. l'inspecteur nomme la valeur ET la source « maximum déclaré »
 //   5. le champ global a disparu des réglages
-//   6. fiche serveur : hint « Déclarée par le serveur », champ prérempli de la saisie
-//   7. fiche serveur : changer de modèle → hint « ne déclare pas », champ vidé
-//      (prémisse : il portait la saisie de mA, sinon « vidé » ne prouve rien)
-//   8. saisie enregistrée → contextWindows du serveur, source « saisie » à l'inspecteur
+//   6. panneau de la ligne mA (tableau des modèles de la fiche) : hint
+//      « Déclarée par le serveur », champ prérempli de la saisie
+//   7. panneau de la ligne mB : hint « ne déclare pas », champ vide
+//      (prémisse : celui de mA porte une saisie, sinon « vide » ne prouve rien)
+//   7b. un brouillon quitté sans valider (blur, puis re-rendu complet de la
+//      liste) n'écrit rien — la fenêtre ne s'applique qu'au bouton ou à Entrée
+//   8. saisie validée par Entrée → contextWindows du serveur, source « saisie »
+//      à l'inspecteur une fois mB choisi comme défaut
+// Depuis le catalogue de modèles, la fenêtre se règle par ligne du tableau de la
+// fiche, et non plus dans le formulaire pour le modèle saisi dans `.api-model`.
 //   9. une saisie passe devant un maximum déclaré
 //  10. une mesure persistée passe devant une saisie
 //  11. aucune erreur console sur l'ensemble
@@ -127,23 +133,38 @@ await page.evaluate(() => {
   openApiServers();
 });
 const card = page.locator('#api-list .api-card').first();
-await card.locator('.cfg-view button', { hasText: 'Modifier' }).click();
-const hintOf = () => textOr(card.locator('.api-context-window').locator('xpath=..').locator('.hint'));
-const h6 = await hintOf();
-const v6 = await valueOr(card.locator('.api-context-window'));
+await card.locator('.api-catalogue-toggle').click();
+await card.locator('tr.api-model-row[data-model="mA"]').waitFor();
+const panelOf = (m) => card.locator('tr.api-model-detail[data-model="' + m + '"]');
+await card.locator('tr.api-model-row[data-model="mA"] .api-model-expand').click();
+const h6 = await textOr(panelOf('mA').locator('.api-model-field', { hasText: 'Fenêtre' }).locator('.api-model-hint'));
+const v6 = await valueOr(panelOf('mA').locator('.api-model-ctx-input'));
 check('6. mA : hint « Déclarée par le serveur », champ prérempli de sa saisie',
-  h6.includes('Déclarée par le serveur : 262' + NB + '144') && v6 === '70000', h6 + ' / valeur=' + v6);
+  // Insécable devant « : » depuis la reprise typographique des textes affichés :
+  // l'attendu à espace simple était rouge depuis, sur le code d'avant aussi.
+  h6.includes('Déclarée par le serveur\u00a0: 262' + NB + '144') && v6 === '70000', h6 + ' / valeur=' + v6);
 
-await card.locator('.api-model').fill('mB');
-await card.locator('.api-model').dispatchEvent('change');
-const h7 = await hintOf();
-const v7 = await valueOr(card.locator('.api-context-window'));
-check('7. modèle changé → hint « ne déclare pas », champ vide',
-  h7.includes('ne déclare pas') && v7 === '', h7 + ' / valeur=' + v7);
+await card.locator('tr.api-model-row[data-model="mB"] .api-model-expand').click();
+const h7 = await textOr(panelOf('mB').locator('.api-model-field', { hasText: 'Fenêtre' }).locator('.api-model-hint'));
+const v7 = await valueOr(panelOf('mB').locator('.api-model-ctx-input'));
+check('7. mB : hint « ne déclare pas », champ vide (celui de mA porte 70000)',
+  h7.includes('ne déclare pas') && v7 === '' && v6 === '70000', h7 + ' / valeur=' + v7);
 
-await card.locator('.api-context-window').fill('50000', { timeout: 2000 }).catch(() => {});
-await card.locator('.api-save').click();
-await page.waitForTimeout(300);
+// 7b : brouillon abandonné. Le blur puis un re-rendu complet (celui d'une
+// lecture native ou d'un autre onglet) ne doivent rien écrire.
+await panelOf('mB').locator('.api-model-ctx-input').fill('1234');
+await page.evaluate(() => { document.activeElement.blur(); renderApiServers(); });
+const draft7b = await page.evaluate(() => ({
+  saved: getApiServer('srvA').contextWindows,
+  shown: (document.querySelector('#api-list tr.api-model-detail[data-model="mB"] .api-model-ctx-input') || {}).value,
+}));
+check('7b. brouillon quitté sans valider : rien d\'écrit, brouillon gardé à l\'écran',
+  JSON.stringify(draft7b.saved) === '{"mA":70000}' && draft7b.shown === '1234', JSON.stringify(draft7b));
+
+await panelOf('mB').locator('.api-model-ctx-input').fill('50000');
+await panelOf('mB').locator('.api-model-ctx-input').press('Enter');
+await card.locator('tr.api-model-row[data-model="mB"] .api-model-default').click();
+await page.waitForTimeout(200);
 const srv8 = await page.evaluate(() => getApiServer('srvA'));
 await page.evaluate(() => { closeApiServers(); openContextInspector(); });
 const line8 = await winLine();

@@ -2419,22 +2419,13 @@ function onSaveApiCard(cardEl, originalId) {
   const url = get('.api-url').trim();
   if (!url) { showCardError(cardEl, 'URL requise.'); return; }
   const wasEmpty = !loadApiServers().length;
-  const model = get('.api-model').trim();
-  // Flag vision manuel : on préserve la map `vision` du serveur existant
-  // (autres modèles déjà réglés) et on met à jour la seule entrée du modèle
-  // courant. 'off' → `false` explicite (dégradation proactive) ; 'on' → on
-  // RETIRE l'entrée (retour au défaut « inconnu = envoyer »), pas de `true`
-  // persisté (normalizeApiServer ne garde que les `false`).
   const prior = originalId ? getApiServer(originalId) : null;
-  const vision = Object.assign({}, (prior && prior.vision) || {});
-  if (get('.api-vision') === 'off') vision[model] = false;
-  else delete vision[model];
-  // Fenêtre saisie (lot AF) : même motif — les autres modèles gardent la leur,
-  // un champ vide ou invalide retire l'entrée du modèle courant.
-  const contextWindows = Object.assign({}, (prior && prior.contextWindows) || {});
-  const ctxN = parseInt(get('.api-context-window'), 10);
-  if (model && Number.isInteger(ctxN) && ctxN > 0) contextWindows[model] = ctxN;
-  else delete contextWindows[model];
+  // Le défaut et les réglages par modèle (flag vision manuel, fenêtre saisie)
+  // se règlent dans le tableau de la fiche, par gestes immédiats : repris de
+  // l'enregistrement frais, comme les autres champs du catalogue.
+  const model = prior ? prior.model : '';
+  const vision = prior ? prior.vision : undefined;
+  const contextWindows = prior ? prior.contextWindows : undefined;
   const server = {
     id: originalId || undefined,
     name, url,
@@ -2446,6 +2437,11 @@ function onSaveApiCard(cardEl, originalId) {
     // Normalisé par normalizeApiServer ; une carte rendue avant ce champ (ou un
     // sélecteur absent du DOM) donne '' et retombe donc sur le défaut de build.
     promptOrder: get('.api-prompt-order'),
+    // Écrits par les gestes immédiats du catalogue de modèles, jamais par ce
+    // formulaire : repris de l'enregistrement FRAIS (`prior`, relu au clic),
+    // jamais de la carte rendue — un second écrivain du même enregistrement.
+    modelVisibility: prior ? prior.modelVisibility : undefined,
+    handcraftedModels: prior ? prior.handcraftedModels : undefined,
   };
   const arr = upsertApiServer(server);
   if (wasEmpty) {
@@ -2486,6 +2482,71 @@ function onUseApiServer(id) {
   syncConfigured();
   syncModelUI();
   prefetchModels();   // cache par id (_modelsById) : re-fetch seulement si ce serveur est inconnu
+}
+
+// ── Catalogue de modèles : gestes immédiats du tableau de la fiche ─────────
+// Chaque geste relit l'enregistrement FRAIS et l'écrit dans la foulée, sans
+// await entre les deux : le formulaire de la fiche (`onSaveApiCard`) et la
+// relecture de liste (`recordListedModelProps`) écrivent le même enregistrement.
+// Rend le texte d'un refus, '' sinon.
+function applyApiServerModelsPatch(serverId, compute) {
+  const fresh = getApiServer(serverId);
+  if (!fresh) { renderApiServersIfOpen(); return ''; }
+  const patch = compute(fresh);
+  if (!patch) return '';
+  if (patch.refusal) return patch.refusal;
+  upsertApiServer(Object.assign({}, fresh, patch));
+  refreshApiCatalogue(serverId, { animate: true });
+  // Le défaut peut avoir changé : libellé de la connexion, et modèle effectif
+  // d'une conversation sans modèle choisi.
+  syncActiveApiServerUI();
+  syncModelUI();
+  return '';
+}
+
+function onApiModelSetDefault(serverId, model) {
+  return applyApiServerModelsPatch(serverId, () => ({ model: String(model || '').trim() }));
+}
+
+function onApiModelToggleShown(serverId, model) {
+  return applyApiServerModelsPatch(serverId, s => toggleModelVisibility(s, model));
+}
+
+// « Tout afficher » / « Tout masquer » : change le mode ET vide les exceptions.
+function onApiModelsSetMode(serverId, newHidden) {
+  return applyApiServerModelsPatch(serverId, () => ({ modelVisibility: { newHidden: !!newHidden, except: [] } }));
+}
+
+function onApiModelAdd(serverId, name) {
+  const s = getApiServer(serverId);
+  const listed = s ? (_modelsEntryOf(s).models || null) : null;
+  return applyApiServerModelsPatch(serverId, fresh => addHandcraftedModel(fresh, name, listed));
+}
+
+function onApiModelRemove(serverId, name) {
+  return applyApiServerModelsPatch(serverId, s => removeHandcraftedModel(s, name));
+}
+
+function onApiModelSetVisionOff(serverId, model, off) {
+  return applyApiServerModelsPatch(serverId, s => setModelVisionOff(s, model, off));
+}
+
+// Fenêtre saisie : appliquée sur un geste explicite (bouton ou Entrée), jamais
+// au blur — un re-rendu qui retire le champ focalisé enregistrerait sinon le
+// brouillon.
+function onApiModelSetContextWindow(serverId, model, raw) {
+  return applyApiServerModelsPatch(serverId, s => setModelContextWindow(s, model, raw));
+}
+
+// « Lire les propriétés » d'une ligne : `/api/show` de CE modèle, sur un Ollama
+// reconnu. Jamais en rafale : un POST par clic. Rend true si une lecture a été
+// persistée.
+async function onApiModelReadProps(serverId, model) {
+  const s = getApiServer(serverId);
+  if (!s) return false;
+  const wrote = await readOllamaShowOnDemand(s, model);
+  if (wrote) onModelPropsChanged();
+  return wrote;
 }
 
 // Glyphe de relecture d'une fiche serveur (AF-9). Redondant avec un reload de

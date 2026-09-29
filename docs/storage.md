@@ -536,7 +536,8 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, mcp.js) est en
   mémoire seule, reconstruit au démarrage.
 - `miaou-api-servers` : tableau de backends API (chat completions) `[{ id, name,
-  url, key, model, disabled, vision, contextWindows, promptOrder }]`. Remplace les champs plats `url`/`key`/`model` de
+  url, key, model, disabled, vision, contextWindows, promptOrder, modelVisibility,
+  handcraftedModels }]`. Remplace les champs plats `url`/`key`/`model` de
   `miaou-settings` (cf. ci-dessus). **`id` est l'identité** (pas `name`, à la
   différence des serveurs MCP) : permet de renommer une carte sans perdre la
   référence de serveur actif ni casser un override en cours. `key` stocké en
@@ -583,6 +584,33 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   `resolveContextWindow` (cf. `docs/model-props.md`) : devant le maximum
   déclaré, derrière toute mesure. Elle remplace le champ global
   `settings.contextWindow`, supprimé sans migration.
+  `modelVisibility` (catalogue de modèles) : `{ newHidden, except: [noms] }`,
+  visibilité des modèles au composer et à la palette, à double mode. En
+  `newHidden: false` (défaut), `except` liste les masqués et un nouveau modèle
+  arrive affiché ; en `newHidden: true`, `except` liste les affichés et un
+  nouveau modèle arrive masqué. Le modèle par défaut n'est jamais masqué. Lue
+  par le prédicat unique `isModelShown(server, model, pinnedModel)`, où
+  `pinnedModel` (modèle actif de la conversation, passé par l'appelant pour le
+  seul serveur actif) reste montré même masqué ; `modelHiddenByUser` donne
+  l'état brut, sans cette exception. `handcraftedModels` : noms saisis à la
+  main, absents de la liste du serveur. L'entrée reste persistée quand la liste
+  finit par exposer le modèle (la liste l'emporte alors à l'affichage) et
+  reprend effet s'il en sort. Liste effective, ordres et filtre sont des purs
+  de `storage.js` : `serverModelEntries` (`origin` ∈ `listed` | `handcrafted` |
+  `absent`, ce dernier pour un défaut ni listé ni ajouté, seulement quand la
+  liste est connue), `modelTableOrder` (défaut, affichés, masqués),
+  `modelMenuOrder` (défaut en tête, masqués et `absent` exclus) et
+  `modelFilterMatches` (chaque mot dans le nom du modèle OU du serveur).
+  Correspondance des noms EXACTE partout, jamais l'alias Ollama `:latest`.
+  Ces deux champs, ainsi que `model`, `vision` et `contextWindows` depuis que le
+  défaut et les réglages par modèle se font dans le tableau de la fiche, sont
+  écrits par des gestes immédiats (`applyApiServerModelsPatch`, main.js, qui
+  applique les purs `toggleModelVisibility`, `addHandcraftedModel`,
+  `removeHandcraftedModel`, `setModelVisionOff` et `setModelContextWindow` à
+  l'enregistrement frais), pas par le formulaire :
+  `onSaveApiCard` les reprend de l'enregistrement frais (`getApiServer`, relu au
+  clic), jamais de la carte rendue, sans quoi un enregistrement du formulaire
+  les écraserait. Cf. `docs/model-props.md` (catalogue de modèles).
   Serveur actif persisté séparément dans `miaou-active-api-server` (string,
   `id` du serveur). CRUD dans `storage.js`
   (`loadApiServers`/`upsertApiServer`/`deleteApiServer`/`getApiServer`/
@@ -608,7 +636,11 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   (`mergeListedModelProps`, `mergeOneModelProps`) :
   - ce que la lecture sait remplace ce qui était persisté ;
   - une inconnue n'efface rien ;
-  - un modèle absent de la liste est oublié, un serveur supprimé aussi.
+  - un modèle absent de la liste est oublié, un serveur supprimé aussi, sauf
+    un modèle ajouté à la main (`handcraftedModels`), dont le record est gardé
+    tel quel. `recordListedModelProps` relit ces noms sur l'enregistrement
+    frais au moment d'écrire, pas sur le `server` capturé au lancement du
+    fetch : un ajout fait pendant la lecture serait sinon élagué.
 
   Sur un Ollama, les lectures natives (`/api/tags`, `/api/show`, `/api/ps`)
   s'y superposent par `recordModelProps` (`mergeManyModelProps`, sans

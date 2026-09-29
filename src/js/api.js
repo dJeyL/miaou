@@ -1693,12 +1693,6 @@ function mergeModelProps(base, over) {
 }
 
 // ── Liste des modèles exposés par l'API ─────────────────────────────────────
-// Liste des ids, triée. Pour la carte serveur en édition, qui ne veut que les
-// noms (le serveur n'y est peut-être pas encore enregistré).
-async function fetchModels(override) {
-  return (await fetchModelList(override)).ids;
-}
-
 // Liste des ids ET propriétés déclarées par `/models` ({id: record}, lot AF) :
 // même appel, la réponse portait déjà tout et on n'en gardait que `id`.
 async function fetchModelList(override) {

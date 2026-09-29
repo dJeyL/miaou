@@ -760,8 +760,9 @@ Deux idées à ne pas confondre :
   Clique-le pour voir la ventilation part par part.
 - **La taille de fenêtre de contexte** n'est **pas** un levier de réduction.
   MIAOU la connaît modèle par modèle. Il la lit sur le serveur quand celui-ci
-  l'expose, et sinon il prend celle que tu as saisie sur la fiche du serveur
-  (Paramètres → Serveurs API), pour ce modèle. Une fenêtre mesurée sur le
+  l'expose, et sinon il prend celle que tu as saisie pour ce modèle dans le
+  tableau des modèles de la fiche du serveur (Paramètres › Connexion › Gérer les
+  serveurs API, chevron de sa ligne). Une fenêtre mesurée sur le
   serveur passe avant une valeur saisie, et une valeur saisie passe avant un
   maximum que le serveur se contente de déclarer. Avec Ollama, la fenêtre
   réellement servie ne se mesure qu'une fois le modèle chargé : MIAOU la relit
@@ -920,7 +921,8 @@ lui-même — titrage, résumés, descriptions de fichiers, astuces de l'accueil
 Pour les consulter : **Réglages › Connexion › Statistiques d'usage**, la
 palette de commandes (touche `U`), ou le petit graphique en barres sur la fiche
 d'un serveur (Réglages › Connexion › Gérer les serveurs API), qui les ouvre
-directement sur ce serveur. Tu peux y choisir un serveur ou tous, un modèle ou
+directement sur ce serveur — et le même, sur chaque ligne du tableau des
+modèles de la fiche, directement sur ce modèle de ce serveur. Tu peux y choisir un serveur ou tous, un modèle ou
 tous, et une période. Les périodes sont glissantes (la dernière semaine, le
 dernier mois, etc., jusqu'à aujourd'hui), et seules celles qui montrent
 quelque chose de plus que la précédente sont proposées. Le tableau donne une
@@ -1070,14 +1072,25 @@ Quelques repères pour te déplacer dans MIAOU :
   la première suppression rend au chat son air normal, dans tous les onglets.
   S'il reste à court de place, l'expression reviendra à la prochaine écriture
   qui échoue.
-- **Sélecteur serveur/modèle** (optionnel, à activer dans les Paramètres) :
+- **Sélecteur serveur/modèle** (optionnel, à activer dans Paramètres › Modèle &
+  raisonnement) :
   change le modèle de la conversation courante sans toucher à ton défaut. Si
   plusieurs serveurs API sont configurés, il liste les modèles de chacun,
   regroupés par serveur ; choisir un modèle d'un autre serveur bascule aussi le
-  serveur actif. Un serveur dont la liste de modèles n'a pas pu être récupérée
+  serveur actif. Le modèle par défaut de chaque serveur vient en tête de son
+  groupe, marqué « défaut », et un modèle que tu as ajouté à la main est marqué
+  « à la main ». Pour masquer un modèle de cette liste, décoche sa case
+  **Menu** dans le tableau des modèles de son serveur (Paramètres › Connexion ›
+  Gérer les serveurs API, puis « Modèles » sur la fiche) : un modèle masqué n'y
+  figure plus, sauf celui de la conversation ouverte, marqué « masqué ». Un
+  champ de filtre en haut de la liste reçoit le curseur à l'ouverture : tape un
+  ou plusieurs mots, cherchés dans le nom du modèle comme dans celui du serveur
+  (« bureau qwen »), puis ↑/↓ et Entrée ; Échap vide le filtre, puis ferme la
+  liste. Un serveur dont la liste de modèles n'a pas pu être récupérée
   apparaît quand même, avec une ligne « Liste indisponible » à cliquer pour
-  réessayer. Un serveur peut être « mis de côté » depuis sa fiche (Paramètres →
-  Serveurs API) pour ne plus être interrogé ni proposé. Le glyphe de
+  réessayer, et ses modèles ajoutés à la main restent proposés dessous. Un
+  serveur peut être « mis de côté » depuis sa fiche (Paramètres › Connexion ›
+  Gérer les serveurs API) pour ne plus être interrogé ni proposé. Le glyphe de
   rafraîchissement de cette fiche relit la liste de ses modèles et ce que le
   serveur en déclare, sans recharger la page — utile après avoir changé sa
   configuration côté serveur. Un petit **appareil
@@ -1085,6 +1098,29 @@ Quelques repères pour te déplacer dans MIAOU :
   quand son serveur déclare que ce modèle lit les images. Et le sélecteur de
   niveau de raisonnement s'efface pour un modèle que son serveur déclare sans
   raisonnement.
+- **Modèles d'un serveur** (Paramètres › Connexion › Gérer les serveurs API,
+  sur chaque fiche) : un
+  tableau repliable « Modèles » liste tous les modèles du serveur, avec ce que
+  le serveur en déclare (appareil photo : lit les images ; clé : appelle des
+  outils ; bulle : raisonne ; « ? » quand il ne dit rien) et la taille de
+  fenêtre de contexte connue. Chaque geste s'applique aussitôt, sans passer par
+  « Modifier » : le bouton rond en tête de ligne choisit le **modèle par
+  défaut** du serveur ; la case **Menu** propose le modèle au sélecteur du
+  composer et à la palette, et la décocher le **masque** (le défaut est toujours
+  proposé) ; le
+  graphique en barres ouvre les statistiques de ce modèle. « Tout afficher » et
+  « Tout masquer » (à confirmer d'un second clic) décident aussi du sort des
+  modèles qui apparaîtront plus tard sur ce serveur — « Tout masquer » convient à
+  un serveur qui en expose des dizaines. Un modèle que le serveur ne liste pas
+  s'ajoute à la main en bas du tableau (il arrive proposé au menu) et se retire
+  depuis sa ligne, sauf s'il est le modèle par défaut : il faut d'abord en
+  choisir un autre. Un modèle par défaut que le serveur ne liste plus est marqué
+  « absent de la liste ». Le chevron d'une ligne ouvre ses réglages : lecture
+  des images (« Sans vision » quand le serveur ne dit pas si le modèle les lit
+  et qu'il ne les lit pas : MIAOU envoie alors un descripteur textuel), taille
+  de fenêtre de contexte à saisir (appliquée par « Appliquer » ou Entrée), et,
+  sur un serveur Ollama, « Lire les propriétés » pour interroger le serveur sur
+  ce seul modèle.
 - **Palette de commandes** : appuie sur **Ctrl+K** (ou **Cmd+K** sur Mac) pour
   ouvrir une palette : tape pour filtrer, ↑/↓ pour naviguer, Entrée pour lancer,
   Échap pour fermer. Elle donne accès aux actions courantes sans la souris —

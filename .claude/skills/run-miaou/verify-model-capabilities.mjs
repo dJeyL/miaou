@@ -15,8 +15,13 @@
 //   7. mN : reasoning_effort ABSENT du corps envoyé, alors que le défaut des réglages le demande
 //   8. inspecteur sur mN : capacités « ✗ » partout, outils envoyés quand même
 //   9. mU (rien de déclaré) : le flag manuel décide, et l'inspecteur le nomme
-//  10. fiche serveur : libellé figé pour mV, pilule de retour pour mU
-//  11. enregistrer la fiche ne touche pas au flag manuel de mV
+//  10. panneau de ligne du tableau des modèles : libellé figé pour mV, choix
+//      « Activée / Sans vision » pour mU (sur « Sans vision », son flag), et
+//      appareil barré dans la colonne des capacités de mU
+//  11. enregistrer le formulaire de la fiche ne touche à aucun flag manuel ;
+//      « Activée » sur la ligne de mU retire le sien, et seulement le sien
+// Depuis le catalogue de modèles, le flag vision se règle par ligne du tableau
+// de la fiche, et non plus dans le formulaire pour le modèle de `.api-model`.
 //  12. aucune erreur console sur l'ensemble
 //  13. le niveau de raisonnement de la conversation survit à un passage par un
 //      modèle déclaré sans raisonnement, puis à la réouverture de la
@@ -199,35 +204,34 @@ await page.evaluate(() => closeContextInspector());
 // ── 10-11. fiche serveur ─────────────────────────────────────────────────────
 await page.evaluate(() => openApiServers());
 const card = page.locator('#api-list .api-card').first();
-await card.locator('.cfg-view button', { hasText: 'Modifier' }).click();
-await card.locator('.api-model').fill('mV');
-await card.locator('.api-model').dispatchEvent('change');
-const cardV = await card.evaluate((c) => {
-  const fixed = c.querySelector('.cfg-fixed');
-  const pill = c.querySelector('.api-vision') ? c.querySelector('.api-vision').closest('.pill-select') : null;
-  return {
-    fixed: fixed && !fixed.hidden ? fixed.textContent : null,
-    pillShown: !!pill && getComputedStyle(pill).display !== 'none',
-  };
+await card.locator('.api-catalogue-toggle').click();
+await card.locator('tr.api-model-row[data-model="mU"]').waitFor();
+await card.locator('tr.api-model-row[data-model="mV"] .api-model-expand').click();
+await card.locator('tr.api-model-row[data-model="mU"] .api-model-expand').click();
+const panels = await card.evaluate((c) => {
+  const p = (m) => c.querySelector('tr.api-model-detail[data-model="' + m + '"]');
+  const fixed = (m) => { const el = p(m) && p(m).querySelector('.api-model-fixed'); return el ? el.textContent : null; };
+  const active = (m) => { const el = p(m) && p(m).querySelector('.api-model-vision .seg.active'); return el ? el.textContent : null; };
+  const capU = c.querySelector('tr.api-model-row[data-model="mU"] .api-model-cap');
+  return { fixedV: fixed('mV'), segsV: active('mV'), fixedU: fixed('mU'), activeU: active('mU'),
+    capU: capU ? capU.className : null };
 });
-await card.locator('.api-model').fill('mU');
-await card.locator('.api-model').dispatchEvent('change');
-const cardU = await card.evaluate((c) => {
-  const fixed = c.querySelector('.cfg-fixed');
-  const pill = c.querySelector('.api-vision') ? c.querySelector('.api-vision').closest('.pill-select') : null;
-  return { fixedShown: !!fixed && !fixed.hidden, pillShown: !!pill && getComputedStyle(pill).display !== 'none' };
-});
-check('10. fiche : libellé figé pour mV, pilule de retour pour mU',
-  cardV.fixed === 'Lit les images' && cardV.pillShown === false && cardU.fixedShown === false && cardU.pillShown === true,
-  JSON.stringify({ cardV, cardU }));
+check('10. panneau : libellé figé pour mV, choix sur « Sans vision » pour mU, appareil barré',
+  panels.fixedV === 'Lit les images' && panels.segsV === null && panels.fixedU === null
+    && panels.activeU === 'Sans vision' && /manual-off/.test(panels.capU || ''),
+  JSON.stringify(panels));
 
-await card.locator('.api-model').fill('mV');
-await card.locator('.api-model').dispatchEvent('change');
+await card.locator('.cfg-view button', { hasText: 'Modifier' }).click();
 await card.locator('.api-save').click();
 await page.waitForTimeout(300);
-const vision11 = await page.evaluate(() => getApiServer('srvA').vision);
-check('11. enregistrer la fiche sur mV garde son flag manuel intact',
-  JSON.stringify(vision11) === '{"mV":false,"mU":false}', JSON.stringify(vision11));
+const vision11a = await page.evaluate(() => getApiServer('srvA').vision);
+await page.locator('#api-list .api-card').first().locator('.api-catalogue-toggle[aria-expanded="true"]').waitFor();
+await page.locator('#api-list .api-card').first()
+  .locator('tr.api-model-detail[data-model="mU"] .api-model-vision .seg', { hasText: 'Activée' }).click();
+const vision11b = await page.evaluate(() => getApiServer('srvA').vision);
+check('11. formulaire enregistré : flags intacts ; « Activée » sur mU retire le sien seul',
+  JSON.stringify(vision11a) === '{"mV":false,"mU":false}' && JSON.stringify(vision11b) === '{"mV":false}',
+  JSON.stringify({ vision11a, vision11b }));
 
 // ── 13. niveau conservé (avant 12 : la console couvre aussi ce parcours) ─────
 await page.evaluate(() => { closeApiServers(); pickComposerModel('mV', 'srvA'); setConvReasoningEffort('medium'); });
@@ -239,6 +243,15 @@ const afterSwitch = await page.evaluate((id) => ({
 }), convId);
 // Rechargement : la conversation rouvre sur mN (son modèle enregistré). C'est
 // l'OUVERTURE qui effaçait le niveau dans la version fautive.
+// Attendre que le choix de mN soit COMMITÉ en IDB avant de recharger : sinon le
+// reload peut partir avant l'écriture, la conversation rouvre sur son ancien
+// état, et le contrôle accuse l'appli d'une course du montage (mesuré : rouge
+// une fois sur deux à partir du moment où les étapes 10-11 ont passé par le
+// tableau des modèles, qui a déplacé le minutage).
+await page.waitForFunction(async (id) => {
+  const d = await readConversationFromDB(id);
+  return !!d && d.model === 'mN' && d.reasoningEffort === 'medium';
+}, convId, { timeout: 5000 }).catch(() => {});
 await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 15000 });
 await page.waitForFunction(() => document.querySelector('.boot-done') !== null, null, { timeout: 15000 });
