@@ -904,7 +904,13 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   proposées selon la donnée la plus ancienne (`availableUsageScales`), totaux
   par couple (serveur, modèle), serveur affiché sur les seuls homonymes et
   filtre modèle par nom, et état du cache (`usageTotals`, `usageCacheState` :
-  « n/d », astérisque).
+  « n/d », astérisque) ; porte enfin le graphe — bacs glissants calculés
+  depuis aujourd'hui et jamais en chaînant (`usageBins`), repères calendaires
+  en fraction au prorata du jour dans son bac (`calendarMarkers`), agrégation
+  par bac qui classe le cache par ENREGISTREMENT (`usageBinTotals`, dont la
+  somme égale le total du tableau), panneaux entrée, sortie et requêtes sur un même axe du
+  temps plutôt qu'un axe double, couleurs dérivées de l'accent, infobulle par colonne
+  de bac et nom accessible qui résume, sans arrêt de tabulation par bac.
 - **`docs/toasts.md`** — toasts (lot AG) : critère « l'état sur la surface
   passive, le front en toast », API `showToast`/`dismissToast` (clé de cause,
   niveau, thème, texte en `textContent`, action, `persistent`), table fermée

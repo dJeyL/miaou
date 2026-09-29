@@ -86,3 +86,72 @@
   border-bottom: none;
   border-top: 1px solid var(--border-2);
 }
+
+/* ─── Graphe (entre la ligne de période et le tableau) ────────────────────────
+   Trois panneaux SVG sur le même axe du temps ; titres et légendes en HTML
+   posés par-dessus (texte en jetons de texte, pastille à côté : le texte ne
+   prend jamais la couleur d'une série). Couleurs DÉRIVÉES de l'accent, sans
+   jeton propre : elles suivent la palette et le thème. Le
+   bleu du cache de l'inspecteur (--ctx-cache) n'est pas repris : en palette
+   Encre l'accent est bleu aussi, « hors cache » et « cache » se confondraient. */
+.usage-chart {
+  --uc-fresh: var(--accent);
+  --uc-cached: hsl(var(--accent-hue) var(--accent-sat) 63.5% / .42);
+  --uc-unknown: var(--surface-4);
+  --uc-calls: var(--text-3);
+  --uc-unmeasured: var(--border-2);
+  --uc-wash: hsl(var(--accent-hue) var(--accent-sat) 63.5% / .07);
+  position: relative;
+  flex-shrink: 0;
+  margin: 10px 0 14px;
+}
+/* En clair, --surface-4 est trop proche du fond pour un segment, et
+   --border-2 trop proche du « cache » pâle qu'il surmonte dans la pile
+   (écart de couleur ΔE OKLab 6,8 en vision normale, sous le plancher de 15).
+   --text-3 reste un gris neutre et passe (ΔE 20, 18 en protanopie). */
+html[data-theme="light"] .usage-chart { --uc-unknown: var(--text-3); }
+
+.usage-chart .usage-chart-svg { display: block; overflow: visible; }
+.usage-chart .usage-chart-head {
+  position: absolute;
+  right: 0;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.usage-chart .usage-chart-title { color: var(--text-2); font-weight: 600; }
+.usage-chart .usage-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.usage-chart .usage-swatch { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+/* Grille et axes : filets d'un pixel, pleins, en retrait. */
+.usage-chart .usage-chart-grid { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+.usage-chart .usage-chart-base { stroke: var(--border-2); stroke-width: 1; shape-rendering: crispEdges; }
+.usage-chart .usage-chart-tick {
+  fill: var(--text-3);
+  font: 10px var(--mono);
+  text-anchor: end;
+  font-variant-numeric: tabular-nums;
+}
+/* Repères calendaires : le mois un cran plus marqué que la semaine. */
+.usage-chart .usage-mark-week { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+.usage-chart .usage-mark-month { stroke: var(--border-2); stroke-width: 1; shape-rendering: crispEdges; }
+.usage-chart .usage-mark-label { fill: var(--text-3); font: 10.5px var(--sans); }
+.usage-chart .usage-mark-label.is-month { fill: var(--text-2); font-weight: 600; }
+.usage-chart .usage-bin-label { fill: var(--text-3); font: 10.5px var(--sans); text-anchor: middle; }
+
+/* Segments et pastilles de légende : même classe, fill pour l'un,
+   background pour l'autre. */
+.usage-chart .usage-seg-fresh, .usage-chart .usage-seg-out { fill: var(--uc-fresh); background: var(--uc-fresh); }
+.usage-chart .usage-seg-cached { fill: var(--uc-cached); background: var(--uc-cached); }
+.usage-chart .usage-seg-unknown { fill: var(--uc-unknown); background: var(--uc-unknown); }
+.usage-chart .usage-seg-calls { fill: var(--uc-calls); background: var(--uc-calls); }
+.usage-chart .usage-seg-unmeasured { fill: var(--uc-unmeasured); background: var(--uc-unmeasured); }
+
+/* Cible de survol : la colonne entière du bac, sur les trois panneaux.
+   Lavis d'accent au survol, rien d'autre (pas d'atténuation des voisines). */
+.usage-chart .usage-chart-hit { position: absolute; }
+.usage-chart .usage-chart-hit:hover { background: var(--uc-wash); }

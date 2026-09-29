@@ -24,7 +24,7 @@ Ce que tu peux faire ici :
 - **Compacter** une conversation devenue longue : son début est remplacé par un
   résumé pour que le modèle garde le fil, sans que rien soit supprimé.
 - **Exporter** une conversation en Markdown ou en page HTML autonome.
-- **Suivre ta consommation** de tokens, par serveur, modèle et période.
+- **Suivre ta consommation** de tokens, par serveur, modèle et période, en tableau et en graphe.
 - **Déléguer** : le modèle peut confier une tâche à un agent — une
   sous-conversation autonome qui travaille en parallèle pendant qu'il continue —
   et récupérer son résultat.
@@ -929,6 +929,16 @@ serveurs a une ligne par serveur, avec le nom du serveur à côté de celui du
 modèle : choisir ce modèle dans le filtre, tous serveurs confondus, compare
 donc sa consommation d'un serveur à l'autre. Les grands nombres sont abrégés
 (« 12,3 k », « 1,23 M ») ; le survol d'une cellule donne la valeur exacte.
+
+Au-dessus du tableau, un **graphe** montre la même période dans le temps : une
+barre par jour (semaine, mois), par semaine (3 mois) ou par mois (6 mois, un
+an), comptées à rebours depuis aujourd'hui. Il superpose, sur le même axe du
+temps, l'**entrée** — découpée en part hors cache, part servie par le cache,
+et part dont le serveur n'a pas dit ce qui venait du cache —, la **sortie** et
+les **requêtes**, non mesurées comprises. Des filets verticaux marquent les
+lundis et les débuts de mois (seulement les mois sur les longues périodes).
+Survoler une barre donne ses chiffres ; les valeurs de la période restent
+dans le tableau.
 
 Quelques lectures utiles :
 

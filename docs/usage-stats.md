@@ -2,7 +2,8 @@
 
 MIAOU additionne ce que chaque appel de complétion a consommé, d'après les
 compteurs renvoyés par l'API (`usage`), et le garde par jour, serveur, modèle et
-nature d'appel. Ce fichier décrit la collecte, puis la consultation.
+nature d'appel. Ce fichier décrit la collecte, puis la consultation et son
+graphe.
 
 Code : `src/js/usage-stats.js` (purs et point d'enregistrement), stockage dans
 `storage.js` (`recordModelUsage`, `readAllUsageStats`), accroche dans `api.js`.
@@ -199,7 +200,8 @@ rien au nom du modèle. Le cache suit `usageCacheState` :
 
 **Modèles homonymes** (décision du 2026-09-29) : un même nom de modèle servi
 par deux serveurs (travail et maison) fait deux lignes, jamais une. La clef de
-`usageTotals` est le COUPLE, et le graphe ventilera par la même clef. Le
+`usageTotals` est le COUPLE. Le graphe, lui, ne ventile pas par modèle
+(§ Graphe) : il somme les mêmes enregistrements, et sa somme égale le total. Le
 serveur n'est affiché que sur les noms partagés par plusieurs serveurs **des
 lignes affichées** (`sharedName`, calculé après la fenêtre), en second texte
 atténué dans la cellule du modèle, sous le libellé de la pilule serveur (nom
@@ -225,9 +227,94 @@ Les appels non mesurés n'entrent pas dans cette question : ils ont leur propre
 colonne. Tout le texte du tableau est posé en `textContent` (noms de modèle
 d'origine backend) ; les infobulles passent par `setTip`.
 
-**Graphe** : pas encore livré. Bacs glissants (jour, semaine, mois au
-quantième) et repères calendaires de semaine et de mois à leur position exacte
-dans le bac.
+## Graphe
+
+Dessiné entre la ligne de période et le tableau (`buildUsageChart`), sur la
+même sélection et la même fenêtre (dessin arbitré le 2026-09-29,
+lot AJ).
+
+**Panneaux** : entrée, sortie, requêtes, empilés sur le MÊME axe du temps,
+chacun titré et gradué. Pas d'axe double : sur un mois réaliste la sortie pèse
+quelques pour cent de l'entrée, et ses barres, sur l'échelle de l'entrée,
+resteraient collées à la ligne de base. L'entrée empile trois segments de bas
+en haut : hors cache, servie par le cache, cache non renseigné ; les requêtes,
+mesurées puis non mesurées. Une légende ne nomme que les segments présents
+dans la période. **Pas de ventilation par modèle dans le graphe** :
+elle ferait perdre la décomposition du cache (deux axes de couleur ne tiennent
+pas dans une barre) et exigerait des couleurs catégorielles attachées au
+modèle ; le tableau et le filtre modèle font ce travail.
+
+**Bacs** (`usageBins(win, scaleId)`) : un par jour (« 1 semaine », « 1 mois »),
+par 7 jours (« 3 mois », 13 bacs), par mois glissant au quantième (« 6 mois »,
+« 1 an »). Comptés à rebours depuis la fin de la fenêtre, dans l'ordre
+chronologique ; chaque bac mensuel est calculé DEPUIS aujourd'hui
+(`usageAddMonths(end, -k)`), jamais en chaînant, pour que le repli d'un
+quantième absent ne se propage pas et que deux bacs voisins restent contigus.
+Un test de propriété le vérifie sur deux années de « aujourd'hui ». Sous
+« 1 an », les bacs antérieurs à la première donnée restent vides à gauche :
+c'est la fenêtre glissante, et l'échelle n'est proposée que si les données
+dépassent « 6 mois ».
+
+**Agrégation** (`usageBinTotals(records, bins)`) : les champs de
+`USAGE_STATS_SUM_FIELDS` par bac, plus la décomposition de l'entrée. Chaque
+ENREGISTREMENT (jour, serveur, modèle, nature) est classé à part par
+`usageCacheState` : cache renseigné, même partiellement, → part hors cache et
+part en cache (le cache borné à l'entrée) ; jamais renseigné → tout en « non
+renseigné ». Classer le bac d'un bloc verserait dans « non renseigné » un
+modèle qui renseigne son cache dès qu'un voisin du même jour ne le fait pas.
+L'état de cache d'un BAC, lui, est celui du tableau (`usageCacheState` sur ses
+sommes) : l'astérisque de l'infobulle a le même sens que celle du tableau. La
+somme des bacs égale le total du tableau sur la même fenêtre (test).
+
+**Repères calendaires** (`calendarMarkers(bins, granularity)`) : position en
+fraction de la largeur des bacs, au prorata du jour dans son bac (bord gauche
+du jour marqué). Mois (1ers) toujours, semaines (lundis) aux seules échelles
+au jour ; un 1er qui tombe un lundi est un repère de mois ; rien au bord
+gauche du graphe. Aux échelles au jour et à la semaine, un filet dans chaque
+panneau, le mois un cran plus marqué ; aux échelles au mois, chaque bac
+contient un 1er et un filet par bac ferait une seconde grille : une coche sur
+l'axe seulement. Libellés (`usageMarkerLabel` : « sept. », « janv. 2026 »,
+« 7 sept. ») posés par priorité, mois avant semaine ; celui qui en
+chevaucherait un autre est retiré, celui qui sortirait à droite passe à gauche
+de son filet (`placeUsageMarkerLabels`, APRÈS insertion dans le document : la
+largeur d'un texte SVG ne se mesure pas hors document). « 1 semaine » étiquette
+chaque bac (« lun. 28 sept. ») et laisse ses repères sans libellé.
+
+**Axes** : trois pas ronds par panneau de tokens, un seul pour les requêtes
+(`usageChartAxis`, pas de 1, 2, 2,5 ou 5 × 10ⁿ, jamais sous 1) ; graduations
+en notation compacte sans zéros de queue (`formatUsageTick` : « 1,5 M »,
+« 1 M »), compacte dès 1 000 et non 10 000 comme le tableau, pour qu'un même
+axe ne mêle pas « 5 000 » et « 10 k ». Un pas est entier (2,5 devient 3).
+
+**Survol** : la cible est la COLONNE entière du bac sur les trois panneaux
+(`.usage-chart-hit`, HTML posé sur le SVG), jamais un segment de 3 px ; lavis
+d'accent seul, sans atténuer les voisines. Infobulle MIAOU par `setTip`, texte
+construit localement (`usageBinTitle`, `usageBinTipDetail` : entrée et cache,
+sortie, requêtes dont non mesurées) — seulement des nombres et des dates,
+aucun nom d'origine backend. Titres, légendes et graduations passent par
+`textContent`.
+
+**Accessibilité** : le graphe est un `role="img"` dont le nom résume la période
+(`usageChartSummary`) ; **aucun arrêt de tabulation par bac** (décision de
+Julien : jusqu'à 31 arrêts, pour des valeurs que le tableau porte déjà). Le
+détail bac par bac reste à la souris.
+
+**Couleurs** : dérivées de `--accent` (hors cache et sortie : l'accent ; cache :
+l'accent atténué), sans jeton propre, donc elles suivent les palettes et le
+thème. Le bleu du cache de l'inspecteur (`--ctx-cache`) n'est pas repris : en
+palette Encre l'accent est bleu aussi. « Cache non renseigné » est un gris
+neutre : `--surface-4` en sombre, `--text-3` en clair — `--border-2`, d'abord
+envisagé, a été mesuré trop proche du cache pâle qu'il surmonte (écart ΔE OKLab
+de 6,8 en vision normale, sous le plancher de lisibilité de 15). Espace de
+surface de 2 px entre segments, bout arrondi de 4 px côté données, barres de
+24 px au plus.
+
+**Largeur** : le SVG est dessiné à la largeur MESURÉE du corps du drawer (un
+`viewBox` étirerait le texte), et redessiné seul dès que cette largeur change
+(`refreshUsageChart`, sur un `ResizeObserver` du corps et non sur `resize` : la
+barre de défilement verticale qu'ajoutent le graphe et le tableau rétrécit le
+corps sans que la fenêtre bouge), sans reconstruire les pilules dont un menu
+ouvert se refermerait.
 
 ## Tests
 
@@ -238,7 +325,11 @@ dans le bac.
   rapport de stockage ; dates civiles (changements d'heure, repli du quantième,
   année bissextile), fenêtre de chaque échelle, échelles proposées, filtres,
   options de serveur (supprimé sous son dernier nom), totaux par couple
-  (serveur, modèle), marque des homonymes et état du cache.
+  (serveur, modèle), marque des homonymes et état du cache ; graphe : bacs
+  (repli de fin de mois, bissextile, pavage sans trou sur deux années),
+  repères (prorata, 1er qui tombe un lundi, bord gauche), agrégation par bac
+  (classement par enregistrement, somme égale au total du tableau), axes,
+  graduations, libellés, infobulle, nom accessible, géométrie des piles.
 - Playwright (`.claude/skills/run-miaou/verify-usage-stats-collect.mjs`) :
   l'accroche réelle aux deux points réseau (tour d'outils, nature de chaque
   appel silencieux, Stop avant réponse, refus, bascule de serveur en cours
@@ -253,3 +344,12 @@ dans le bac.
   le filtre, ouverture filtrée depuis une fiche, empilement et Échap, et les
   modèles homonymes (une ligne par serveur, suffixe sur les seuls homonymes,
   filtre modèle par nom, plus de suffixe sous un filtre serveur).
+- Playwright (`.claude/skills/run-miaou/verify-usage-stats-chart.mjs`) : le
+  graphe dessiné sur un store seedé, valeurs attendues lues dans les purs
+  vivants — à chaque échelle, nom accessible, aucun arrêt de tabulation, une
+  colonne de survol par bac, repères aux jours et positions attendus, filets
+  ou coche seule, libellés sans chevauchement ; hauteur d'une pile ; segment et
+  légende « non renseigné » et « non mesurées » si et seulement si la sélection
+  en contient ; infobulle d'un bac ; couleurs en clair et en sombre ; captures
+  dans `shots-usage-chart/`. Chaque contrôle rejoué contre une régression
+  injectée.

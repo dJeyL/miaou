@@ -115,8 +115,8 @@ Figtree/Fira Code).
   la déclare, ou réellement servie quand c'est un Ollama — cf. [docs/context-inspector.md](docs/context-inspector.md) et
   [docs/model-props.md](docs/model-props.md).
 - **Statistiques d'usage** : tokens consommés (entrée, cache, sortie) et
-  nombre de requêtes, par serveur, modèle et période, tous appels au modèle
-  confondus — cf. [docs/usage-stats.md](docs/usage-stats.md).
+  nombre de requêtes, par serveur, modèle et période, en tableau et en graphe
+  dans le temps, tous appels au modèle confondus — cf. [docs/usage-stats.md](docs/usage-stats.md).
 - **Allègement du contexte** : deux gestes indépendants, proposés par
   l'inspecteur. Évacuer les gros résultats d'outils les remplace par des
   références que le modèle peut rouvrir ; compacter (bouton ou commande

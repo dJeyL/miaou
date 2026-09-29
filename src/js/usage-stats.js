@@ -351,6 +351,219 @@ function formatUsageDay(key) {
   return p[2] + (p[2] === 1 ? 'er' : '') + ' ' + FR_MONTHS_FULL[p[1]] + ' ' + p[0];
 }
 
+// ── Consultation : graphe (purs) ────────────────────────────────────────────
+// Trois panneaux alignés sur le même axe du temps : entrée (hors cache /
+// servie par le cache / cache non renseigné), sortie, requêtes. Deux panneaux
+// plutôt qu'un axe double : la sortie pèse quelques pour cent de l'entrée et
+// resterait collée à la ligne de base. Pas de ventilation par modèle dans le
+// graphe : le tableau et le filtre modèle font ce travail.
+
+const USAGE_MONTHS_SHORT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+
+// Jour de la semaine d'une clef (0 = dimanche), sur la date civile.
+function _usageDow(key) {
+  const p = _usageKeyParts(key);
+  return new Date(Date.UTC(p[0], p[1], p[2])).getUTCDay();
+}
+
+// Bacs d'une fenêtre, dans l'ordre chronologique, bornes incluses : un par jour
+// (1 semaine, 1 mois), par 7 jours (3 mois : 13 bacs) ou par mois glissant au
+// quantième (6 mois, 1 an). Tout est compté à rebours depuis la fin de la
+// fenêtre (aujourd'hui) : le dernier bac finit aujourd'hui, jamais un dimanche
+// ni un fin de mois. Chaque bac mensuel est calculé DEPUIS la fin, jamais en
+// chaînant : le repli d'un quantième absent (31 → 30 avril) ne se propage pas
+// aux bacs suivants, et deux bacs voisins restent contigus.
+function usageBins(win, scaleId) {
+  const s = _usageScale(scaleId);
+  if (!s || !win) return [];
+  const out = [];
+  if (s.granularity === 'day') {
+    const n = usageDaysBetween(win.start, win.end) + 1;
+    for (let i = 0; i < n; i++) {
+      const d = usageAddDays(win.start, i);
+      out.push({ start: d, end: d });
+    }
+  } else if (s.granularity === 'week') {
+    for (let k = s.span - 1; k >= 0; k--) {
+      out.push({ start: usageAddDays(win.end, -7 * k - 6), end: usageAddDays(win.end, -7 * k) });
+    }
+  } else {
+    for (let k = s.span - 1; k >= 0; k--) {
+      out.push({ start: usageAddDays(usageAddMonths(win.end, -(k + 1)), 1), end: usageAddMonths(win.end, -k) });
+    }
+  }
+  return out;
+}
+
+// Repères calendaires : position en FRACTION de la largeur des bacs, au prorata
+// du jour dans son bac (le repère tombe sur le bord gauche du jour qu'il marque).
+// Mois (1ers) toujours ; semaines (lundis) seulement aux échelles au jour. Un
+// 1er qui tombe un lundi est un repère de mois, un seul. Aucun repère au bord
+// gauche : le début du graphe n'a pas à être marqué.
+function calendarMarkers(bins, granularity) {
+  const out = [];
+  const n = bins.length;
+  for (let i = 0; i < n; i++) {
+    const b = bins[i];
+    const len = usageDaysBetween(b.start, b.end) + 1;
+    for (let j = 0; j < len; j++) {
+      if (i === 0 && j === 0) continue;
+      const d = usageAddDays(b.start, j);
+      const isMonth = _usageKeyParts(d)[2] === 1;
+      const isWeek = granularity === 'day' && _usageDow(d) === 1;
+      if (!isMonth && !isWeek) continue;
+      out.push({ day: d, kind: isMonth ? 'month' : 'week', pos: (i + j / len) / n });
+    }
+  }
+  return out;
+}
+
+// Totaux par bac d'une sélection déjà filtrée. Mêmes champs que usageTotals
+// (`USAGE_STATS_SUM_FIELDS`), plus la décomposition de l'entrée pour la pile :
+// chaque ENREGISTREMENT (jour, serveur, modèle, nature) est classé à part par
+// `usageCacheState` — cache renseigné, même partiellement : part hors cache
+// (`freshIn`) et part en cache (`cachedIn`) ; jamais renseigné : tout dans
+// `unknownIn`. Classer le bac d'un bloc aurait versé dans « non renseigné » un
+// modèle qui le renseigne dès qu'un voisin du même jour ne le renseigne pas.
+// Un enregistrement hors de tous les bacs est ignoré.
+function usageBinTotals(records, bins) {
+  const out = bins.map(b => {
+    const o = { start: b.start, end: b.end, freshIn: 0, cachedIn: 0, unknownIn: 0 };
+    for (const f of USAGE_STATS_SUM_FIELDS) o[f] = 0;
+    return o;
+  });
+  for (const r of (records || [])) {
+    // Bacs contigus et triés : recherche dichotomique du dernier bac qui
+    // commence au plus tard ce jour-là.
+    let lo = 0, hi = bins.length - 1, i = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (bins[mid].start <= r.day) { i = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    if (i < 0 || r.day > bins[i].end) continue;
+    const b = out[i];
+    const v = {};
+    for (const f of USAGE_STATS_SUM_FIELDS) {
+      v[f] = Number.isFinite(r[f]) ? r[f] : 0;
+      b[f] += v[f];
+    }
+    if (usageCacheState(v) === 'unknown') b.unknownIn += v.inTokens;
+    else {
+      const cached = Math.min(Math.max(v.cachedTokens, 0), v.inTokens);
+      b.cachedIn += cached;
+      b.freshIn += v.inTokens - cached;
+    }
+  }
+  for (const b of out) b.cacheState = usageCacheState(b);
+  return out;
+}
+
+// Pas « rond » d'une graduation (1, 2, 2,5 ou 5 × 10^n) couvrant `v`.
+function usageNiceStep(v) {
+  if (!(v > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v * (1 - 1e-9)) return m * p;
+  return 10 * p;
+}
+
+// Axe d'un panneau : `ticks` pas ronds au-dessus de la ligne de base, et un
+// maximum qui couvre la plus haute barre. Un panneau vide garde un axe (1 pas).
+// Le pas est entier et jamais sous 1 : on ne gradue pas des fractions de
+// token (un pas de 2,5 devient 3).
+function usageChartAxis(maxValue, ticks) {
+  const step = Math.max(1, Math.ceil(usageNiceStep((maxValue > 0 ? maxValue : 0) / (ticks || 1))));
+  return { step, max: Math.max(step, Math.ceil(maxValue / step - 1e-9) * step) };
+}
+
+// Libellé de graduation : la notation compacte du tableau, sans les zéros de
+// queue (« 1,5 M » plutôt que « 1,50 M », « 1 M » plutôt que « 1,00 M »).
+// Compacte dès 1 000, et non 10 000 comme le tableau : sur un même axe,
+// « 5 000 » sous « 10 k » mêlerait deux notations.
+function formatUsageTick(n) {
+  if (Math.abs(n) >= 1000 && Math.abs(n) < 10000) {
+    return String(Math.round(n / 10) / 100).replace('.', ',') + '\u202fk';
+  }
+  return formatUsageCount(n).replace(/(,\d*?)0+(?= )/, '$1').replace(/,(?= )/, '');
+}
+
+// « 7 sept. », « 1er oct. » ; avec le jour de la semaine : « lun. 28 sept. ».
+function usageShortDay(key, withDow) {
+  const p = _usageKeyParts(key);
+  if (!p) return '';
+  return (withDow ? FR_DAYS_ABBR[_usageDow(key)] + '. ' : '') + (p[2] === 1 ? '1er' : p[2]) + ' ' + USAGE_MONTHS_SHORT[p[1]];
+}
+
+// Libellé d'un repère : le mois abrégé (l'année en janvier, seul mois où elle
+// change), ou le jour pour une semaine.
+function usageMarkerLabel(m) {
+  const p = _usageKeyParts(m.day);
+  if (!p) return '';
+  if (m.kind === 'month') return USAGE_MONTHS_SHORT[p[1]] + (p[1] === 0 ? ' ' + p[0] : '');
+  return usageShortDay(m.day, false);
+}
+
+// Titre d'infobulle d'un bac : le jour, ou la période.
+function usageBinTitle(b) {
+  if (b.start === b.end) return formatUsageDay(b.start);
+  return 'Du ' + formatUsageDay(b.start) + ' au ' + formatUsageDay(b.end);
+}
+
+// Cache d'un total, en texte : « 870 k », « 870 k* » (renseigné par une partie
+// des appels seulement : un minimum, comme l'astérisque du tableau), « n/d ».
+function _usageCacheText(t) {
+  if (t.cacheState === 'unknown') return 'n/d';
+  return formatUsageCount(t.cachedTokens) + (t.cacheState === 'partial' ? '*' : '');
+}
+
+// Détail d'infobulle d'un bac, construit ici (nombres et dates seulement :
+// aucun nom d'origine backend n'y entre).
+function usageBinTipDetail(b) {
+  if (!b.calls) return 'Aucun appel';
+  const lines = [
+    'Entrée : ' + formatUsageCount(b.inTokens) + ' (cache : ' + _usageCacheText(b) + ')',
+    'Sortie : ' + formatUsageCount(b.outTokens),
+    'Requêtes : ' + formatUsageCount(b.calls) + (b.unmeasured
+      ? ', dont ' + formatUsageCount(b.unmeasured) + ' non mesurée' + (b.unmeasured > 1 ? 's' : '') : ''),
+  ];
+  if (b.cacheState === 'partial') lines.push('* cache renseigné par une partie des appels seulement');
+  return lines.join('\n');
+}
+
+// Nom accessible du graphe : ce qu'il montre et les totaux de la période. Le
+// détail bac par bac reste à la souris (aucun arrêt de tabulation par bac) ; le
+// tableau porte les valeurs.
+function usageChartSummary(total, win, granularity, binCount) {
+  const per = { day: 'par jour', week: 'par semaine', month: 'par mois' }[granularity] || '';
+  let cache;
+  if (total.cacheState === 'unknown') cache = 'cache non renseigné';
+  else cache = (total.cacheState === 'partial' ? 'dont au moins ' : 'dont ') + formatUsageCount(total.cachedTokens) + ' servis par le cache';
+  return 'Consommation ' + per + ' (' + binCount + ' barres), du ' + formatUsageDay(win.start) + ' au ' + formatUsageDay(win.end) +
+    ' : entrée ' + formatUsageCount(total.inTokens) + ' tokens, ' + cache +
+    ' ; sortie ' + formatUsageCount(total.outTokens) + ' tokens ; ' + formatUsageCount(total.calls) +
+    ' requête' + (total.calls > 1 ? 's' : '') + '. Valeurs dans le tableau ci-dessous.';
+}
+
+// Géométrie verticale d'une pile de segments (valeurs de bas en haut, en px
+// depuis le haut du panneau). Un espace de surface de `gap` px sépare deux
+// segments ; un segment non nul garde au moins 1 px pour rester visible ; les
+// segments nuls sont omis. Le dernier rendu porte le bout arrondi (`top`).
+function usageStackGeometry(values, vmax, h, gap) {
+  const out = [];
+  let acc = 0;
+  const nz = values.map((v, k) => [k, v]).filter(e => e[1] > 0);
+  nz.forEach(([k, v], j) => {
+    const y0 = h - (acc / vmax) * h;
+    acc += v;
+    const y1 = h - (acc / vmax) * h;
+    const g = j > 0 ? gap : 0;
+    const hh = Math.max(1, (y0 - y1) - g);
+    // Le minimum de 1 px ne doit pas faire sortir un segment fin par le haut du
+    // panneau (dans le bandeau de titre) quand la pile touche le maximum.
+    out.push({ index: k, y: Math.max(0, y0 - g - hh), h: hh, top: j === nz.length - 1 });
+  });
+  return out;
+}
+
 // ── Consultation : drawer ───────────────────────────────────────────────────
 // Relu en entier à CHAQUE ouverture (aucun broadcast, cf. docs/multitab-sync.md) :
 // un appel fait dans un autre onglet apparaît à la prochaine ouverture, et le
@@ -459,8 +672,238 @@ function renderUsageStats() {
     body.appendChild(usageNote('Aucune consommation sur cette période.'));
     return;
   }
+  _usageChartArgs = { sel, win, scaleId, total: totals.total };
+  const chart = buildUsageChart(_usageChartArgs, body.clientWidth);
+  body.appendChild(chart);
+  placeUsageMarkerLabels(chart);
   const serverNames = new Map(servers.map(s => [s.id, s.deleted ? s.name + ' (supprimé)' : s.name]));
   body.appendChild(buildUsageTotalsTable(totals, serverNames));
+}
+
+// ── Consultation : graphe (dessin) ──────────────────────────────────────────
+// SVG dessiné à la largeur MESURÉE du corps du drawer (le texte des axes ne
+// s'étire pas comme le ferait un viewBox), redessiné seul, en place, quand
+// cette largeur change — sans reconstruire les pilules, dont un menu ouvert se
+// refermerait.
+let _usageChartArgs = null;
+let _usageChartResizeWired = false;
+
+const USAGE_SVG_NS = 'http://www.w3.org/2000/svg';
+const USAGE_CHART = {
+  gutter: 46,      // colonne des graduations, à gauche
+  padRight: 4,
+  titleH: 18,      // bandeau titre + légende au-dessus de chaque panneau
+  gapH: 12,        // entre deux panneaux
+  axisH: 20,       // libellés de l'axe du temps
+  barMax: 24,      // largeur maximale d'une barre
+  segGap: 2,       // espace de surface entre deux segments empilés
+  radius: 4,       // bout arrondi, côté données
+};
+
+function _usageSvg(tag, attrs, parent) {
+  const e = document.createElementNS(USAGE_SVG_NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+// Colonne à bout arrondi en haut, carrée sur la ligne de base.
+function _usageBarPath(x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h);
+  return 'M' + x + ',' + (y + h) + 'V' + (y + rr) + 'Q' + x + ',' + y + ' ' + (x + rr) + ',' + y +
+    'H' + (x + w - rr) + 'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + rr) + 'V' + (y + h) + 'Z';
+}
+
+function buildUsageChart(args, width) {
+  const C = USAGE_CHART;
+  const scale = _usageScale(args.scaleId);
+  const bins = usageBins(args.win, args.scaleId);
+  const binTotals = usageBinTotals(args.sel, bins);
+  const markers = calendarMarkers(bins, scale.granularity);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'usage-chart';
+  wrap.setAttribute('role', 'img');
+  wrap.setAttribute('aria-label', usageChartSummary(args.total, args.win, scale.granularity, bins.length));
+
+  const W = Math.max(240, Math.floor(width || 0) || 560);
+  const plotW = W - C.gutter - C.padRight;
+  const band = plotW / bins.length;
+  const barW = Math.max(2, Math.min(C.barMax, band - C.segGap));
+  const xOf = i => C.gutter + i * band + (band - barW) / 2;
+
+  // Panneaux : titre, hauteur, segments de bas en haut [classe, valeur] et
+  // légende. Un segment n'entre dans la légende que si la période en contient :
+  // « cache non renseigné » n'apparaît qu'avec des données qui le sont, « hors
+  // cache » et « servie par le cache » disparaissent sous un serveur qui ne
+  // renseigne jamais son cache, « non mesurées » n'apparaît qu'avec des appels
+  // non mesurés. La sortie, série
+  // unique, n'a pas de légende : son titre la nomme.
+  const has = f => binTotals.some(b => b[f] > 0);
+  const hasUnmeasured = has('unmeasured');
+  const panels = [
+    { key: 'in', title: 'Entrée', h: 132, ticks: 3,
+      legend: [['fresh', 'hors cache', has('freshIn')], ['cached', 'servie par le cache', has('cachedIn')],
+        ['unknown', 'cache non renseigné', has('unknownIn')]].filter(e => e[2]),
+      segs: b => [['fresh', b.freshIn], ['cached', b.cachedIn], ['unknown', b.unknownIn]] },
+    { key: 'out', title: 'Sortie', h: 64, ticks: 3, legend: [],
+      segs: b => [['out', b.outTokens]] },
+    { key: 'calls', title: 'Requêtes', h: 34, ticks: 1,
+      legend: hasUnmeasured ? [['calls', 'mesurées'], ['unmeasured', 'non mesurées']] : [],
+      segs: b => [['calls', b.calls - b.unmeasured], ['unmeasured', b.unmeasured]] },
+  ];
+
+  const H = panels.reduce((s, p) => s + C.titleH + p.h + C.gapH, 0) - C.gapH + C.axisH;
+  const svg = _usageSvg('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, class: 'usage-chart-svg',
+    'aria-hidden': 'true', 'data-plot-left': C.gutter, 'data-plot-width': plotW });
+  wrap.appendChild(svg);
+
+  let y = 0;
+  const plotBoxes = [];
+  for (const p of panels) {
+    const head = document.createElement('div');
+    head.className = 'usage-chart-head';
+    head.style.top = y + 'px';
+    head.style.left = C.gutter + 'px';
+    const title = document.createElement('span');
+    title.className = 'usage-chart-title';
+    title.textContent = p.title;
+    head.appendChild(title);
+    for (const [seg, label] of p.legend) {
+      const item = document.createElement('span');
+      item.className = 'usage-legend-item';
+      const sw = document.createElement('i');
+      sw.className = 'usage-swatch usage-seg-' + seg;
+      item.append(sw, document.createTextNode(label));
+      head.appendChild(item);
+    }
+    wrap.appendChild(head);
+    y += C.titleH;
+    const top = y;
+    plotBoxes.push([top, p.h]);
+
+    const g = _usageSvg('g', { class: 'usage-panel', 'data-panel': p.key }, svg);
+    const max = binTotals.reduce((m, b) => Math.max(m, p.segs(b).reduce((a, s) => a + s[1], 0)), 0);
+    const axis = usageChartAxis(max, p.ticks);
+    const nTicks = Math.round(axis.max / axis.step);
+    for (let k = 0; k <= nTicks; k++) {
+      const ty = Math.round(top + p.h - (k * axis.step / axis.max) * p.h) + 0.5;
+      _usageSvg('line', { x1: C.gutter, x2: W - C.padRight, y1: ty, y2: ty, class: k === 0 ? 'usage-chart-base' : 'usage-chart-grid' }, g);
+      if (k > 0) {
+        const tx = _usageSvg('text', { x: C.gutter - 6, y: ty + 3.5, class: 'usage-chart-tick' }, g);
+        tx.textContent = formatUsageTick(k * axis.step);
+      }
+    }
+    binTotals.forEach((b, i) => {
+      const segs = p.segs(b);
+      for (const s of usageStackGeometry(segs.map(e => e[1]), axis.max, p.h, C.segGap)) {
+        const x = xOf(i), sy = top + s.y;
+        const d = s.top ? _usageBarPath(x, sy, barW, s.h, C.radius)
+          : 'M' + x + ',' + sy + 'h' + barW + 'v' + s.h + 'h' + (-barW) + 'Z';
+        _usageSvg('path', { d, class: 'usage-seg usage-seg-' + segs[s.index][0], 'data-bin': i }, g);
+      }
+    });
+    y += p.h + C.gapH;
+  }
+  const plotBottom = y - C.gapH;
+
+  // Repères calendaires. Aux échelles au jour et à la semaine, un filet dans
+  // chaque panneau (jamais à travers les titres) ; à l'échelle au mois, chaque
+  // bac contient un 1er et un filet par bac ferait une seconde grille : une
+  // coche sur l'axe seulement. Libellés posés par priorité, mois avant
+  // semaine ; un libellé qui en chevaucherait un autre est omis, et le dernier
+  // passe à gauche de son filet s'il sortait du graphe. À l'échelle d'une
+  // semaine, chaque bac porte sa date et les repères n'ont pas de libellé.
+  const labelBins = args.scaleId === 'week';
+  const fullLines = scale.granularity !== 'month';
+  const marks = _usageSvg('g', { class: 'usage-chart-marks' }, svg);
+  const ordered = markers.slice().sort((a, b) => (a.kind === b.kind ? a.pos - b.pos : a.kind === 'month' ? -1 : 1));
+  for (const m of ordered) {
+    const x = Math.round(C.gutter + m.pos * plotW) + 0.5;
+    const cls = m.kind === 'month' ? 'usage-mark-month' : 'usage-mark-week';
+    if (fullLines) {
+      for (const [pt, ph] of plotBoxes) _usageSvg('line', { x1: x, x2: x, y1: pt, y2: pt + ph, class: cls }, marks);
+    }
+    _usageSvg('line', { x1: x, x2: x, y1: plotBottom, y2: plotBottom + 5, class: cls + ' usage-mark-tick', 'data-day': m.day, 'data-kind': m.kind }, marks);
+    if (labelBins) continue;
+    // Posé dans l'ordre de priorité ; le tri des chevauchements se fait une
+    // fois le graphe dans le document (placeUsageMarkerLabels), seul moment où
+    // la largeur du texte se mesure.
+    const tx = _usageSvg('text', { x: x + 3, y: plotBottom + 15, class: 'usage-mark-label' + (m.kind === 'month' ? ' is-month' : ''),
+      'data-day': m.day, 'data-x': x }, marks);
+    tx.textContent = usageMarkerLabel(m);
+  }
+  if (labelBins) {
+    bins.forEach((b, i) => {
+      const tx = _usageSvg('text', { x: xOf(i) + barW / 2, y: plotBottom + 15, class: 'usage-bin-label' }, svg);
+      tx.textContent = usageShortDay(b.start, true);
+    });
+  }
+
+  // Couche de survol : une colonne HTML par bac, sur toute la hauteur des
+  // panneaux — la cible est le bac entier, pas un segment de 3 px. Infobulle
+  // MIAOU, texte construit localement. Pas d'arrêt de tabulation : le tableau
+  // porte les valeurs, le graphe un nom qui les résume.
+  binTotals.forEach((b, i) => {
+    const col = document.createElement('div');
+    col.className = 'usage-chart-hit';
+    col.setAttribute('data-bin', i);
+    col.style.left = (C.gutter + i * band) + 'px';
+    col.style.width = band + 'px';
+    col.style.top = (C.titleH - 2) + 'px';
+    col.style.height = (plotBottom - C.titleH + 2) + 'px';
+    setTip(col, { label: usageBinTitle(b), detail: usageBinTipDetail(b) });
+    wrap.appendChild(col);
+  });
+  wrap.style.height = H + 'px';
+
+  // Largeur suivie par un ResizeObserver sur le corps du drawer, pas par
+  // `resize` : la mesure est prise avant l'ajout du graphe et du tableau, et
+  // la barre de défilement verticale qu'ils font apparaître (hors barres en
+  // surimpression) rétrécit le corps sans que la fenêtre change.
+  if (!_usageChartResizeWired && typeof ResizeObserver === 'function' && $('usage-body')) {
+    _usageChartResizeWired = true;
+    new ResizeObserver(refreshUsageChart).observe($('usage-body'));
+  }
+  return wrap;
+}
+
+// Libellés des repères, une fois le graphe dans le document (la largeur d'un
+// texte SVG ne se mesure pas hors document). Parcourus dans l'ordre où
+// buildUsageChart les a posés — mois d'abord : un libellé qui en chevaucherait
+// un déjà placé est retiré (« 31 août » s'efface devant « sept. » à un jour
+// d'écart) ; celui qui sortirait à droite passe à gauche de son filet.
+function placeUsageMarkerLabels(wrap) {
+  const svg = wrap && wrap.querySelector('svg');
+  if (!svg) return;
+  const W = Number(svg.getAttribute('width'));
+  const placed = [];
+  for (const tx of [...svg.querySelectorAll('.usage-mark-label')]) {
+    const x = Number(tx.getAttribute('data-x'));
+    const w = tx.getComputedTextLength();
+    let x0 = x + 3, x1 = x + 3 + w;
+    if (x1 > W) {
+      tx.setAttribute('x', x - 3);
+      tx.setAttribute('text-anchor', 'end');
+      x0 = x - 3 - w; x1 = x - 3;
+    }
+    if (placed.some(([a, b]) => x0 < b + 6 && x1 > a - 6)) { tx.remove(); continue; }
+    placed.push([x0, x1]);
+  }
+}
+
+// Redessine le graphe seul, à la nouvelle largeur du corps du drawer.
+function refreshUsageChart() {
+  const drawer = $('usage-drawer');
+  const body = $('usage-body');
+  if (!_usageChartArgs || !drawer || !drawer.classList.contains('show') || !body) return;
+  const old = body.querySelector('.usage-chart');
+  if (!old) return;
+  const w = body.clientWidth;
+  if (Math.abs(w - Number(old.querySelector('svg').getAttribute('width'))) < 1) return;
+  const chart = buildUsageChart(_usageChartArgs, w);
+  old.replaceWith(chart);
+  placeUsageMarkerLabels(chart);
 }
 
 function usageNote(text) {

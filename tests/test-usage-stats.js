@@ -415,3 +415,233 @@ describe('sélection et totaux', function() {
     expect(formatUsageDay('bad')).toBe('');
   });
 });
+
+// ── Graphe ──────────────────────────────────────────────────────────────────
+
+describe('usageBins — bacs glissants, comptés depuis aujourd\'hui', function() {
+  it('1 mois : un bac par jour, du début de la fenêtre à aujourd\'hui', function() {
+    var today = '2026-09-28';
+    var b = usageBins(usageScaleWindow('month', today), 'month');
+    expect(b.length).toBe(31);
+    expect(b[0]).toEqual({ start: '2026-08-29', end: '2026-08-29' });
+    expect(b[30]).toEqual({ start: today, end: today });
+  });
+  it('1 semaine : 7 bacs d\'un jour', function() {
+    expect(usageBins(usageScaleWindow('week', '2026-09-28'), 'week').length).toBe(7);
+  });
+  it('3 mois : 13 bacs de 7 jours, le dernier finit aujourd\'hui', function() {
+    var today = '2026-09-28';
+    var b = usageBins(usageScaleWindow('quarter', today), 'quarter');
+    expect(b.length).toBe(13);
+    expect(b.every(function(x) { return usageDaysBetween(x.start, x.end) === 6; })).toBe(true);
+    expect(b[12].end).toBe(today);
+    expect(b[0].start).toBe(usageScaleWindow('quarter', today).start);
+  });
+  it('mois au quantième calculés depuis aujourd\'hui, jamais en chaînant (repli de fin de mois)', function() {
+    // Depuis un 31 mai : en chaînant, le repli d'avril (30) se propagerait et
+    // le bac de mars finirait le 30. Calculé depuis l'origine, il finit le 31.
+    var b = usageBins(usageScaleWindow('half', '2026-05-31'), 'half');
+    expect(b.map(function(x) { return x.end; }))
+      .toEqual(['2025-12-31', '2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31']);
+    expect(b.map(function(x) { return x.start; }))
+      .toEqual(['2025-12-01', '2026-01-01', '2026-02-01', '2026-03-01', '2026-04-01', '2026-05-01']);
+  });
+  it('fin février, année bissextile', function() {
+    var b = usageBins(usageScaleWindow('year', '2024-03-31'), 'year');
+    expect(b[10]).toEqual({ start: '2024-02-01', end: '2024-02-29' });
+    var c = usageBins(usageScaleWindow('year', '2025-03-31'), 'year');
+    expect(c[10]).toEqual({ start: '2025-02-01', end: '2025-02-28' });
+  });
+  it('propriété : sur deux années de « aujourd\'hui », chaque échelle pave sa fenêtre sans trou ni recouvrement', function() {
+    var bad = [];
+    for (var d = 0; d < 731; d++) {
+      var today = usageAddDays('2024-01-01', d);
+      USAGE_SCALES.forEach(function(s) {
+        var win = usageScaleWindow(s.id, today);
+        var b = usageBins(win, s.id);
+        if (b[0].start !== win.start || b[b.length - 1].end !== today) bad.push(today + ' ' + s.id + ' bornes');
+        for (var i = 1; i < b.length; i++) {
+          if (usageAddDays(b[i - 1].end, 1) !== b[i].start) bad.push(today + ' ' + s.id + ' bac ' + i);
+        }
+        var expected = s.id === 'month' ? usageDaysBetween(win.start, win.end) + 1 : (s.id === 'week' ? 7 : s.span);
+        if (b.length !== expected) bad.push(today + ' ' + s.id + ' compte');
+      });
+    }
+    expect(bad).toEqual([]);
+  });
+  it('échelle inconnue ou fenêtre absente → aucun bac', function() {
+    expect(usageBins(null, 'month')).toEqual([]);
+    expect(usageBins({ start: '2026-09-01', end: '2026-09-28' }, 'decade')).toEqual([]);
+  });
+});
+
+describe('calendarMarkers — repères calendaires en fraction de la largeur', function() {
+  it('échelle au jour : lundis (semaine) et 1ers (mois), à leur bac', function() {
+    var bins = usageBins(usageScaleWindow('month', '2026-09-28'), 'month');
+    var m = calendarMarkers(bins, 'day');
+    expect(m.map(function(x) { return x.day + ':' + x.kind; }))
+      .toEqual(['2026-08-31:week', '2026-09-01:month', '2026-09-07:week', '2026-09-14:week', '2026-09-21:week', '2026-09-28:week']);
+    expect(m[1].pos).toBe(3 / 31);
+  });
+  it('un 1er qui tombe un lundi : UN repère, de mois', function() {
+    // 1er juin 2026 : un lundi.
+    var bins = usageBins(usageScaleWindow('month', '2026-06-15'), 'month');
+    var onFirst = calendarMarkers(bins, 'day').filter(function(x) { return x.day === '2026-06-01'; });
+    expect(onFirst.length).toBe(1);
+    expect(onFirst[0].kind).toBe('month');
+  });
+  it('aucun repère au bord gauche (fenêtre qui commence un lundi, ou un 1er)', function() {
+    // Depuis le 30 septembre 2026, la fenêtre d'un mois commence le lundi 31 août.
+    var a = calendarMarkers(usageBins(usageScaleWindow('month', '2026-09-30'), 'month'), 'day');
+    expect(a[0].day).toBe('2026-09-01');
+    expect(a.every(function(x) { return x.pos > 0; })).toBe(true);
+    // Depuis le 31 mars 2026, elle commence le dimanche 1er mars.
+    var b = calendarMarkers(usageBins(usageScaleWindow('month', '2026-03-31'), 'month'), 'day');
+    expect(b.some(function(x) { return x.day === '2026-03-01'; })).toBe(false);
+  });
+  it('échelle à la semaine : mois seulement, au prorata du jour dans son bac', function() {
+    // 3 mois depuis le 28 septembre 2026 : premier bac du 30 juin au 6 juillet.
+    var bins = usageBins(usageScaleWindow('quarter', '2026-09-28'), 'quarter');
+    var m = calendarMarkers(bins, 'week');
+    expect(m.map(function(x) { return x.day; })).toEqual(['2026-07-01', '2026-08-01', '2026-09-01']);
+    expect(m.every(function(x) { return x.kind === 'month'; })).toBe(true);
+    expect(m[0].pos).toBe((0 + 1 / 7) / 13);
+    // 1er août : 32 jours après le 30 juin → bac 4, 5e jour.
+    expect(m[1].pos).toBe((4 + 4 / 7) / 13);
+  });
+  it('échelle au mois : un 1er par bac, au prorata d\'un bac de longueur variable', function() {
+    var bins = usageBins(usageScaleWindow('year', '2026-09-28'), 'year');
+    var m = calendarMarkers(bins, 'month');
+    expect(m.length).toBe(12);
+    // Premier bac : 29 septembre → 28 octobre (30 jours), le 1er octobre en est le 3e.
+    expect(m[0]).toEqual({ day: '2025-10-01', kind: 'month', pos: (0 + 2 / 30) / 12 });
+  });
+});
+
+describe('usageBinTotals — agrégation par bac, cache classé par enregistrement', function() {
+  function r(day, serverId, model, o) {
+    return Object.assign({ day: day, serverId: serverId, model: model, purpose: 'chat', serverName: '',
+      calls: 0, unmeasured: 0, inTokens: 0, cachedTokens: 0, cachedKnownCalls: 0, outTokens: 0 }, o);
+  }
+  var bins = [{ start: '2026-09-27', end: '2026-09-27' }, { start: '2026-09-28', end: '2026-09-28' }];
+  it('renseigné / non renseigné classés par enregistrement, pas par bac', function() {
+    var t = usageBinTotals([
+      r('2026-09-28', 'a', 'm1', { calls: 2, inTokens: 100, cachedTokens: 60, cachedKnownCalls: 2, outTokens: 5 }),
+      r('2026-09-28', 'b', 'm1', { calls: 1, inTokens: 40, outTokens: 1 }),
+    ], bins);
+    expect(t[1].freshIn).toBe(40);
+    expect(t[1].cachedIn).toBe(60);
+    expect(t[1].unknownIn).toBe(40);
+    expect(t[1].inTokens).toBe(140);
+    expect(t[1].cacheState).toBe('partial');
+    expect(t[0].calls).toBe(0);
+  });
+  it('cache partiel dans un enregistrement : sa part est comptée comme connue', function() {
+    var t = usageBinTotals([r('2026-09-27', 'a', 'm', { calls: 3, inTokens: 90, cachedTokens: 30, cachedKnownCalls: 2, outTokens: 3 })], bins);
+    expect(t[0].cachedIn).toBe(30);
+    expect(t[0].freshIn).toBe(60);
+    expect(t[0].unknownIn).toBe(0);
+    expect(t[0].cacheState).toBe('partial');
+  });
+  it('cache aberrant (supérieur à l\'entrée) borné : la pile ne dépasse jamais l\'entrée', function() {
+    var t = usageBinTotals([r('2026-09-27', 'a', 'm', { calls: 1, inTokens: 10, cachedTokens: 25, cachedKnownCalls: 1 })], bins);
+    expect(t[0].cachedIn + t[0].freshIn + t[0].unknownIn).toBe(10);
+  });
+  it('hors bacs : ignoré', function() {
+    var t = usageBinTotals([r('2026-09-26', 'a', 'm', { calls: 1, inTokens: 10 }), r('2026-09-29', 'a', 'm', { calls: 1, inTokens: 10 })], bins);
+    expect(t[0].calls + t[1].calls).toBe(0);
+  });
+  it('invariant : la somme des bacs égale le total du tableau sur la même fenêtre (ventilation par couple serveur/modèle comprise)', function() {
+    var recs = [];
+    for (var i = 0; i < 60; i++) {
+      recs.push(r(usageAddDays('2026-07-20', i), i % 3 ? 'a' : 'b', i % 2 ? 'm1' : 'm2', {
+        calls: 1 + (i % 4), unmeasured: i % 7 === 0 ? 1 : 0, inTokens: 100 * i, cachedTokens: i % 5 ? 10 * i : 0,
+        cachedKnownCalls: i % 5 ? 1 : 0, outTokens: i }));
+    }
+    var win = usageScaleWindow('quarter', '2026-09-28');
+    var bt = usageBinTotals(recs, usageBins(win, 'quarter'));
+    var tot = usageTotals(recs, win).total;
+    USAGE_STATS_SUM_FIELDS.forEach(function(f) {
+      expect(f + '=' + bt.reduce(function(a, b) { return a + b[f]; }, 0)).toBe(f + '=' + tot[f]);
+    });
+    var stack = bt.reduce(function(a, b) { return a + b.freshIn + b.cachedIn + b.unknownIn; }, 0);
+    expect(stack).toBe(tot.inTokens);
+  });
+});
+
+describe('axes, libellés et infobulle du graphe', function() {
+  it('usageChartAxis : pas ronds, maximum qui couvre la plus haute barre', function() {
+    expect(usageChartAxis(1300000, 3)).toEqual({ step: 500000, max: 1500000 });
+    expect(usageChartAxis(76, 1)).toEqual({ step: 100, max: 100 });
+    expect(usageChartAxis(900, 3)).toEqual({ step: 500, max: 1000 });
+    expect(usageChartAxis(75000, 3)).toEqual({ step: 25000, max: 75000 });
+  });
+  it('usageChartAxis : panneau vide ou minuscule → un pas de 1, jamais de fraction', function() {
+    expect(usageChartAxis(0, 3)).toEqual({ step: 1, max: 1 });
+    expect(usageChartAxis(2, 3)).toEqual({ step: 1, max: 2 });
+  });
+  it('usageChartAxis : un pas rond fractionnaire (2,5) est arrondi à l\'entier', function() {
+    expect(usageChartAxis(7, 3)).toEqual({ step: 3, max: 9 });
+  });
+  it('formatUsageTick : notation du tableau sans zéros de queue, compacte dès 1 000 (une seule notation par axe)', function() {
+    expect(formatUsageTick(1500000)).toBe('1,5 M');
+    expect(formatUsageTick(1000000)).toBe('1 M');
+    expect(formatUsageTick(500000)).toBe('500 k');
+    expect(formatUsageTick(25000)).toBe('25 k');
+    expect(formatUsageTick(2000)).toBe('2\u202fk');
+    expect(formatUsageTick(5000)).toBe('5\u202fk');
+    expect(formatUsageTick(2500)).toBe('2,5\u202fk');
+    expect(formatUsageTick(500)).toBe('500');
+    expect(formatUsageTick(2500000)).toBe('2,5 M');
+  });
+  it('libellés de repères et de bacs', function() {
+    expect(usageMarkerLabel({ day: '2026-09-01', kind: 'month' })).toBe('sept.');
+    expect(usageMarkerLabel({ day: '2026-01-01', kind: 'month' })).toBe('janv. 2026');
+    expect(usageMarkerLabel({ day: '2026-09-07', kind: 'week' })).toBe('7 sept.');
+    expect(usageShortDay('2026-09-28', true)).toBe('lun. 28 sept.');
+    expect(usageShortDay('2026-10-01', false)).toBe('1er oct.');
+    expect(usageBinTitle({ start: '2026-09-28', end: '2026-09-28' })).toBe('28 septembre 2026');
+    expect(usageBinTitle({ start: '2026-09-22', end: '2026-09-28' })).toBe('Du 22 septembre 2026 au 28 septembre 2026');
+  });
+  it('usageBinTipDetail : entrée et cache, sortie, requêtes', function() {
+    var base = { calls: 76, unmeasured: 0, inTokens: 1290000, cachedTokens: 870000, cachedKnownCalls: 76, outTokens: 29300 };
+    expect(usageBinTipDetail(Object.assign({ cacheState: 'known' }, base)))
+      .toBe('Entrée : 1,29 M (cache : 870 k)\nSortie : 29,3 k\nRequêtes : 76');
+  });
+  it('usageBinTipDetail : cache partiel marqué et expliqué, n/d, non mesurées', function() {
+    var p = usageBinTipDetail({ calls: 3, unmeasured: 1, inTokens: 10, cachedTokens: 4, cachedKnownCalls: 1, outTokens: 1, cacheState: 'partial' });
+    expect(p).toContain('(cache : 4*)');
+    expect(p).toContain('Requêtes : 3, dont 1 non mesurée');
+    expect(p).toContain('* cache renseigné par une partie des appels seulement');
+    var u = usageBinTipDetail({ calls: 2, unmeasured: 2, inTokens: 0, cachedTokens: 0, cachedKnownCalls: 0, outTokens: 0, cacheState: 'unknown' });
+    expect(u).toContain('(cache : n/d)');
+    expect(u).toContain('dont 2 non mesurées');
+    expect(usageBinTipDetail({ calls: 0 })).toBe('Aucun appel');
+  });
+  it('usageChartSummary : période, granularité et totaux', function() {
+    var s = usageChartSummary({ calls: 1465, inTokens: 23000000, cachedTokens: 15800000, outTokens: 859000, cacheState: 'partial' },
+      { start: '2026-08-30', end: '2026-09-29' }, 'day', 31);
+    expect(s).toContain('par jour (31 barres)');
+    expect(s).toContain('du 30 août 2026 au 29 septembre 2026');
+    expect(s).toContain('dont au moins 15,8 M servis par le cache');
+    expect(s).toContain('1 465 requêtes');
+    var one = usageChartSummary({ calls: 1, inTokens: 10, cachedTokens: 0, outTokens: 1, cacheState: 'unknown' },
+      { start: '2026-09-29', end: '2026-09-29' }, 'day', 7);
+    expect(one).toContain(' 1 requête.');
+  });
+  it('usageStackGeometry : espace de surface entre segments, 1 px minimum, nuls omis, bout arrondi au dernier', function() {
+    var g = usageStackGeometry([50, 0, 50], 100, 100, 2);
+    expect(g).toEqual([
+      { index: 0, y: 50, h: 50, top: false },
+      { index: 2, y: 0, h: 48, top: true },
+    ]);
+    var tiny = usageStackGeometry([100, 0.01], 100, 100, 2);
+    expect(tiny[1].h).toBe(1);
+    expect(usageStackGeometry([0, 0], 100, 100, 2)).toEqual([]);
+  });
+  it('usageStackGeometry : un segment fin au sommet ne sort jamais du panneau', function() {
+    var g = usageStackGeometry([100, 0.5], 100, 100, 2);
+    expect(g[1].h).toBe(1);
+    expect(g[1].y).toBe(0);
+  });
+});
