@@ -284,6 +284,17 @@ filtre sur le nom du modèle (`modelFilterMatches`, le serveur étant celui de l
 fiche). La liste vient du cache de session (`_modelsById`) ; en erreur, le
 tableau reste affiché avec les modèles ajoutés à la main et un « Réessayer ».
 
+**Modèle actif.** Sur la fiche du serveur actif seulement, la ligne du modèle
+de la conversation affichée (`activeModel`, override du composer compris) porte
+la marque « ● actif », dans l'accent du « ● Actif » de la fiche, et son nom
+passe en gras (`apiCatalogueActiveModelFor`). Distincte du bouton rond : le
+défaut dit ce que prend une nouvelle conversation, la marque ce qu'utilise
+celle qu'on regarde. Le catalogue note le modèle marqué sur son conteneur
+(`data-active-model`) ; `syncModelUI`, qui passe souvent sans que le modèle ait
+changé, appelle `syncApiCatalogueActiveModel`, qui ne re-rend que si cette
+note est périmée (changement de modèle par la palette, ou de conversation,
+drawer ouvert). Un changement de SERVEUR actif re-rend déjà toutes les fiches.
+
 **Dépli.** Tout tableau arrive replié : une liste de quarante modèles dépliée
 d'office noierait le drawer. Le titre porte le compte dès que la liste est en
 cache (celle du serveur actif l'est dès le démarrage). Déplier un tableau dont

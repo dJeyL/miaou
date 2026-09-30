@@ -142,7 +142,10 @@ const initScript = () => {
           // (trois agents en parallèle), et il compte — un seul agent laisserait
           // croire que le fantôme est lié à l'unicité.
           if (multi) {
-            multi.forEach((sp, i) => toolCall(i, 'miaou__agent__spawn', {
+            // La skill « agents » est lue dans le MÊME lot, avant le(s) lancement(s) :
+            // agent__spawn refuse tant qu'elle n'a pas été lue (agentsSkillRead).
+            toolCall(0, 'miaou__skills__read', { slug: 'agents' });
+            multi.forEach((sp, i) => toolCall(i + 1, 'miaou__agent__spawn', {
               prompt: sp.prompt, intent: sp.intent, tools: [],
             }));
             await holdOn();
@@ -150,7 +153,8 @@ const initScript = () => {
             return;
           }
           if (spawn) {
-            toolCall(0, 'miaou__agent__spawn', {
+            toolCall(0, 'miaou__skills__read', { slug: 'agents' });
+            toolCall(1, 'miaou__agent__spawn', {
               prompt: spawn.prompt, intent: spawn.intent, tools: [],
             });
             await holdOn();

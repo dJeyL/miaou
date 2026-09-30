@@ -302,10 +302,13 @@ const initScript = () => {
             // scénario 4bis a besoin pour que deux agents soient drainés dans le
             // même batch.
             const spawnList = Array.isArray(spawn) ? spawn : [spawn];
+            // La skill « agents » est lue dans le MÊME lot, avant le(s) lancement(s) :
+            // agent__spawn refuse tant qu'elle n'a pas été lue (agentsSkillRead).
+            toolCall('miaou__skills__read', { slug: 'agents' }, 0);
             spawnList.forEach((sp, i) => {
               toolCall('miaou__agent__spawn', Object.assign({
                 prompt: sp.prompt, intent: sp.intent, tools: sp.tools || [],
-              }, sp.attachments ? { attachments: sp.attachments } : {}), i);
+              }, sp.attachments ? { attachments: sp.attachments } : {}), i + 1);
             });
             // GATE AVANT finish_reason (piège 2) : sans cela le tour d'outils
             // part immédiatement et l'état d'écran qu'on veut faire diverger
@@ -823,11 +826,32 @@ check('4bis. le parent est OCCUPÉ quand ses deux enfants finissent',
   await page.evaluate((p) => isGenerating(p), parent2b));
 
 // Les DEUX enfants finissent avant la frontière : un seul batch de deux entrées.
+// Fins SÉPARÉES (la première attendue en file avant de relâcher la seconde) :
+// c'est ce qui rend observable la note « encore en cours » de la première
+// remise, figée pendant que son frère travaille (formatAgentStillRunningNote).
 await release('A:A2B1');
+await page.waitForFunction((p) => peekPendingAgentResults(p).length === 1, parent2b, { timeout: 10000 });
 await release('A:A2B2');
 await page.waitForFunction(([a, b]) => !isGenerating(a) && !isGenerating(b),
   [agent2b1, agent2b2], { timeout: 10000 });
 await page.waitForTimeout(250);
+// Enfants identifiés par leur INTENTION, jamais par leur rang : agentChildrenOf
+// suit l'ordre de la liste des conversations, pas celui des lancements (le
+// rang faisait désigner l'agent de « Relire la note » par agent2b1).
+s = await page.evaluate((p) => ({
+  noteId: agentChildrenOf(p, listAllConversations()).find(c => c.agentIntent === 'Relire la note').id,
+  queued: peekPendingAgentResults(p).map(e => ({ intent: e.agentResult.intent, content: e.content })),
+}), parent2b);
+const noteAgent2b = s.noteId;
+s = s.queued;
+check('4bis. prémisse : deux résultats en file, dans l\'ordre des fins', s.length === 2
+  && s[0].intent === 'Compiler les chiffres' && s[1].intent === 'Relire la note');
+check('4bis. le résultat remis PENDANT que son frère travaille le nomme « encore en cours »',
+  s.length === 2 && /Encore en cours : « Relire la note »/.test(s[0].content)
+  && s[0].content.indexOf('(' + noteAgent2b + ')') >= 0
+  && /n'écris jamais toi-même un bloc « \[Résultat d'agent »/.test(s[0].content));
+check('4bis. le dernier résultat remis, plus rien ne tournant, n\'ajoute aucune note',
+  s.length === 2 && s[1].content.indexOf('Encore en cours') < 0);
 check('4bis. les deux résultats sont en file (parent occupé)',
   await page.evaluate((p) => hasPendingAgentResults(p), parent2b));
 
@@ -1369,12 +1393,32 @@ s = await page.evaluate(([p, a]) => {
     statusForeign: txt(callTool('miaou__agent__status', { id: a }, { convId: 'fx-hist-a', spaceId: activeSpaceId })),
     statusGhost: txt(callTool('miaou__agent__status', { id: 'c-zzz' }, { convId: 'fx-hist-a', spaceId: activeSpaceId })),
     resultOwn: txt(callTool('miaou__agent__result', { id: a }, { convId: p, spaceId: activeSpaceId })),
+    // Même agent, résultat SORTI du contexte émis : une frontière de compaction
+    // posée derrière l'entrée de résultat (en mémoire, retirée aussitôt).
+    // Prémisse vérifiée : l'entrée est bien dans le fil du parent, et la
+    // frontière bien vue par le handler (sinon resultFull serait le renvoi).
+    ...(() => {
+      const msgs = loadConversation(p).messages;
+      const delivered = msgs.some(m => m.agentResult && m.agentResult.id === a);
+      msgs.push({ role: 'compaction', content: 'résumé factice', ts: Date.now() });
+      try {
+        return { delivered, resultFull: txt(callTool('miaou__agent__result', { id: a }, { convId: p, spaceId: activeSpaceId })) };
+      } finally { msgs.pop(); }
+    })(),
   };
 }, [parent7, agent7]);
 check('7. agent__status répond à son parent', /"status":"done"/.test(s.statusOwn));
 check('7. agent__status : agent étranger et id inexistant → même message',
   s.statusForeign === s.statusGhost && /introuvable/i.test(s.statusForeign));
-check('7. agent__result rend le résultat de l\'agent', /Fin-A:A7/.test(s.resultOwn));
+// Contrat déplacé (2026-09-30) : un résultat DÉJÀ remis au parent n'est plus
+// renvoyé en entier — agent__result renvoie au message reçu. Le résultat
+// complet ne sort que si l'entrée n'est plus dans le contexte émis.
+check('7. prémisse : le résultat a bien été remis dans le fil du parent', s.delivered === true);
+check('7. agent__result sur un résultat déjà reçu : renvoi au message, sans le texte',
+  /déjà été transmis/.test(s.resultOwn) && s.resultOwn.indexOf('Identifiant : ' + agent7) >= 0
+  && !/Fin-A:A7/.test(s.resultOwn), s.resultOwn);
+check('7. agent__result sur un résultat sorti du contexte (avant une compaction) : rendu en entier',
+  /Fin-A:A7/.test(s.resultFull), s.resultFull);
 await shot('08-exclusions.png');
 
 // ═════════════════════════════════════════════════════════════════════════════

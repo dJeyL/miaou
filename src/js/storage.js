@@ -1549,7 +1549,10 @@ function recordModelUsage(key, delta, serverName) {
       req.onsuccess = function() {
         store.put(mergeUsageStatsRecord(req.result, delta, key, serverName));
       };
-      tx.oncomplete = function() { resolve(true); };
+      // Diffusé APRÈS le commit (piège 24 (a)) : un pair qui relirait avant
+      // verrait l'état d'avant. Un message par appel au modèle ; le récepteur
+      // regroupe ses relectures (scheduleUsageStatsRefresh).
+      tx.oncomplete = function() { syncPost('usage-updated', {}); resolve(true); };
       tx.onabort = function() {
         noteStorageWriteFailure('statistique d\'usage', label, tx.error);
         resolve(false);

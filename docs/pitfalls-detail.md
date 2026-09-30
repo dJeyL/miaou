@@ -209,6 +209,18 @@ HTML, ou à la synchro multi-onglets.
    seulement si la conversation était encore sans titre (cas très rare une
    fois la régénération manuelle appliquée, puisqu'elle pose toujours un titre
    si l'appel réussit).
+   **La matière à titrer est une donnée, et la sortie est contrôlée.** Passée
+   nue en message user, la demande « Lance 4 agents… » se lisait comme adressée
+   au modèle de titrage, qui a répondu « Je suis désolé mais je ne peux pas
+   lancer un agent » — tronqué à 60 caractères, c'est devenu le titre — et une
+   autre fois un morceau de JSON d'appel d'outil (mesuré le 2026-09-30).
+   `titleSubjectMessage` la balise (`<demande>`, `<conversation>`) avec la
+   consigne de ne pas y répondre ; c'est dans le message user et non dans
+   `TITLE_PROMPT`/`EARLY_TITLE_PROMPT`, dont le texte est gelé par test.
+   `normalizeTitle` rejette (rend `''`) une sortie qui commence en JSON ou
+   dépasse `TITLE_MAX_WORDS` mots : les appelants traitent déjà `''` comme un
+   échec — le titre provisoire reste, et le titrage de fin d'échange sert de
+   filet au titrage précoce.
 <a id="p10"></a>
 
 10. **Arrêt du streaming, immédiat ou différé.** `streamCompletion` ouvre un

@@ -118,6 +118,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `conv-generation-ended` | `{ convId, tabId }` | affichée → `readonly-off` ; sinon `ignore` |
 | `storage-state` | `{ full }` | `storage-state` — indépendant de la conv et du Space ; tout `full` autre que `true` vaut levée |
 | `unread-updated` | `{}` | `unread-list` — relire `miaou-unread` en entier, indépendant de la conv et du Space |
+| `usage-updated` | `{}` | `usage-refresh` — relire le store `usage_stats` si le drawer des statistiques est affiché, indépendant de la conv et du Space |
 
 ### Émetteurs (livrés)
 
@@ -144,6 +145,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `setStorageFull` (storage.js), via `noteStorageSpaceFreed` | IDB `tx.oncomplete` d'une suppression (`removeConversationRecord`, `deleteResource`, `deleteResourcesByConversation` si non vide, `deleteSkillDb`) | `storage-state` | `{ full: false }` — à CHAQUE suppression, même si cet onglet n'était pas plein : un pair peut l'être sans que cet onglet, ouvert après la pose, le sache |
 
 | `saveUnreadConvIds` (storage.js), via `markConvUnread`/`markConvRead` (main.js) | localStorage | `unread-updated` | `{}` — seulement si l'état a changé ; l'élagage de démarrage écrit avant le branchement du canal, donc sans diffuser |
+| `recordModelUsage` (storage.js), via `noteModelUsage` | IDB `tx.oncomplete` | `usage-updated` | `{}` — un message par appel au modèle, le récepteur regroupe ses relectures |
 
 **Ne diffusent PAS** (décidés, pas des oublis) :
 - `miaou-active-space` (`setActiveSpaceId`) — état **par onglet** ; deux onglets
@@ -208,6 +210,7 @@ inoffensif, les pairs rechargent de toute façon.
 | `full-reload` | `location.reload()`. |
 | `storage-state` | `setStorageFull(full, false)` : applique l'état « stockage plein » (lot AG) sans rediffuser ; au front local, le chat change d'expression et le toast de quota s'affiche ou se retire, comme dans l'onglet émetteur (décision S3 — le quota concerne tous les onglets). L'état est de session, jamais persisté : un onglet ouvert après la pose ne le connaît qu'à sa première écriture en échec, ou au prochain message. Cf. `docs/storage.md`. |
 | `unread-list` | `refreshUnreadConvs()` (relecture du stockage, jamais un delta) puis `renderConvList()` + `syncSpaceUI()` : les quatre surfaces de badges (cf. `docs/badges.md`). Pas de file pendant une génération : le fil n'est pas touché. Aussi déclenché par l'événement `storage` de la clé (`storageEventDecision`). |
+| `usage-refresh` | `scheduleUsageStatsRefresh()` (usage-stats.js) : relecture regroupée du store, seulement si le drawer des statistiques est affiché — rien sinon, la prochaine ouverture relit tout. Même chemin qu'un appel local. Pas de file pendant une génération : le fil n'est pas touché. |
 | `soft-lock` | pair affiche la même conv → l'ajouter à `_peersOnConv`, afficher le bandeau, **re-signaler** si pair nouveau (handshake borné). Soft-lock. |
 | `soft-unlock` | pair a fermé/quitté → retirer de `_peersOnConv`/`_peersGenerating` ; bandeau masqué si plus aucun pair. Soft-lock. |
 | `readonly-on` / `readonly-off` | Relais readonly (no-op tant que seul le soft-lock est branché). |

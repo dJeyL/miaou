@@ -574,7 +574,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   retour comme son homologue MCP, verdict « joignable » posé dès le premier chunk
   streamé et sur tout succès de `silentCompletion`, et rattaché au serveur
   INTERROGÉ (`backendVerdictApplies`) et non au serveur devenu actif pendant
-  l'await ; porte aussi le **chat soucieux** — source SVG
+  l'await ; rouge réservé aux pannes (`failureMeansBackendDown` : transport ou
+  5xx), un 4xx levant son propre toast de refus (`toastApiRequestRefused`) ; porte aussi le **chat soucieux** — source SVG
   unique `src/svg/cat.svg` injectée inline aux trois surfaces (ids suffixés par
   instance, compte d'instances vérifié au build) avec `LOGO_SRC` dérivé du même
   fichier pour favicon/glyphe/export, prédicat pur `resolveLogoExpression`
@@ -613,7 +614,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `buildApiCatalogue`) — gestes immédiats par `applyApiServerModelsPatch`
   (relecture fraîche, écriture sans await) sur les purs `toggleModelVisibility`,
   `addHandcraftedModel`, `removeHandcraftedModel`, `setModelVisionOff`,
-  `setModelContextWindow` ; fenêtre du tableau arrêtée avant le défaut de build ;
+  `setModelContextWindow` ; fenêtre du tableau arrêtée avant le défaut de build ; marque « actif » du
+  modèle de la conversation affichée, resynchronisée par `syncApiCatalogueActiveModel` ;
   panneau de ligne (vision, fenêtre appliquée au bouton ou à Entrée et JAMAIS au
   blur, `/api/show` d'une ligne par `readOllamaShowOnDemand`) ; état de vue hors
   du DOM (`_apiCatalogueView`, focus et curseur restaurés après re-rendu) ; et le
@@ -775,7 +777,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   broadcast post-commit + relecture post-await (piège 24), et la relecture sur
   événement `storage` (`storageEventDecision`) pour les types adossés à
   localStorage, dont le message peut précéder la visibilité de l'écriture ;
-  plus `storage-state` (lot AG), pose au front et levée à chaque suppression.
+  plus `storage-state` (lot AG), pose au front et levée à chaque suppression,
+  et `usage-updated`, relecture du drawer des statistiques s'il est affiché.
 - **`docs/interjections.md`** — interjections mid-génération (lot Q) : file
   locale de messages tapés pendant une génération, clefée PAR CONVERSATION
   (X-1e) et drainée à la frontière de tour (réaiguillage mid-boucle) ou en fin
@@ -792,7 +795,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   expliquer).
 - **`docs/agents.md`** — agents (lot X) : sous-conversations lancées par le
   modèle, prédicat de racine `isRootConversation` et ses sites d'exclusion,
-  outils `agent__*` et garde de parenté, chemin d'exécution dédié, réveil du
+  outils `agent__*` et garde de parenté, lecture préalable de la skill `agents`
+  imposée au spawn (`agentsSkillRead`), `agent__result` qui ne redonne pas un
+  résultat déjà reçu (`agentResultDelivery`), note « encore en cours » sur un
+  résultat remis pendant que ses frères travaillent, chemin d'exécution dédié, réveil du
   parent accroché au `finally` — et la **précondition de chaleur** de
   `parentThreadFor` : un parent froid rend un thread vide, qu'y pousser puis
   persister ÉCRASE son historique (payé le 2026-09-07) —, extension et
@@ -913,8 +919,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   refus HTTP ni une erreur réseau) ; serveur capturé AU DÉBUT de l'appel ; store
   `usage_stats` en agrégat (jour local, serveur, modèle, nature), incrément
   `get`+`put` dans une transaction, `cachedKnownCalls` qui distingue un cache
-  inconnu d'un cache nul, aucun broadcast par choix ; consultation par un
-  drawer relu à chaque ouverture (entrées dont le glyphe « barres » d'une fiche
+  inconnu d'un cache nul, diffusion `usage-updated` aux autres onglets ; consultation par un
+  drawer relu à chaque ouverture et, affiché, après chaque écriture de n'importe
+  quel onglet (`scheduleUsageStatsRefresh`) (entrées dont le glyphe « barres » d'une fiche
   serveur et de chaque ligne de son tableau des modèles), échelles GLISSANTES calculées sur des dates civiles
   (`usageScaleWindow`, repli du quantième par `usageAddMonths`), échelles
   proposées selon la donnée la plus ancienne (`availableUsageScales`), totaux

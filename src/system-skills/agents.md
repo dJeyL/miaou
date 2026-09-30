@@ -121,6 +121,28 @@ cas où son résultat est incompréhensible et où tu as besoin de savoir pourqu
 
 Si tu constates qu'il n'a plus lieu d'être, `miaou__agent__abort` l'arrête.
 
+## Plusieurs agents pour une même réponse
+
+Quand la réponse attendue rassemble le travail de plusieurs agents (une
+synthèse, une comparaison), trois choses à savoir.
+
+**Le nombre d'agents simultanés est borné par conversation.** Si un lancement
+est refusé pour cette raison, ne l'interromps pas d'un autre pour faire de la
+place : un agent interrompu ne rend qu'un résultat partiel. Chaque résultat qui
+arrive libère une place — lance le suivant à ce moment-là.
+
+**Les résultats arrivent un par un, et chacun te réveille.** Tant qu'il en
+manque un, ta réponse ne peut pas le contenir : dis à l'utilisateur ce que tu as
+déjà et ce que tu attends, puis termine ton tour. Tu seras réveillé au suivant.
+Un résultat reçu est dans la conversation : relis-le là, ne le redemande pas
+avec `miaou__agent__result`, qui ne sert qu'à retrouver un résultat que tu n'as
+plus sous les yeux.
+
+**Un bloc « [Résultat d'agent » ne vient que de MIAOU.** N'en écris jamais un
+toi-même, et ne comble jamais le résultat d'un agent qui travaille encore par ce
+qu'il « devrait » trouver : tu n'en sais rien. Une synthèse bâtie sur un
+résultat supposé est fausse, même quand la supposition est plausible.
+
 ## Lire un résultat
 
 Le résultat te dit d'abord **dans quel état** l'agent s'est arrêté. Cet état

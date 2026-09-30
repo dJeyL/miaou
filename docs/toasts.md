@@ -152,6 +152,18 @@ trois boutons « Copier »), résumé automatique raté (`toastSummaryFailed`, �
 **chaque** échec — décision S4, à réévaluer si c'est bruyant : il est retenté
 chaque minute).
 
+**Refus d'un serveur API — erreur, 8 s** : `toastApiRequestRefused`, appelé par
+les trois `catch` de génération (`dispatchSend`, et les deux chemins d'agents,
+où c'est le seul signal quand la génération tourne hors de l'écran), sur un
+échec que `isApiRefusal` reconnaît comme un 4xx. Clé `api-refused:<serverName>`
+(une rafale de 429 se regroupe), texte `apiRefusalToastText` qui garde le
+message du serveur tel quel — souvent le seul endroit où il dit pourquoi, et
+dans sa langue —, clic vers le drawer des serveurs API. Ce n'est PAS un front de
+santé : le serveur répond, la pastille reste verte (`failureMeansBackendDown`,
+cf. `docs/backend-health.md`), donc aucun « rétabli » ne suit. Montré même quand
+la bulle en erreur est à l'écran : le doublon est rare, et le toast se voit
+d'où qu'on regarde.
+
 **Fronts de services** — `syncHealthToasts`, appelé aux deux synchros de santé
 (`syncConnDot`, `syncAuthorizationPending`) et nulle part ailleurs. Le pur
 `healthFronts(prev, next)` décide par diff d'instantanés ; clés

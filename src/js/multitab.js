@@ -272,6 +272,14 @@ function applySyncDecision(d) {
       syncSpaceUI();
       return;
 
+    case 'usage-refresh':
+      // Un pair a enregistré un appel au modèle. Même chemin qu'un appel local :
+      // relecture regroupée, seulement si le drawer des statistiques est
+      // affiché (refreshUsageStatsIfShown), sinon rien — la prochaine ouverture
+      // relit tout.
+      scheduleUsageStatsRefresh();
+      return;
+
     case 'soft-lock': {
       // Un pair (d.tabId) affiche la même conv que nous. L'ajouter au set. Si
       // c'est un pair INCONNU, se re-signaler une fois (handshake) pour que le

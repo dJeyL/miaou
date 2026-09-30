@@ -122,8 +122,12 @@ ne retarde ni ne fait échouer une génération. Un échec passe par
 sauvegarde n'en porte pas (`docs/storage.md`, § Export / import). Leur poids a
 sa ligne dans le rapport de stockage (Réglages › Données).
 
-**Pas de broadcast**, par choix : aucun onglet n'affiche ces chiffres en continu,
-la vue relira le store à chaque ouverture (`docs/multitab-sync.md`).
+**Diffusion entre onglets** : chaque écriture commitée émet `usage-updated`
+(payload vide, sur le `tx.oncomplete` de `recordModelUsage`, piège 24 (a)) ; le
+récepteur relit le store si son drawer est affiché, par le même chemin qu'un
+appel local (`docs/multitab-sync.md`). Longtemps écartée (« aucun onglet
+n'affiche ces chiffres en continu ») : elle ne l'est plus depuis que le drawer
+se rafraîchit en place.
 
 **Écriture sans ack ni trace dans le fil**, et c'est voulu : la règle « pas
 d'écriture silencieuse en arrière-plan » vise le contenu écrit à l'initiative du
@@ -148,8 +152,18 @@ APRÈS le drawer des serveurs dans `index.html` : à z-index égal, c'est l'ordr
 du DOM qui le fait passer devant.
 
 **Relecture complète à chaque ouverture** (`readAllUsageStats`), jeton de
-séquence contre une ouverture qui en double une autre. Le drawer ne se met pas à
-jour pendant qu'il est ouvert : c'est la contrepartie de l'absence de broadcast.
+séquence contre une ouverture qui en double une autre. **Relecture en place**
+tant que le drawer est affiché : `noteModelUsage` enchaîne sur la promesse de
+`recordModelUsage`, résolue au `tx.oncomplete` (relire avant le commit relirait
+l'état d'avant), et appelle `scheduleUsageStatsRefresh` — regroupement de
+`USAGE_REFRESH_DELAY_MS`, une boucle d'outils enregistrant un appel par tour et
+la fin d'un échange plusieurs d'affilée (titrage, résumé). `refreshUsageStatsIfShown`
+ne fait rien drawer fermé, reprend le jeton de l'ouverture SANS l'incrémenter
+(une ouverture ou une fermeture pendant la lecture la rend obsolète), conserve
+filtres et échelle choisie (des globales) et la position de défilement, et se
+reporte tant qu'un menu de pilule est ouvert — le re-rendu reconstruit les
+pilules et refermerait le menu sous le pointeur. Les écritures d'un autre
+onglet arrivent par `usage-updated` et empruntent le même chemin.
 
 **Filtres** : serveur (« Tous les serveurs », les serveurs vivants dans l'ordre
 des réglages sous leur nom vivant, puis ceux qui n'existent plus mais ont des
@@ -346,7 +360,12 @@ ouvert se refermerait.
   défaut, tableau (« n/d », astérisque et son infobulle), serveur supprimé dans
   le filtre, ouverture filtrée depuis une fiche, empilement et Échap, et les
   modèles homonymes (une ligne par serveur, suffixe sur les seuls homonymes,
-  filtre modèle par nom, plus de suffixe sous un filtre serveur).
+  filtre modèle par nom, plus de suffixe sous un filtre serveur) ; enfin le
+  rafraîchissement en place — aucune relecture drawer fermé (espion sur
+  `readAllUsageStats`), ligne qui suit un nouvel appel sans rouvrir ni perdre le
+  filtre, report tant qu'un menu de pilule est ouvert, et appel enregistré dans
+  un second onglet (`usage-updated`). Rouge contre le code d'avant ; le dernier
+  contrôle rougit seul quand on retire le `syncPost`.
 - Playwright (`.claude/skills/run-miaou/verify-usage-stats-chart.mjs`) : le
   graphe dessiné sur un store seedé, valeurs attendues lues dans les purs
   vivants — à chaque échelle, nom accessible, aucun arrêt de tabulation, une

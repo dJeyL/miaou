@@ -112,7 +112,8 @@ function mergeUsageStatsRecord(prev, delta, key, serverName) {
 function noteModelUsage(server, model, purpose, usage) {
   if (typeof recordModelUsage !== 'function') return;
   const key = { day: localDayKey(Date.now()), serverId: server ? server.id : '', model: model || '', purpose };
-  recordModelUsage(key, usageStatsDelta(usage), server ? server.name : '');
+  recordModelUsage(key, usageStatsDelta(usage), server ? server.name : '')
+    .then(ok => { if (ok) scheduleUsageStatsRefresh(); });
 }
 
 // ── Consultation : dates civiles ────────────────────────────────────────────
@@ -565,9 +566,9 @@ function usageStackGeometry(values, vmax, h, gap) {
 }
 
 // ── Consultation : drawer ───────────────────────────────────────────────────
-// Relu en entier à CHAQUE ouverture (aucun broadcast, cf. docs/multitab-sync.md) :
-// un appel fait dans un autre onglet apparaît à la prochaine ouverture, et le
-// drawer ne se met pas à jour pendant qu'il est ouvert.
+// Relu en entier à CHAQUE ouverture, et relu PENDANT qu'il est affiché après
+// chaque enregistrement commité, de cet onglet ou d'un autre (message
+// `usage-updated`, cf. docs/multitab-sync.md) — `scheduleUsageStatsRefresh`.
 //
 // Points d'entrée : palette (touche `u`), réglages › Connexion, le glyphe
 // « barres » de chaque fiche serveur, qui ouvre le drawer filtré sur ce
@@ -611,6 +612,42 @@ async function openUsageStats(opts) {
   if (seq !== _usageSeq) return;
   _usageRecords = recs || [];
   renderUsageStats();
+}
+
+// Relecture du drawer AFFICHÉ après un enregistrement commité — par cet onglet
+// (noteModelUsage, sur le `tx.oncomplete` de recordModelUsage : relire avant le
+// commit relirait l'état d'avant) ou par un pair (`usage-updated`, multitab.js). Regroupée : une boucle d'outils enregistre un appel
+// par tour, et la fin d'un échange en déclenche plusieurs d'affilée (titrage,
+// résumé). Filtres et échelle choisie sont des globales, donc conservés ; la
+// position de défilement l'est explicitement. Reportée tant qu'un menu de
+// pilule est ouvert : le re-rendu reconstruit les pilules et le refermerait
+// sous le pointeur.
+const USAGE_REFRESH_DELAY_MS = 400;
+let _usageRefreshTimer = null;
+function scheduleUsageStatsRefresh() {
+  if (_usageRefreshTimer) return;
+  _usageRefreshTimer = setTimeout(() => { _usageRefreshTimer = null; refreshUsageStatsIfShown(); },
+    USAGE_REFRESH_DELAY_MS);
+}
+async function refreshUsageStatsIfShown() {
+  const drawer = $('usage-drawer');
+  if (!drawer || !drawer.classList.contains('show')) return;
+  if ($('usage-filters') && $('usage-filters').querySelector('.model-menu.show')) {
+    scheduleUsageStatsRefresh();
+    return;
+  }
+  // Même jeton que l'ouverture, SANS l'incrémenter : une ouverture ou une
+  // fermeture pendant la lecture rend celle-ci obsolète (piège 24 (b)).
+  const seq = _usageSeq;
+  let recs;
+  try { recs = await readAllUsageStats(); }
+  catch (e) { return; }   // l'affichage en place reste valable ; la prochaine écriture retentera
+  if (seq !== _usageSeq || !drawer.classList.contains('show')) return;
+  _usageRecords = recs || [];
+  const scroller = drawer.querySelector('.drawer-body');
+  const top = scroller ? scroller.scrollTop : 0;
+  renderUsageStats();
+  if (scroller) scroller.scrollTop = top;
 }
 
 function closeUsageStats() {

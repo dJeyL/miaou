@@ -192,8 +192,8 @@ const initScript = () => {
     return new Response(new ReadableStream({
       async start(controller) {
         const send = (o) => controller.enqueue(enc.encode('data: ' + JSON.stringify(o) + '\n\n'));
-        const toolCall = (name, args) => {
-          send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_' + tag + '_' + name,
+        const toolCall = (name, args, index) => {
+          send({ choices: [{ delta: { tool_calls: [{ index: index || 0, id: 'call_' + tag + '_' + name,
             type: 'function', function: { name: name, arguments: JSON.stringify(args) } }] } }] });
         };
         const closeWith = (finish) => {
@@ -204,9 +204,12 @@ const initScript = () => {
 
         try {
           if (spawn) {
+            // La skill « agents » est lue dans le MÊME lot, avant le(s) lancement(s) :
+            // agent__spawn refuse tant qu'elle n'a pas été lue (agentsSkillRead).
+            toolCall('miaou__skills__read', { slug: 'agents' }, 0);
             toolCall('miaou__agent__spawn', Object.assign({
               prompt: spawn.prompt, intent: spawn.intent, tools: spawn.tools || [],
-            }, spawn.attachments ? { attachments: spawn.attachments } : {}));
+            }, spawn.attachments ? { attachments: spawn.attachments } : {}), 1);
             // GATE AVANT finish_reason (piège 2) : sans cela le tour d'outils
             // part immédiatement et l'état d'écran qu'on veut faire diverger
             // (Espace, conversation affichée) n'a pas encore bougé — le

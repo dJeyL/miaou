@@ -2678,6 +2678,16 @@ const TOOLS = [
       if (self && isAgentConversation(self)) {
         return toolFail('agent__spawn', 'Un agent ne peut pas en lancer un autre : la profondeur est bornée à un niveau.');
       }
+      // Lecture préalable de la skill « agents », imposée ici plutôt que
+      // laissée à la doctrine, qui se saute (agentsSkillRead). Avant les
+      // bornes : c'est la première chose à faire, quel que soit le nombre
+      // d'agents déjà en cours.
+      if (!agentsSkillRead(toolConvThread(c.convId), _pendingToolAcks)) {
+        return toolFail('agent__spawn', 'Refusé : lis d\'abord la skill « ' + AGENTS_SKILL_SLUG +
+          ' » avec miaou__skills__read, puis relance ce lancement. Rien n\'a été lancé. ' +
+          'Elle dit comment rédiger le prompt d\'un agent qui démarre sans rien de cette ' +
+          'conversation, et comment suivre plusieurs agents jusqu\'à leurs résultats.');
+      }
       // Deux bornes, et le refus NOMME celle qui est atteinte. Les
       // constantes vivent dans storage.js (dérivation BUILD_CONFIG) et ne sont
       // lues qu'ici, en corps de fonction (contrainte de portée inter-fichier).
@@ -2795,8 +2805,31 @@ const TOOLS = [
       if (!conv) return toolFail('agent__result', AGENT_NOT_FOUND);
       const st = agentStatus(conv.id);
       _pendingToolAcks.push({ kind: 'agent_result', convId: conv.id, title: conv.agentIntent || '' });
+      // Réponse lue au moment où le modèle est tenté d'attendre en boucle :
+      // « tu seras prévenu » ne lui disait pas quoi faire EN ATTENDANT, et un
+      // modèle qui voulait tous les résultats avant de synthétiser a rappelé
+      // l'outil trois fois de suite sur le même agent (mesuré le 2026-09-30).
+      // Le geste attendu — finir son tour — est donc nommé ici, au point d'usage.
       if (st === 'running') {
-        return 'Agent ' + conv.id + ' : toujours en cours. Tu seras prévenu quand il aura terminé.';
+        return 'Agent ' + conv.id + ' : toujours en cours. N\'appelle pas cet outil pour ' +
+          'l\'attendre, il ne t\'apprendrait rien de plus : poursuis ce que tu as à faire ' +
+          'sans lui, ou termine ton tour. Tu seras réveillé avec son résultat dès qu\'il ' +
+          'aura terminé.';
+      }
+      // Déjà reçu, ou sur le point de l'être : ne pas le renvoyer en double
+      // (agentResultDelivery). Le fil lu est celui de la génération du parent
+      // quand elle tourne — c'est lui qui appelle —, le record sinon.
+      const c = toolCtx(ctx);
+      const delivery = agentResultDelivery(toolConvThread(c.convId), peekPendingAgentResults(c.convId), conv.id);
+      if (delivery === 'emitted') {
+        return 'Agent ' + conv.id + ' : son résultat t\'a déjà été transmis dans cette ' +
+          'conversation — c\'est le message qui commence par « [Résultat d\'agent » et ' +
+          'porte « Identifiant : ' + conv.id + ' ». Relis-le là plutôt que de le redemander.';
+      }
+      if (delivery === 'pending') {
+        return 'Agent ' + conv.id + ' : il vient de terminer, et son résultat t\'arrive juste ' +
+          'après cet appel, dans un message qui commence par « [Résultat d\'agent ». ' +
+          'Inutile de le redemander.';
       }
       // Même formatage que la délivrance automatique : une seule formule, sinon
       // relire un résultat ne dirait pas la même chose que le recevoir.
@@ -2998,6 +3031,14 @@ function exposedTools(ctx) {
 // globales d'écran couvre les appels hors génération (drawer d'outils, tests) ;
 // aucun site ne lit `currentConvId`/`activeSpaceId` directement — c'est
 // vérifiable par grep, cf. docs/generations.md.
+// Fil de la conversation qui APPELLE un outil : celui de sa génération quand
+// elle tourne (c'est elle qui appelle, et son fil peut précéder le record
+// persisté), le record sinon.
+function toolConvThread(convId) {
+  const g = typeof generationFor === 'function' ? generationFor(convId) : null;
+  return g ? g.thread : ((loadConversation(convId) || {}).messages || []);
+}
+
 function toolCtx(ctx) {
   if (ctx && ctx.convId !== undefined && ctx.spaceId !== undefined) return ctx;
   return {

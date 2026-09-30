@@ -303,6 +303,18 @@ function toastWakeFailed(parentId, err) {
     action: parent ? { label: 'Ouvrir la conversation', run: function() { gotoAgentInventoryRow(parent); } } : null });
 }
 
+// Requête refusée par un serveur API (isApiRefusal, api.js) : appelé par les
+// trois `catch` de génération (dispatchSend, et les deux chemins d'agents).
+// Clé par serveur : une rafale de 429 se regroupe en un seul toast au lieu de
+// s'empiler. Montré même quand la bulle en erreur est à l'écran — le doublon
+// est rare, et c'est le toast qui se voit d'où qu'on regarde.
+function toastApiRequestRefused(err, serverName) {
+  if (!isApiRefusal(err)) return;
+  showToast({ key: 'api-refused:' + String(serverName || ''), level: 'error', theme: 'services',
+    text: apiRefusalToastText(serverName, err.message),
+    action: { label: 'Serveurs API', run: openApiServers } });
+}
+
 function toastExportFailed(convId) {
   showToast({ key: 'export:' + (convId || ''), level: 'warn', theme: 'export',
     text: 'L\'export HTML de cette conversation a échoué.' });

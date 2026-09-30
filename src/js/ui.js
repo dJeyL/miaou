@@ -5896,6 +5896,8 @@ function syncModelUI() {
   // changement de modèle, et toute relecture de liste qui a pu en apprendre la
   // fenêtre, repasse par ici — pilule, glyphe de seuil et inspecteur ouvert.
   syncContextCounter();
+  // Marque « actif » du tableau des modèles, si le drawer des serveurs est ouvert.
+  syncApiCatalogueActiveModel();
   // Même motif pour le raisonnement déclaré : un modèle déclaré sans
   // raisonnement masque le sélecteur (reasoningEffortBlocked).
   syncReasoningUI();
@@ -8899,6 +8901,30 @@ function refreshApiCatalogue(serverId, opts) {
   if (before) apiCatalogueSlideRows(next, before);
 }
 
+// Modèle à marquer « actif » dans le tableau de `server` : celui de la
+// conversation affichée (`activeModel`, override compris), sur la fiche du
+// serveur actif seulement — ailleurs, chaîne vide.
+function apiCatalogueActiveModelFor(server) {
+  const active = activeApiServer();
+  if (!server || !active || active.id !== server.id) return '';
+  return String(activeModel() || '').trim();
+}
+
+// Suit un changement de modèle actif pendant que le drawer est ouvert (palette,
+// changement de conversation). Appelée par `syncModelUI`, qui passe souvent
+// sans que le modèle ait changé : ne re-rend que si le marquage peint est
+// périmé. Un changement de SERVEUR actif re-rend déjà toutes les fiches
+// (`renderApiServersIfOpen`).
+function syncApiCatalogueActiveModel() {
+  const drawer = $('api-drawer');
+  const server = activeApiServer();
+  if (!drawer || !drawer.classList.contains('show') || !server) return;
+  const card = apiCardEl(server.id);
+  const cat = card && card.querySelector('.api-catalogue');
+  if (!cat || cat.dataset.activeModel === apiCatalogueActiveModelFor(server)) return;
+  refreshApiCatalogue(server.id);
+}
+
 // Position verticale de chaque ligne (et de son panneau déplié), par modèle.
 function apiCatalogueRowTops(root) {
   const tops = new Map();
@@ -9003,6 +9029,11 @@ function buildApiCatalogue(server) {
   const sid = server.id;
   const cat = document.createElement('div');
   cat.className = 'api-catalogue' + (w.open ? ' open' : '');
+  // Modèle ACTIF (celui de la conversation affichée, override compris) : marqué
+  // sur la seule fiche du serveur actif. Noté sur le conteneur pour que
+  // `syncApiCatalogueActiveModel` sache si le marquage peint est périmé.
+  const activeId = apiCatalogueActiveModelFor(server);
+  cat.dataset.activeModel = activeId;
   if (w.open) apiCatalogueEnsureList(server);
   const ls = apiCatalogueListState(server);
   const entries = serverModelEntries(server, ls.ids);
@@ -9111,7 +9142,7 @@ function buildApiCatalogue(server) {
       tbody.appendChild(sep);
     }
     prevHidden = hidden;
-    tbody.appendChild(buildApiModelRow(server, e, hidden, w));
+    tbody.appendChild(buildApiModelRow(server, e, hidden, w, e.id === activeId));
     if (w.expanded.has(e.id)) tbody.appendChild(buildApiModelPanel(server, e, w));
   });
   if (!rows.length) {
@@ -9162,11 +9193,12 @@ function apiModelCapCell(state, glyph, texts) {
   return sp;
 }
 
-function buildApiModelRow(server, e, hidden, w) {
+function buildApiModelRow(server, e, hidden, w, isActive) {
   const sid = server.id;
   const isDef = e.id === server.model;
   const tr = document.createElement('tr');
-  tr.className = 'api-model-row' + (hidden ? ' is-hidden' : '') + (w.expanded.has(e.id) ? ' expanded' : '');
+  tr.className = 'api-model-row' + (hidden ? ' is-hidden' : '') + (w.expanded.has(e.id) ? ' expanded' : '')
+    + (isActive ? ' is-active' : '');
   tr.dataset.model = e.id;
 
   // Défaut : geste immédiat. Choisir un masqué le rend visible (le défaut l'est
@@ -9188,6 +9220,13 @@ function buildApiModelRow(server, e, hidden, w) {
   nm.className = 'api-model-name';
   nm.textContent = e.id;
   td1.appendChild(nm);
+  if (isActive) {
+    const act = document.createElement('span');
+    act.className = 'api-model-tag active';
+    act.textContent = '● actif';
+    setTip(act, 'Modèle de la conversation affichée');
+    td1.appendChild(act);
+  }
   if (e.origin === 'handcrafted' || e.origin === 'absent') {
     const tag = document.createElement('span');
     tag.className = 'api-model-tag' + (e.origin === 'absent' ? ' absent' : '');

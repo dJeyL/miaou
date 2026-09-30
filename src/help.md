@@ -957,8 +957,9 @@ Quelques lectures utiles :
 
 Les chiffres viennent des serveurs, pas d'une estimation de MIAOU : ce sont
 ceux qui comptent pour un quota. Ils sont gardés dans ce navigateur, font
-partie de la sauvegarde complète (sujet `donnees`), et ne se mettent à jour
-qu'à l'ouverture de l'écran. Pour savoir ce qu'un message envoie au modèle et
+partie de la sauvegarde complète (sujet `donnees`), et se mettent à jour
+d'eux-mêmes tant que l'écran est ouvert, à chaque nouvel appel, y compris
+depuis un autre onglet. Pour savoir ce qu'un message envoie au modèle et
 comment l'alléger, voir plutôt le sujet `contexte`.
 
 ## interface — repères à l'écran
@@ -1054,7 +1055,9 @@ Quelques repères pour te déplacer dans MIAOU :
   de la zone de saisie quand la place le permet, juste au-dessus sinon ; à
   gauche d'un panneau ouvert) :
   elles annoncent ce qui arrive pendant que tu regardes ailleurs — un serveur
-  qui ne répond plus puis qui revient, un stockage plein, un export, une copie
+  qui ne répond plus puis qui revient, un serveur qui refuse une requête (modèle
+  inaccessible avec ton offre, clef refusée, trop de requêtes d'un coup : son
+  message est repris tel quel), un stockage plein, un export, une copie
   ou un résumé automatique qui a échoué, le résultat d'un agent qui n'a pas pu
   être remis. Rouge pour une erreur, ambre pour un avertissement, vert pour un
   service rétabli. Une notification cliquable mène où agir ; la croix la
@@ -1115,7 +1118,9 @@ Quelques repères pour te déplacer dans MIAOU :
   s'ajoute à la main en bas du tableau (il arrive proposé au menu) et se retire
   depuis sa ligne, sauf s'il est le modèle par défaut : il faut d'abord en
   choisir un autre. Un modèle par défaut que le serveur ne liste plus est marqué
-  « absent de la liste ». Le chevron d'une ligne ouvre ses réglages : lecture
+  « absent de la liste ». Sur la fiche du serveur actif, le modèle de la
+  conversation affichée est marqué « actif » — le défaut, ou celui choisi dans
+  le composer pour cette conversation. Le chevron d'une ligne ouvre ses réglages : lecture
   des images (« Sans vision » quand le serveur ne dit pas si le modèle les lit
   et qu'il ne les lit pas : MIAOU envoie alors un descripteur textuel), taille
   de fenêtre de contexte à saisir (appliquée par « Appliquer » ou Entrée), et,

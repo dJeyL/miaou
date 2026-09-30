@@ -172,7 +172,12 @@ const initScript = () => {
         };
         try {
           if (spawn) {
-            send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_' + tag,
+            // La skill « agents » est lue dans le MÊME lot, avant le(s) lancement(s) :
+            // agent__spawn refuse tant qu'elle n'a pas été lue (agentsSkillRead).
+            send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_' + tag + '_skill',
+              type: 'function', function: { name: 'miaou__skills__read',
+                arguments: JSON.stringify({ slug: 'agents' }) } }] } }] });
+            send({ choices: [{ delta: { tool_calls: [{ index: 1, id: 'call_' + tag,
               type: 'function', function: { name: 'miaou__agent__spawn',
                 arguments: JSON.stringify({ prompt: spawn.prompt, intent: spawn.intent, tools: [] }) } }] } }] });
             await holdOn();

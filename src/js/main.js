@@ -4658,7 +4658,10 @@ async function dispatchSend(matches, continuation) {
     // échec de transport (fetch rejeté : DNS, CORS, connexion refusée).
     const detail = (e && e.message) || String(e);
     if (genOwnsScreen(gen)) finalizeAssistantError(gen.wrap, /^HTTP \d/.test(detail) ? detail : 'Erreur réseau : ' + detail);
-    setConnDot('err', serverId);
+    // Rouge seulement si l'échec dit que le serveur ne répond pas : un 4xx
+    // (dont le 429 d'une rafale) est une réponse (failureMeansBackendDown).
+    if (failureMeansBackendDown(e)) setConnDot('err', serverId);
+    else toastApiRequestRefused(e, serverName);   // 4xx : le serveur répond, mais refuse
   } finally {
     // Désenregistrement AVANT setSending : ce dernier dérive `sending` du
     // registre (« la conv AFFICHÉE génère-t-elle ? »), il doit donc voir un

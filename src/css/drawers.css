@@ -1083,6 +1083,10 @@
 .api-model-name { overflow-wrap: anywhere; color: var(--text); }
 .api-model-tag { display: inline-block; margin-left: 6px; font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
 .api-model-tag.absent { color: var(--pending); }
+/* Modèle de la conversation affichée : même accent que le « ● Actif » de la
+   fiche du serveur actif. */
+.api-model-tag.active { color: var(--accent); }
+.api-model-row.is-active .api-model-name { font-weight: 600; }
 
 .api-model-default {
   width: 14px; height: 14px; padding: 0; border-radius: 50%;

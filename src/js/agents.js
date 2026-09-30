@@ -204,11 +204,23 @@ function hasWorkingAgent(convId, convs) {
 // PUR et testable : les comptes arrivent en arguments, la lecture du registre
 // reste à l'appelant. Renvoie null si le lancement est permis, sinon le message
 // de refus.
+//
+// Le refus par conversation ne propose PAS agent__abort. Il le faisait
+// (« Attends qu'un des tiens termine, ou interromps-en un avec agent__abort »),
+// à égalité avec l'attente, et un modèle a pris cette porte : il a interrompu
+// un agent qu'il venait de lancer pour placer le quatrième, réduisant la
+// réponse du premier à un résultat partiel (mesuré le 2026-09-30). Attendre ne coûte rien : le parent est
+// réveillé quand un agent termine (wakeParentWithPendingAgentResults), et la
+// place est alors libre. Le refus le dit, et ferme nommément l'autre geste —
+// ne pas le citer ne suffirait pas, le modèle connaît l'outil.
 function agentSpawnLimitError(perConv, total, maxPerConv, maxTotal) {
   if (perConv >= maxPerConv) {
     return 'Refusé : ' + maxPerConv + ' agent' + (maxPerConv > 1 ? 's' : '') +
-      ' déjà en cours sur cette conversation (borne par conversation atteinte). ' +
-      'Attends qu\'un des tiens termine, ou interromps-en un avec agent__abort.';
+      ' déjà en cours sur cette conversation (borne par conversation atteinte) : ' +
+      'celui-ci n\'est pas lancé. Tu seras prévenu dès que l\'un des tiens termine, ' +
+      'et tu pourras alors le lancer. N\'interromps pas un agent en cours pour ' +
+      'faire de la place : il ne rendrait qu\'un résultat partiel. Poursuis sans lui, ou ' +
+      'termine ton tour en indiquant ce qui reste à lancer.';
   }
   if (total >= maxTotal) {
     return 'Refusé : ' + maxTotal + ' agent' + (maxTotal > 1 ? 's' : '') +
@@ -601,7 +613,34 @@ function formatAgentResultForParent(payload) {
   lines.push('--- Réponse de l\'agent ---');
   lines.push('');
   lines.push(p.text && p.text.trim() ? p.text : '(aucune réponse produite)');
+  const running = formatAgentStillRunningNote(p.stillRunning);
+  if (running) {
+    lines.push('');
+    lines.push(running);
+  }
   return lines.join('\n');
+}
+
+// Note de queue d'un résultat REMIS alors que d'autres agents du même parent
+// travaillent encore. Posée au point exact où un modèle a dérapé (mesuré le
+// 2026-09-30) : réveillé par le troisième résultat sur quatre, il a prolongé
+// le motif des trois messages reçus en rédigeant lui-même un bloc
+// « [Résultat d'agent » pour le quatrième, JSON inventé compris, puis une
+// synthèse bâtie dessus. La doctrine (« ne prétends jamais savoir ce qu'il a
+// trouvé ») le disait déjà, mais loin du moment de la tentation.
+// `stillRunning` : [{ id, intent }], figé à la remise — l'entrée est persistée
+// une fois et rejouée à l'identique (byte-stable, piège 16). Vide → rien.
+function formatAgentStillRunningNote(stillRunning) {
+  const list = (stillRunning || []).filter(a => a && a.id);
+  if (!list.length) return '';
+  const names = list.map(a => (a.intent ? '« ' + a.intent + ' » ' : '') + '(' + a.id + ')').join(', ');
+  const one = list.length === 1;
+  return 'Encore en cours : ' + names + '. ' +
+    (one ? 'Son résultat t\'arrivera' : 'Leurs résultats t\'arriveront') +
+    ' de la même façon, dans un message comme celui-ci. D\'ici là tu ne sais rien de ce ' +
+    (one ? 'qu\'il trouvera' : 'qu\'ils trouveront') +
+    ' : n\'écris jamais toi-même un bloc « [Résultat d\'agent », et si ta réponse a besoin de ' +
+    (one ? 'son résultat' : 'leurs résultats') + ', termine ton tour, tu seras réveillé.';
 }
 
 // Entrée de thread poussée dans le fil du PARENT : message user
@@ -946,6 +985,7 @@ async function driveAgentConversation(gen, apiMessages, tools) {
     });
   } catch (e) {
     gen.agentError = true;
+    toastApiRequestRefused(e, gen.serverName);   // 4xx : seul signal hors écran
     // Trace du plantage DANS le fil de l'agent : sans elle, ouvrir son fil
     // montrerait une conversation qui s'arrête sans rien dire, et le parent
     // recevrait un résultat vide sans cause lisible.
@@ -1015,6 +1055,10 @@ async function deliverAgentResult(agentConvId, status, thread) {
     // rend une réponse évasive et le parent ne peut PAS savoir pourquoi, donc
     // pas relancer avec la bonne trousse.
     toolFailures: collectAgentToolFailures(thread || (agent && agent.messages)),
+    // Frères ENCORE en cours, à l'instant de la remise (formatAgentStillRunningNote).
+    stillRunning: agentChildrenOf(parentConvId, listAllConversations())
+      .filter(c => c.id !== agentConvId && typeof isGenerating === 'function' && isGenerating(c.id))
+      .map(c => ({ id: c.id, intent: c.agentIntent || '' })),
   };
 
   // Le parent doit être CHAUD pour qu'on lise et réécrive ses messages : une
@@ -1097,6 +1141,64 @@ function takePendingAgentResults(convId) {
 
 function hasPendingAgentResults(convId) {
   return (_pendingAgentResults.get(convId) || []).length > 0;
+}
+
+// Slug de la skill système que la doctrine impose de lire avant le premier
+// lancement d'agent (AGENT_DOCTRINE, tools.js).
+const AGENTS_SKILL_SLUG = 'agents';
+
+// La skill « agents » a-t-elle été lue dans cette conversation ? La doctrine
+// l'impose avant le premier agent__spawn, mais une doctrine se saute : un
+// modèle a lancé ses agents sans jamais l'ouvrir (mesuré le 2026-09-30), et
+// toutes ses consignes (attendre sans interrompre, ne jamais rédiger soi-même
+// un résultat) lui restaient inconnues. agent__spawn refuse donc tant que la
+// lecture n'est pas constatée :
+//   - dans le fil, APRÈS la dernière frontière de compaction (seul l'aval est
+//     émis : une lecture d'avant n'est plus dans le contexte) ;
+//   - ou plus tôt dans le MÊME lot d'appels (`pendingAcks`, la file des acks du
+//     tour en cours), sans quoi un modèle qui lit puis lance dans un seul tour
+//     paierait un aller-retour de plus. Le prompt de ce lancement-là a été écrit
+//     sans la skill ; la suite du suivi, elle, en bénéficie.
+// Une lecture en échec (slug inconnu, skill désactivée) ne compte pas.
+// Pure, testable en QuickJS.
+function agentsSkillRead(thread, pendingAcks) {
+  const isRead = (m) => !!m && m.kind === 'skill_read' && m.slug === AGENTS_SKILL_SLUG && !m.error;
+  const t = thread || [];
+  for (let i = lastCompactionIndex(t) + 1; i < t.length; i++) {
+    if (isAckRole(t[i] && t[i].role) && isRead(t[i])) return true;
+  }
+  return (pendingAcks || []).some(isRead);
+}
+
+// Copie de la file d'un parent, SANS la drainer : pour la lire (agent__result),
+// jamais pour la consommer.
+function peekPendingAgentResults(convId) {
+  return (_pendingAgentResults.get(convId) || []).slice();
+}
+
+// Où en est, pour le parent, le résultat de l'agent `agentId` ? Décide de ce que
+// rend agent__result sur un agent terminé :
+//   'emitted' — l'entrée de résultat est dans le fil APRÈS la dernière
+//               frontière de compaction, donc dans ce que le modèle reçoit
+//               (expandThread n'émet que l'aval de la dernière frontière) ;
+//   'pending' — en file : elle sera injectée à la prochaine frontière de tour
+//               (onAgentResults, dans les deux chemins de génération) ou au
+//               réveil du parent ;
+//   null      — ni l'un ni l'autre (résultat d'avant une compaction, agent
+//               interrompu par un reload…) : à rendre en entier.
+// Sans ce tri, agent__result renvoyait en entier un résultat que le modèle
+// venait de recevoir (mesuré le 2026-09-30 : quatre résultats injectés, puis
+// relus un par un). Pure, testable en QuickJS.
+function agentResultDelivery(thread, pending, agentId) {
+  if (!agentId) return null;
+  const t = thread || [];
+  const from = lastCompactionIndex(t);
+  for (let i = t.length - 1; i > from; i--) {
+    const m = t[i];
+    if (m && m.agentResult && m.agentResult.id === agentId) return 'emitted';
+  }
+  if ((pending || []).some(e => e && e.agentResult && e.agentResult.id === agentId)) return 'pending';
+  return null;
 }
 
 // Rafraîchissement des badges (étape 7, point 4) : au spawn ET à TOUTE fin
@@ -1278,6 +1380,7 @@ async function driveDetachedConversation(gen, apiMessages) {
       onError: () => {},
     });
   } catch (e) {
+    toastApiRequestRefused(e, gen.serverName);   // 4xx : seul signal hors écran
     pushGenMessage(gen, { role: 'assistant', content: 'Erreur : ' + ((e && e.message) || e),
       model: gen.model, ts: Date.now() }, 'final');
     persistGeneration(gen);

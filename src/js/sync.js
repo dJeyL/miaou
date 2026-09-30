@@ -47,6 +47,7 @@ const SYNC_MESSAGE_TYPES = [
   'conv-generation-ended',    // { convId, tabId } — fin de readonly relay
   'storage-state',            // { full } — quota IndexedDB atteint (pose) ou place libérée (levée), lot AG
   'unread-updated',           // { } — conversations non lues (badges) modifiées : relire le stockage
+  'usage-updated',            // { } — statistiques d'usage enregistrées : relire le store si le drawer est affiché
 ];
 
 // Construit une enveloppe bien formée. `rand` injecté (déterminisme) n'est PAS
@@ -206,6 +207,10 @@ function routeMessage(env, ctx) {
       // Le payload ne porte rien : le récepteur relit l'ensemble, toujours
       // entier — un id isolé ne dirait pas si d'autres ont bougé entre-temps.
       return { action: 'unread-list' };
+    case 'usage-updated':
+      // Même forme que les non-lus : rien dans le payload, le récepteur relit
+      // le store entier (un agrégat incrémenté ne se transmet pas en delta).
+      return { action: 'usage-refresh' };
     default:
       return { action: 'ignore' };
   }

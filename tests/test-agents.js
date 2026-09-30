@@ -223,6 +223,14 @@ describe('agentSpawnLimitError — le refus NOMME la borne atteinte (X-1, Q3)', 
     expect(e).toContain('5 agents');
     expect(e).toContain('total');
   });
+  it('borne par conversation : le refus fait attendre, jamais interrompre pour faire de la place', function() {
+    // Le refus proposait agent__abort à égalité avec l'attente ; un modèle a
+    // interrompu un agent tout juste lancé pour placer le suivant.
+    var e = agentSpawnLimitError(3, 3, 3, 5);
+    expect(e).toContain('Tu seras prévenu');
+    expect(e).toContain('N\'interromps pas un agent en cours pour faire de la place');
+    expect(e.indexOf('agent__abort') < 0).toBe(true);
+  });
   it('les deux messages sont distincts (gestes différents du parent)', function() {
     expect(agentSpawnLimitError(3, 5, 3, 5) === agentSpawnLimitError(1, 5, 3, 5)).toBe(false);
   });
@@ -850,6 +858,55 @@ describe('agent__spawn : le défaut de reasoning_effort est RÉELLEMENT appliqu�
   });
 });
 
+describe('formatAgentStillRunningNote — les frères encore en cours, à la remise', function() {
+  it('aucun frère en cours : pas de note, le résultat est inchangé', function() {
+    expect(formatAgentStillRunningNote([])).toBe('');
+    expect(formatAgentStillRunningNote(undefined)).toBe('');
+    var txt = formatAgentResultForParent({ id: 'a1', status: 'done', intent: 'x', text: 'R', stillRunning: [] });
+    expect(txt.indexOf('Encore en cours') < 0).toBe(true);
+  });
+  it('un frère en cours : le nomme, interdit d\'écrire un faux résultat, dit de finir son tour', function() {
+    // Mesuré : réveillé par le 3e résultat sur 4, un modèle a rédigé lui-même le 4e.
+    var txt = formatAgentResultForParent({ id: 'a1', status: 'done', intent: 'Lyon', text: 'R',
+      stillRunning: [{ id: 'a4', intent: 'Toulouse' }] });
+    expect(txt).toContain('Encore en cours : « Toulouse » (a4)');
+    expect(txt).toContain('Son résultat t\'arrivera');
+    expect(txt).toContain('n\'écris jamais toi-même un bloc « [Résultat d\'agent »');
+    expect(txt).toContain('termine ton tour');
+    // Note en QUEUE, après la réponse de l'agent.
+    expect(txt.indexOf('Encore en cours') > txt.indexOf('--- Réponse de l\'agent ---')).toBe(true);
+  });
+  it('plusieurs frères : accord au pluriel', function() {
+    var n = formatAgentStillRunningNote([{ id: 'a3', intent: 'Brest' }, { id: 'a4', intent: '' }]);
+    expect(n).toContain('« Brest » (a3), (a4)');
+    expect(n).toContain('Leurs résultats t\'arriveront');
+  });
+});
+
+describe('agentResultDelivery — déjà reçu, en file, ou à rendre', function() {
+  var entry = function(id) { return { role: 'user', content: 'r', agentResult: { id: id, status: 'done' } }; };
+  it('entrée dans le fil émis : emitted', function() {
+    expect(agentResultDelivery([{ role: 'user', content: 'go' }, entry('a1')], [], 'a1')).toBe('emitted');
+  });
+  it('entrée AVANT la dernière frontière de compaction : pas émise, à rendre en entier', function() {
+    var t = [entry('a1'), { role: 'compaction', content: 'résumé' }, { role: 'user', content: 'suite' }];
+    expect(agentResultDelivery(t, [], 'a1')).toBe(null);
+  });
+  it('entrée APRÈS la frontière : emitted', function() {
+    var t = [{ role: 'compaction', content: 'résumé' }, entry('a1')];
+    expect(agentResultDelivery(t, [], 'a1')).toBe('emitted');
+  });
+  it('en file seulement : pending', function() {
+    expect(agentResultDelivery([], [entry('a1')], 'a1')).toBe('pending');
+  });
+  it('résultat d\'un AUTRE agent : ne compte pas', function() {
+    expect(agentResultDelivery([entry('a2')], [entry('a3')], 'a1')).toBe(null);
+  });
+  it('ni fil ni file : null', function() {
+    expect(agentResultDelivery(null, null, 'a1')).toBe(null);
+  });
+});
+
 describe('Les quatre handlers agent__* : garde de parenté partagée (X-1, étape 3)', function() {
   function setup() {
     localStorage.clear();
@@ -886,11 +943,46 @@ describe('Les quatre handlers agent__* : garde de parenté partagée (X-1, étap
     expect(out.status).toBe('done');
     expect(out.intent).toBe('Relire le brief');
   });
+  it('agent__result sur un agent en cours : dit de ne pas l\'attendre en boucle et de finir son tour', function() {
+    // Un modèle a rappelé l'outil trois fois de suite sur le même agent en cours.
+    setup();
+    _activeGenerations.set('a1', { convId: 'a1', spaceId: 'default' });
+    try {
+      var txt = call('agent__result', { id: 'a1' }).content[0].text;
+      expect(txt).toContain('toujours en cours');
+      expect(txt).toContain('N\'appelle pas cet outil pour l\'attendre');
+      expect(txt).toContain('termine ton tour');
+      expect(txt).toContain('Tu seras réveillé avec son résultat');
+    } finally { _activeGenerations.clear(); }
+  });
   it('agent__result rend le résultat formaté, avec le statut', function() {
     setup();
     var txt = call('agent__result', { id: 'a1' }).content[0].text;
     expect(txt).toContain('Relire le brief');
     expect(txt).toContain('terminé');
+  });
+  it('agent__result sur un résultat DÉJÀ reçu : renvoie au message, sans le redonner', function() {
+    // Quatre résultats injectés, puis relus un par un en entier (2026-09-30).
+    setup();
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [
+      { role: 'user', content: 'go', ts: 1 },
+      buildAgentResultEntry({ id: 'a1', status: 'done', intent: 'Relire le brief', text: 'RÉPONSE-A1' }, 2),
+    ] });
+    var txt = call('agent__result', { id: 'a1' }).content[0].text;
+    expect(txt).toContain('déjà été transmis');
+    expect(txt).toContain('Identifiant : a1');
+    expect(txt.indexOf('RÉPONSE-A1') < 0).toBe(true);
+  });
+  it('agent__result sur un résultat EN FILE : annonce son arrivée, sans le redonner', function() {
+    setup();
+    queueAgentResult('p1', buildAgentResultEntry({ id: 'a1', status: 'done', intent: 'x', text: 'RÉPONSE-A1' }, 2));
+    try {
+      var txt = call('agent__result', { id: 'a1' }).content[0].text;
+      expect(txt).toContain('t\'arrive juste après cet appel');
+      expect(txt.indexOf('RÉPONSE-A1') < 0).toBe(true);
+      // Lire la file ne la draine pas : l'injection aura bien lieu.
+      expect(hasPendingAgentResults('p1')).toBe(true);
+    } finally { takePendingAgentResults('p1'); }
   });
   it('agent__abort sur un agent déjà terminé le dit, sans échouer', function() {
     setup();
@@ -909,11 +1001,54 @@ describe('Les quatre handlers agent__* : garde de parenté partagée (X-1, étap
   });
 });
 
+// Ack de lecture de la skill « agents », que agent__spawn exige dans le fil du
+// parent (agentsSkillRead). Posé dans les parents des tests de lancement, qui
+// ne portent pas sur cette garde ; elle est testée pour elle-même plus bas.
+function agentsSkillReadAck() {
+  return { role: 'tool-ack', kind: 'skill_read', slug: 'agents', title: 'agents' };
+}
+
+describe('agent__spawn : la skill « agents » doit avoir été lue', function() {
+  function spawnIn(messages) {
+    localStorage.clear();
+    _activeGenerations.clear();
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: messages });
+    return callInternalTool('agent__spawn', { prompt: 'x', intent: 'y' },
+      { convId: 'p1', spaceId: 'default' }).content[0].text;
+  }
+  it('jamais lue : refus qui nomme la skill et dit que rien n\'est lancé', function() {
+    var out = spawnIn([{ role: 'user', content: 'lance un agent' }]);
+    expect(out).toContain('lis d\'abord la skill « agents »');
+    expect(out).toContain('Rien n\'a été lancé');
+    expect(listAllConversations().filter(function(c) { return c.parentConvId === 'p1'; }).length).toBe(0);
+  });
+  it('lue dans le fil : lancement accepté', function() {
+    expect(spawnIn([agentsSkillReadAck()])).toContain('Agent lancé');
+    _activeGenerations.clear();
+  });
+  it('lue AVANT la dernière compaction : plus dans le contexte, refus', function() {
+    var out = spawnIn([agentsSkillReadAck(), { role: 'compaction', content: 'résumé' }]);
+    expect(out).toContain('lis d\'abord la skill');
+  });
+  it('lecture EN ÉCHEC : ne compte pas', function() {
+    var ack = agentsSkillReadAck(); ack.error = true;
+    expect(spawnIn([ack])).toContain('lis d\'abord la skill');
+  });
+  it('une AUTRE skill lue : ne compte pas', function() {
+    var ack = agentsSkillReadAck(); ack.slug = 'docs';
+    expect(spawnIn([ack])).toContain('lis d\'abord la skill');
+  });
+  it('lue plus tôt dans le MÊME lot d\'appels (file des acks du tour) : accepté', function() {
+    expect(agentsSkillRead([], [{ kind: 'skill_read', slug: 'agents' }])).toBe(true);
+    expect(agentsSkillRead([], [{ kind: 'skill_read', slug: 'agents', error: true }])).toBe(false);
+  });
+});
+
 describe('agent__spawn : bornes et refus (X-1, Q3)', function() {
   function setup() {
     localStorage.clear();
     _activeGenerations.clear();
-    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [] });
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [agentsSkillReadAck()] });
   }
   it('un AGENT ne peut pas lancer d\'agent (X-b), même hors validation de liste', function() {
     setup();
@@ -944,7 +1079,7 @@ describe('agent__spawn : les deux bornes refusent EFFECTIVEMENT (X-1, Q3)', func
   function seed(nPerConv, nOther) {
     localStorage.clear();
     _activeGenerations.clear();
-    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [] });
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [agentsSkillReadAck()] });
     saveConversation({ id: 'p2', title: 'q', timestamp: 1, messages: [] });
     for (var i = 0; i < nPerConv; i++) {
       saveConversation({ id: 'a' + i, title: '', timestamp: 2, messages: [], parentConvId: 'p1' });
@@ -987,7 +1122,7 @@ describe('agent__spawn : les deux bornes refusent EFFECTIVEMENT (X-1, Q3)', func
     _activeGenerations.clear();
     var saved = activeSpaceId;
     activeSpaceId = 'ECRAN';   // l'écran est ailleurs
-    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [], spaceId: 'sGEN' });
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [agentsSkillReadAck()], spaceId: 'sGEN' });
     var out = callInternalTool('agent__spawn',
       { prompt: 'x', intent: 'y' }, { convId: 'p1', spaceId: 'sGEN' }).content[0].text;
     var id = out.match(/identifiant : (\S+?)\./)[1];
@@ -999,7 +1134,7 @@ describe('agent__spawn : les deux bornes refusent EFFECTIVEMENT (X-1, Q3)', func
   it('un agent naît sans titre, avec son intent comme libellé, et jamais titré', function() {
     localStorage.clear();
     _activeGenerations.clear();
-    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [], spaceId: 'default' });
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [agentsSkillReadAck()], spaceId: 'default' });
     var out = callInternalTool('agent__spawn',
       { prompt: 'x', intent: 'Relire le Brief' }, { convId: 'p1', spaceId: 'default' }).content[0].text;
     var id = out.match(/identifiant : (\S+?)\./)[1];
@@ -1012,7 +1147,7 @@ describe('agent__spawn : les deux bornes refusent EFFECTIVEMENT (X-1, Q3)', func
   it('le premier message de l\'agent porte le cadrage PUIS la tâche', function() {
     localStorage.clear();
     _activeGenerations.clear();
-    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [], spaceId: 'default' });
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [agentsSkillReadAck()], spaceId: 'default' });
     var out = callInternalTool('agent__spawn',
       { prompt: 'MA TACHE PRECISE', intent: 'y' }, { convId: 'p1', spaceId: 'default' }).content[0].text;
     var id = out.match(/identifiant : (\S+?)\./)[1];
@@ -1026,7 +1161,7 @@ describe('agent__spawn : les deux bornes refusent EFFECTIVEMENT (X-1, Q3)', func
   it('le retour du spawn dit explicitement que le tour continue', function() {
     localStorage.clear();
     _activeGenerations.clear();
-    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [], spaceId: 'default' });
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [agentsSkillReadAck()], spaceId: 'default' });
     var out = callInternalTool('agent__spawn',
       { prompt: 'x', intent: 'y' }, { convId: 'p1', spaceId: 'default' }).content[0].text;
     expect(out).toContain('ne l\'attends pas');
@@ -1152,7 +1287,7 @@ describe('agent__spawn délègue des fichiers (X-1b, bout en bout)', function() 
     _resourceCache['att_del1'] = { id: 'att_del1', attId: 'att-1', conversationId: 'p1',
       class: 'inline', mime: 'text/plain', name: 'notes.txt', size: 4,
       data: new Uint8Array([116, 101, 115, 116]).buffer };
-    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [], spaceId: 'default' });
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [agentsSkillReadAck()], spaceId: 'default' });
 
     // PRÉMISSE : sans délégation, l'agent ne résout RIEN — c'est le trou fermé.
     var outBare = callInternalTool('agent__spawn',
@@ -1185,7 +1320,7 @@ describe('agent__spawn délègue des fichiers (X-1b, bout en bout)', function() 
       class: 'inline', mime: 'text/plain', name: 'a.txt', size: 1, data: new Uint8Array([1]).buffer };
     _resourceCache['att_del3'] = { id: 'att_del3', attId: 'att-2', conversationId: 'p1',
       class: 'inline', mime: 'text/plain', name: 'b.txt', size: 1, data: new Uint8Array([2]).buffer };
-    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [], spaceId: 'default' });
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [agentsSkillReadAck()], spaceId: 'default' });
     var out = callInternalTool('agent__spawn',
       { prompt: 'x', intent: 'y', attachments: ['att-1'] },
       { convId: 'p1', spaceId: 'default' }).content[0].text;
@@ -1201,7 +1336,7 @@ describe('agent__spawn délègue des fichiers (X-1b, bout en bout)', function() 
   it('un handle que le PARENT ne peut pas adresser → refus nommant le handle', function() {
     localStorage.clear();
     _activeGenerations.clear();
-    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [], spaceId: 'default' });
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [agentsSkillReadAck()], spaceId: 'default' });
     var r = callInternalTool('agent__spawn',
       { prompt: 'x', intent: 'y', attachments: ['att-42'] },
       { convId: 'p1', spaceId: 'default' });
@@ -1231,7 +1366,7 @@ describe('agent__spawn délègue des fichiers (X-1b, bout en bout)', function() 
     _activeGenerations.clear();
     _resourceCache['att_del5'] = { id: 'att_del5', attId: 'att-1', conversationId: 'p1',
       class: 'inline', mime: 'text/plain', name: 'd.txt', size: 1, data: new Uint8Array([4]).buffer };
-    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [], spaceId: 'default' });
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [agentsSkillReadAck()], spaceId: 'default' });
     var out = callInternalTool('agent__spawn',
       { prompt: 'x', intent: 'y', attachments: ['att-1'] },
       { convId: 'p1', spaceId: 'default' }).content[0].text;

@@ -131,8 +131,56 @@ lecture hors `toolCtx`.
 |---|---|
 | `agent__spawn` | lance un agent, rend son id **immédiatement** |
 | `agent__status` | état à l'instant T — **consultation, pas polling** |
-| `agent__result` | relit un résultat qu'on n'a plus en contexte |
+| `agent__result` | relit un résultat qu'on n'a plus en contexte — pas celui qu'on vient de recevoir |
 | `agent__abort` | interrompt un agent en cours |
+
+**`agent__result` ne rend en entier qu'un résultat absent du contexte.** Sur un
+agent terminé, `agentResultDelivery` (pur) trie trois cas : l'entrée de résultat
+est dans le fil APRÈS la dernière frontière de compaction, donc déjà émise → un
+renvoi vers ce message (« [Résultat d'agent », « Identifiant : … »), sans le
+texte ; elle est en file (`peekPendingAgentResults`, lecture sans drain) → « il
+t'arrive juste après cet appel », l'injection ayant lieu à la frontière de tour
+des deux chemins de génération ; sinon (avant une compaction, reload) → le
+résultat entier. Sur un agent en cours, la réponse nomme le geste attendu :
+ne pas rappeler l'outil pour attendre, poursuivre ou finir son tour. Les deux
+mesurés le 2026-09-30 : quatre résultats reçus puis relus un par un en entier,
+et un agent en cours interrogé trois fois de suite. Le texte du « déjà émis »
+suppose que l'historique n'est pas tronqué en aval par le backend (le
+`num_ctx` d'Ollama le fait sans prévenir) : c'est le prix accepté pour ne pas
+doubler un résultat à chaque relecture.
+
+**La lecture de la skill `agents` est imposée, pas seulement demandée.**
+`AGENT_DOCTRINE` demande de la lire avant le premier lancement, mais une
+doctrine se saute : un modèle a lancé ses agents sans jamais l'ouvrir (mesuré
+le 2026-09-30), et toutes les consignes de suivi lui restaient inconnues.
+`agent__spawn` refuse donc, avant même les bornes, tant que `agentsSkillRead`
+(pur) ne constate pas un ack `skill_read` du slug `agents` non en échec — dans
+le fil APRÈS la dernière frontière de compaction (une lecture d'avant n'est
+plus dans le contexte), ou plus tôt dans le même lot d'appels (la file
+`_pendingToolAcks` du tour). Ce second cas épargne un aller-retour au modèle
+qui lit puis lance dans un seul tour ; le prompt de ce lancement-là a été écrit
+sans la skill, mais le suivi en bénéficie, et c'est là que les défauts mesurés
+se trouvaient. Le fil lu est celui de la génération appelante quand elle tourne
+(`toolConvThread`, partagé avec `agent__result`). Les stubs des verify qui
+lancent des agents émettent donc un `skills__read` en tête du lot ; retiré,
+aucun agent ne part (vérifié sur `verify-agent-busy-rewrite.mjs`).
+
+**Un résultat remis pendant que des frères travaillent le dit.** `deliverAgentResult`
+fige dans le payload les agents du même parent encore en cours (`stillRunning`,
+à l'instant de la remise), et `formatAgentStillRunningNote` ajoute en queue de
+l'entrée leur liste, avec l'interdit d'écrire soi-même un bloc « [Résultat
+d'agent » et l'invite à finir son tour si la réponse en a besoin. Mesuré le
+2026-09-30 : réveillé par le troisième résultat sur quatre, un modèle a prolongé
+le motif des trois messages reçus en rédigeant le quatrième, JSON inventé
+compris, puis une synthèse bâtie dessus. La doctrine le couvrait déjà (« ne
+prétends jamais savoir ce qu'il a trouvé »), mais loin du moment de la
+tentation ; la note est posée à ce moment-là. Figée à la remise et persistée
+avec l'entrée, elle est rejouée à l'identique (piège 16). La skill système
+`agents` porte les mêmes consignes, section « Plusieurs agents pour une même
+réponse ». Non-régression : `verify-agents.mjs`, scénario 4bis (note sur la
+remise faite pendant que le frère travaille, absente sur la dernière) et
+scénario 7 (renvoi pour un résultat déjà reçu, texte entier derrière une
+frontière de compaction).
 
 **`agent__status` a failli être coupé** (décision 6, « ne pas multiplier les
 outils »), et il est conservé pour une raison **autre** que le polling : la
@@ -318,6 +366,16 @@ différents du parent (attendre l'un des siens, ou constater que la machine est
 saturée). `agentSpawnLimitError` est pure et testée ; le **câblage** l'est aussi,
 parce qu'une borne qui existe sans être appelée est le trou d'orchestration
 habituel.
+
+Le refus par conversation **fait attendre et ferme l'interruption** : il dit que
+le parent sera prévenu quand l'un des siens termine (le réveil de
+`wakeParentWithPendingAgentResults` libère la place et apporte le résultat), et
+interdit nommément d'interrompre un agent pour faire de la place. Il proposait
+`agent__abort` à égalité avec l'attente, et un modèle a pris cette porte :
+quatre agents demandés, le quatrième refusé, et le troisième interrompu pour le
+placer — sa réponse réduite à un résultat partiel, pour une place qui se
+serait libérée d'elle-même.
+Ne pas citer l'outil n'aurait pas suffi : le modèle le connaît par son schéma.
 
 `MAX_AGENTS_PER_CONV` (3), `MAX_AGENTS_TOTAL` (5) et `MAX_AGENT_TURNS` (20)
 vivent dans `storage.js` (là où `BUILD_CONFIG` est injecté), dérivées sur le

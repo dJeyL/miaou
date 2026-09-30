@@ -51,6 +51,23 @@ capture donc l'id du serveur AVANT l'appel et le passe en second argument
 `backendVerdictApplies` écarte le verdict si ce n'est plus le serveur actif. Un
 id omis garde l'ancien comportement.
 
+**Seul un échec DU SERVEUR passe au rouge.** `failureMeansBackendDown` (pur,
+api.js) tranche pour le `catch` de `dispatchSend` : oui pour une panne de
+transport (fetch rejeté ou flux coupé en lecture, marqués `network` par
+`streamCompletion`) et pour un 5xx ; non pour un 4xx, où le serveur a répondu
+(400 sur le payload, 401 sur la clef, 429 d'une rafale), et non pour une
+exception levée par le code. Avant, tout échec passait au rouge : sur un
+backend rapide, une rafale d'appels simultanés (agents, titrage) prenait un
+429, la pastille virait au rouge, et le premier chunk de l'appel suivant la
+remettait au vert — deux toasts contradictoires en quelques secondes (mesuré
+le 2026-09-30). Le message d'erreur reste affiché dans la bulle, lui, et un 4xx
+lève son propre toast (`toastApiRequestRefused`, cf. `docs/toasts.md`) : le
+toast « ne répond plus » signalait par accident un modèle inaccessible (Z.ai
+répond 429) ou une clef refusée, et ce signal devait survivre au retrait du
+rouge. Les
+sondes `/models` (`probeBackend`, `prefetchModels`) gardent leur verdict
+binaire : leur échec n'y porte pas de statut exploitable.
+
 **Le verdict « joignable » tombe au premier signe de vie.** `streamCompletion`
 (api.js) pose `ok` dès le premier chunk SSE valide — raisonnement, contenu,
 appel d'outil ou usage —, et non en fin d'échange : le toast « rétabli »

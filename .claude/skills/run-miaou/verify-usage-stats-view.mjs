@@ -24,6 +24,9 @@
 //      une fois), qui montre une ligne par serveur et le Total ; sous un filtre
 //      serveur, plus de suffixe. Rejoué contre le code d'avant (regroupement par
 //      nom) : rouge.
+//   8. Rafraîchissement en place : fermé, aucune relecture ; affiché, la ligne
+//      suit un nouvel appel en gardant le filtre ; reporté tant qu'un menu de
+//      pilule est ouvert ; déclenché aussi par un appel d'un autre onglet.
 //
 // Usage : node verify-usage-stats-view.mjs [--headed]
 import { launchIsolated } from './stub-backend.js';
@@ -262,6 +265,76 @@ await page.evaluate(() => openUsageStats({ serverId: 'srv-b' }));
 await waitRendered();
 rows = await tableRows();
 check('filtre serveur : plus de suffixe, une seule ligne', rows.length === 1 && rows[0][0] === 'qwen', rows);
+
+// ── 8. Rafraîchissement en place ────────────────────────────────────────────
+// Le drawer AFFICHÉ se relit après chaque enregistrement commité, de cet onglet
+// ou d'un autre (message `usage-updated`) ; fermé, il ne relit rien. Les
+// enregistrements passent par `noteModelUsage`, le vrai point d'entrée des deux
+// points réseau — jamais par un `put` direct, qui court-circuiterait le déclencheur.
+// Conditions : le store porte le jeu du bloc 7 (qwen : 4 requêtes sur Maison) ;
+// l'espion compte les relectures du store (`readAllUsageStats`, global
+// réassignable), ce qui rend observable le cas « fermé → aucune relecture ».
+// Rejoué contre le code d'avant : 8b, 8c et 8d rouges.
+console.log('\n— 8. Rafraîchissement en place, drawer affiché');
+await page.evaluate(() => closeUsageStats());
+const installSpy = (p) => p.evaluate(() => {
+  window.__usageReads = 0;
+  const orig = readAllUsageStats;
+  readAllUsageStats = function () { window.__usageReads++; return orig.apply(this, arguments); };
+});
+await installSpy(page);
+const note = (p) => p.evaluate(() => noteModelUsage({ id: 'srv-a', name: 'Maison' }, 'qwen', 'chat',
+  { prompt_tokens: 10, completion_tokens: 1 }));
+const qwenCalls = () => page.evaluate(() => {
+  const tr = [...document.querySelectorAll('#usage-body .usage-table tbody tr')]
+    .find(r => r.children[0].textContent === 'qwen');
+  return tr ? Number(tr.children[1].textContent.replace(/[^\d]/g, '')) : null;
+});
+const waitQwen = (n) => page.waitForFunction((k) => {
+  const tr = [...document.querySelectorAll('#usage-body .usage-table tbody tr')]
+    .find(r => r.children[0].textContent === 'qwen');
+  return tr && Number(tr.children[1].textContent.replace(/[^\d]/g, '')) === k;
+}, n, { timeout: 4000 }).then(() => true, () => false);
+// Délai de regroupement lu à la source, jamais recopié. Le repli ne sert qu'au
+// rejeu contre un bundle antérieur, où la constante n'existe pas.
+const settle = (await page.evaluate(() =>
+  typeof USAGE_REFRESH_DELAY_MS === 'number' ? USAGE_REFRESH_DELAY_MS : 400)) + 500;
+
+// 8a. Fermé : l'enregistrement a lieu, aucune relecture.
+await note(page);
+await page.waitForTimeout(settle);
+check('8a. drawer fermé : aucune relecture du store', await page.evaluate(() => window.__usageReads) === 0,
+  await page.evaluate(() => window.__usageReads));
+
+// 8b. Affiché, filtré sur Maison : la ligne suit, le filtre tient.
+await page.evaluate(() => openUsageStats({ serverId: 'srv-a' }));
+await waitRendered();
+check('prémisse : qwen à 5 requêtes (4 seedées + celle de 8a)', await qwenCalls() === 5, await qwenCalls());
+await note(page);
+check('8b. drawer affiché : qwen passe à 6 sans rouvrir', await waitQwen(6), await qwenCalls());
+labels = await pillLabels();
+check('8b. le filtre serveur est conservé au rafraîchissement', labels[0] === 'Maison', labels);
+
+// 8c. Menu de pilule ouvert : relecture reportée, puis faite à la fermeture.
+await page.locator('#usage-filters .pill-select-btn').nth(1).click();
+await page.waitForSelector('#usage-filters .model-menu.show');
+await note(page);
+await page.waitForTimeout(settle);
+const heldOpen = await page.evaluate(() => !!document.querySelector('#usage-filters .model-menu.show'));
+check('8c. menu ouvert : ni refermé ni rafraîchi pendant qu\'il est ouvert',
+  heldOpen && await qwenCalls() === 6, { heldOpen, qwen: await qwenCalls() });
+await page.locator('#usage-filters .pill-select-btn').nth(1).click();
+check('8c. menu refermé : le rafraîchissement reporté a lieu', await waitQwen(7), await qwenCalls());
+
+// 8d. Autre onglet : l'enregistrement d'un pair rafraîchit ce drawer.
+const page2 = await context.newPage();
+page2.on('pageerror', (e) => errors.push('[onglet 2] ' + String(e)));
+await page2.goto('file://' + distPath);
+await page2.waitForSelector('#composer-text', { timeout: 10000 });
+await page2.waitForFunction(() => document.querySelector('.boot-done') !== null, null, { timeout: 10000 });
+await note(page2);
+check('8d. appel enregistré dans un autre onglet : ce drawer passe à 8', await waitQwen(8), await qwenCalls());
+await page2.close();
 
 const unexpected = errors.filter(e => !/Failed to load resource/.test(e));
 check('aucune erreur console', unexpected.length === 0, unexpected);

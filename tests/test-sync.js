@@ -239,6 +239,20 @@ describe('storage-state (lot AG) — quota partagé entre onglets', function() {
   });
 });
 
+describe('usage-updated — statistiques d\'usage partagées entre onglets', function() {
+  var CTX = { tabId: 'me', currentConvId: 'c1', activeSpaceId: 's1' };
+  it('fait partie de la liste fermée des types', function() {
+    expect(!!validateEnvelope({ v: 1, type: 'usage-updated', tabId: 'tab_a', payload: {} })).toBe(true);
+  });
+  it('routé en relecture, quelle que soit la conv affichée', function() {
+    expect(routeMessage(makeEnvelope('usage-updated', 'other', {}), CTX)).toEqual({ action: 'usage-refresh' });
+    expect(routeMessage(makeEnvelope('usage-updated', 'other', {}), {})).toEqual({ action: 'usage-refresh' });
+  });
+  it('son propre message est ignoré', function() {
+    expect(routeMessage(makeEnvelope('usage-updated', 'me', {}), CTX)).toEqual({ action: 'ignore-self' });
+  });
+});
+
 describe('unread-updated — non-lus partagés entre onglets', function() {
   var CTX = { tabId: 'me', currentConvId: 'c1', activeSpaceId: 's1' };
   it('fait partie de la liste fermée des types', function() {
