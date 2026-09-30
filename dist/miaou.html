@@ -5482,7 +5482,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-29 21:50 UTC */
+/* miaou — built: 2026-09-30 17:49 UTC */
 
 /* ── utils.js ── */
 
@@ -5710,6 +5710,16 @@ function resolveBackendHealth(cfg, requireKey, probe) {
   if (requireKey && !key) return 'unconfigured';
   if (probe && probe.ok === false) return 'down';
   return 'ok';
+}
+
+function bgActivityCurrentLabel(tasks) {
+  if (!tasks || !tasks.length) return null;
+  return tasks[tasks.length - 1].label;
+}
+
+function backendVerdictApplies(verdictServerId, activeServerId) {
+  if (verdictServerId == null) return true;
+  return verdictServerId === activeServerId;
 }
 
 function shouldProbeBackend(health, lastProbe, now, minIntervalMs) {
@@ -10945,7 +10955,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790718617}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790790556}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -18449,6 +18459,8 @@ async function silentCompletion(messages, opts) {
     const out = await _cascade();
 
     if (typeof noteModelCalled === 'function') noteModelCalled(url, model);
+
+    if (typeof noteBackendProbe === 'function') noteBackendProbe(true, server && server.id);
     return out;
   } catch (e) {
 
@@ -18586,6 +18598,7 @@ async function streamCompletion(messages, opts) {
   let usage = null;
   let answered = false;
   let refused = false;
+  let streamed = false;
 
   try {
 
@@ -18634,6 +18647,11 @@ async function streamCompletion(messages, opts) {
 
         const chunk = sseDataObject(line);
         if (!chunk) continue;
+
+        if (!streamed) {
+          streamed = true;
+          if (typeof noteBackendProbe === 'function') noteBackendProbe(true, server && server.id);
+        }
 
         if (chunk.usage) usage = chunk.usage;
         const choice = chunk.choices?.[0];
@@ -18772,7 +18790,7 @@ async function runConversation(messages, hooks) {
             });
           }
         } else {
-          bgActivityStart('outil…');
+          const bgTask = bgActivityStart('outil…');
           try {
 
             const toolPromise = callTool(tc.function.name, args, toolExecContext);
@@ -18812,7 +18830,7 @@ async function runConversation(messages, hooks) {
               webMeta,
             });
           } finally {
-            bgActivityEnd();
+            bgActivityEnd(bgTask);
           }
         }
 
@@ -21190,30 +21208,38 @@ function clearEditError(wrap) {
   if (el) { el.setAttribute('hidden', ''); el.textContent = ''; }
 }
 
-let _bgCount = 0;
+const _bgTasks = [];
 let _bgSuppressed = false;
+
 function bgActivityStart(label) {
-  _bgCount++;
-  $('bg-label').textContent = label;
+  const task = { label: label };
+  _bgTasks.push(task);
   syncBgActivity();
+  return task;
 }
-function bgActivityEnd() {
-  _bgCount = Math.max(0, _bgCount - 1);
+function bgActivityEnd(task) {
+  const i = _bgTasks.indexOf(task);
+  if (i >= 0) _bgTasks.splice(i, 1);
   syncBgActivity();
 }
 
 function syncBgActivity() {
   const el = $('bg-activity');
   if (!el) return;
-  el.classList.toggle('active', _bgCount > 0 && !_bgSuppressed);
+  const label = bgActivityCurrentLabel(_bgTasks);
+  if (label !== null) $('bg-label').textContent = label;
+  el.classList.toggle('active', _bgTasks.length > 0 && !_bgSuppressed);
 }
 
 function setBgActivitySuppressed(on) {
   _bgSuppressed = !!on;
   syncBgActivity();
 }
-function bgActivityLabel(label) {
-  $('bg-label').textContent = label;
+
+function bgActivityLabel(task, label) {
+  if (!task) return;
+  task.label = label;
+  syncBgActivity();
 }
 
 function sectionFor(ts) {
@@ -21947,7 +21973,9 @@ function setStopping(on) {
 let _backendProbe = null;
 let _backendLastProbe = 0;
 
-function noteBackendProbe(ok) {
+function noteBackendProbe(ok, serverId) {
+  const active = activeApiServer();
+  if (!backendVerdictApplies(serverId, active ? active.id : null)) return;
   _backendProbe = { ok: !!ok };
   syncConnDot();
 }
@@ -21980,8 +22008,8 @@ function syncConnDot() {
   syncHealthToasts();
 }
 
-function setConnDot(state) {
-  noteBackendProbe(state === 'ok');
+function setConnDot(state, serverId) {
+  noteBackendProbe(state === 'ok', serverId);
 }
 
 function syncWorriedLogo() {
@@ -31051,7 +31079,7 @@ async function prefetchModels() {
 
   if (server) {
     markBackendProbed(Date.now());
-    noteBackendProbe(!_modelsEntryOf(server).error);
+    noteBackendProbe(!_modelsEntryOf(server).error, server.id);
   }
   syncModelUI();
 }
@@ -31063,7 +31091,7 @@ async function probeBackend() {
 
   await loadServerModels(server, true);
   const entry = _modelsEntryOf(server);
-  noteBackendProbe(!entry.error);
+  noteBackendProbe(!entry.error, server.id);
   syncModelUI();
 }
 
@@ -32105,6 +32133,8 @@ async function dispatchSend(matches, continuation) {
 
   const model = activeModel();
   const serverName = (activeApiServer() || {}).name || '';
+
+  const serverId = (activeApiServer() || {}).id || null;
   const reasoningEffort = activeReasoningEffort();
 
   const gen = createGeneration(currentConvId, currentThread, { model, serverName, reasoningEffort });
@@ -32381,7 +32411,7 @@ async function dispatchSend(matches, continuation) {
             applyUsageToLastManifest(usage);
             syncContextCounter();
           }
-          setConnDot('ok');
+          setConnDot('ok', serverId);
 
           return;
         }
@@ -32395,7 +32425,7 @@ async function dispatchSend(matches, continuation) {
         }
 
         if (stalled) {
-          setConnDot('err');
+          setConnDot('err', serverId);
           if (genOwnsScreen(gen)) {
             showComposerError('Connexion interrompue : le flux s\'est tu trop longtemps. La réponse est incomplète.');
           }
@@ -32418,7 +32448,7 @@ async function dispatchSend(matches, continuation) {
           applyUsageToLastManifest(usage);
           syncContextCounter();
         }
-        setConnDot('ok');
+        setConnDot('ok', serverId);
         maybeTitle(gen);
       },
       onHalt: (leadIn, question, { usage } = {}) => {
@@ -32446,7 +32476,7 @@ async function dispatchSend(matches, continuation) {
             () => sendUserText('Oui'),
             () => sendUserText('Non'));
         }
-        setConnDot('ok');
+        setConnDot('ok', serverId);
       },
       onError: (msg) => { if (genOwnsScreen(gen)) finalizeAssistantError(gen.wrap, msg); },
     });
@@ -32454,7 +32484,7 @@ async function dispatchSend(matches, continuation) {
 
     const detail = (e && e.message) || String(e);
     if (genOwnsScreen(gen)) finalizeAssistantError(gen.wrap, /^HTTP \d/.test(detail) ? detail : 'Erreur réseau : ' + detail);
-    setConnDot('err');
+    setConnDot('err', serverId);
   } finally {
 
     unregisterGeneration(gen);
@@ -32490,14 +32520,14 @@ async function wakeParentWithPendingAgentResults(parentConvId) {
 }
 
 async function runBackgroundTask(label, taskFn) {
-  bgActivityStart(label);
+  const task = bgActivityStart(label);
   try {
-    return await taskFn();
+    return await taskFn((l) => bgActivityLabel(task, l));
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] tâche « ' + label + ' » échouée :', (e && e.message) || e);
     return null;
   } finally {
-    bgActivityEnd();
+    bgActivityEnd(task);
   }
 }
 
@@ -32847,11 +32877,11 @@ async function runBackfill() {
   const cands = await backfillCandidates();
   if (!cands.length) return;
   const N = cands.length;
-  await runBackgroundTask('résumés 0/' + N, async () => {
+  await runBackgroundTask('résumés 0/' + N, async (setLabel) => {
     let n = 0;
     for (const c of cands) {
       n++;
-      bgActivityLabel('résumés ' + n + '/' + N);
+      setLabel('résumés ' + n + '/' + N);
       if (!isSummaryCandidate(c.id)) continue;
       try {
         const s = await generateSummary(c.messages);

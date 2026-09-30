@@ -239,6 +239,18 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   like an app bug ("the thread doesn't render after reload") and is expensive to
   diagnose precisely because everything else is green. Add ~400ms after the class
   for the fade before screenshotting. Model in place: `verify-ack-errors.mjs`.
+- **A `.model-menu` refuses focus while it opens.** The base rule transitions
+  `visibility` (drawers.css), so for the first frames after `.show` is added the
+  menu is still `hidden`, and `focus()` on anything inside it silently does
+  nothing — deferring by one `requestAnimationFrame` is NOT enough. The script
+  then reads `document.activeElement` on the trigger button, and every keyboard
+  check downstream (typing, arrows, Escape) goes red while accusing the handlers.
+  Paid on 2026-09-29 with the composer model filter: two runs and a probe before
+  a computed-style dump showed `visibility: hidden` on a menu that had `.show`.
+  The app fix is per menu: `#composer-model-menu.show` switches `visibility`
+  with no delay (composer.css). Any new menu that focuses a field on opening
+  needs the same override; a script checking focus right after opening one
+  should first read `getComputedStyle(menu).visibility`.
 - **There is no localStorage state across driver runs** — Playwright
   launches a fresh, empty profile each time (`chromium.launch()` with no
   persistent context), so the app always boots to "Nouvelle

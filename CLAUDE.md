@@ -571,7 +571,10 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `/models` réutilisant `loadServerModels(s, true)` (le `force` est impératif :
   sans lui le cache de session répond « ok » depuis une entrée d'avant la panne),
   éligibilité par le pur `shouldProbeBackend` et câblage sur les DEUX signaux de
-  retour comme son homologue MCP ; porte aussi le **chat soucieux** — source SVG
+  retour comme son homologue MCP, verdict « joignable » posé dès le premier chunk
+  streamé et sur tout succès de `silentCompletion`, et rattaché au serveur
+  INTERROGÉ (`backendVerdictApplies`) et non au serveur devenu actif pendant
+  l'await ; porte aussi le **chat soucieux** — source SVG
   unique `src/svg/cat.svg` injectée inline aux trois surfaces (ids suffixés par
   instance, compte d'instances vérifié au build) avec `LOGO_SRC` dérivé du même
   fichier pour favicon/glyphe/export, prédicat pur `resolveLogoExpression`

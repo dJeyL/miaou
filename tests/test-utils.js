@@ -3654,6 +3654,46 @@ describe('shouldRecheckMcpServer — que retente-t-on au retour ?', function() {
   });
 });
 
+describe('bgActivityCurrentLabel — libelle de la plus recente tache EN COURS', function() {
+  it('rien ne tourne : null (le libelle affiche n\'est pas touche)', function() {
+    expect(bgActivityCurrentLabel([])).toBe(null);
+    expect(bgActivityCurrentLabel(null)).toBe(null);
+  });
+  it('une tache courte lancee pendant une longue, puis finie : retour a la longue', function() {
+    // Le defaut corrige : « verification MCP… » restait affiche jusqu'a la fin du resume.
+    var resume = { label: 'résumé…' };
+    var mcp = { label: 'vérification MCP…' };
+    var tasks = [resume, mcp];
+    expect(bgActivityCurrentLabel(tasks)).toBe('vérification MCP…');
+    tasks.splice(tasks.indexOf(mcp), 1);
+    expect(bgActivityCurrentLabel(tasks)).toBe('résumé…');
+  });
+  it('la longue finit la premiere : la courte garde son libelle', function() {
+    var resume = { label: 'résumé…' };
+    var mcp = { label: 'vérification MCP…' };
+    var tasks = [resume, mcp];
+    tasks.splice(tasks.indexOf(resume), 1);
+    expect(bgActivityCurrentLabel(tasks)).toBe('vérification MCP…');
+  });
+});
+
+describe('backendVerdictApplies — le verdict juge le serveur interroge', function() {
+  it('meme serveur : le verdict s\'applique', function() {
+    expect(backendVerdictApplies('a', 'a')).toBe(true);
+  });
+  it('serveur actif change pendant l\'appel : verdict ignore', function() {
+    // Un stream sur A qui revient apres une bascule vers B n'a rien a dire de B.
+    expect(backendVerdictApplies('a', 'b')).toBe(false);
+  });
+  it('plus aucun serveur actif : verdict ignore', function() {
+    expect(backendVerdictApplies('a', null)).toBe(false);
+  });
+  it('id non capture : comportement historique, le verdict s\'applique', function() {
+    expect(backendVerdictApplies(null, 'b')).toBe(true);
+    expect(backendVerdictApplies(undefined, 'b')).toBe(true);
+  });
+});
+
 describe('resolveBackendHealth — trois etats, pas deux', function() {
   var CFG = { url: 'http://x/v1', key: 'k' };
 

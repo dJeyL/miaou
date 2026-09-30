@@ -161,15 +161,20 @@ HTML, ou à la synchro multi-onglets.
    d'échec → `null`, abandon silencieux, aucune erreur affichée.
 <a id="p8"></a>
 
-8. **Indicateur d'activité** via `bgActivityStart/End` (compteur, gère les
-   chevauchements). **Toujours encadrer par `try/finally`** pour que
-   `bgActivityEnd()` passe même en cas d'erreur. En pratique, passer par la
-   mécanique réutilisable `runBackgroundTask(label, fn)` (main.js) : elle
-   encadre une tâche LLM silencieuse par l'indicateur + try/finally + échec
-   silencieux (retourne `null`). Titrage (`maybeTitle`) et résumé
-   (`summarizeIfNeeded`) en sont deux clients. Le backfill l'enveloppe une fois
-   et met à jour le libellé via `bgActivityLabel('résumés n/N')` sans toucher au
-   compteur.
+8. **Indicateur d'activité** via `bgActivityStart/End`. Chaque tâche est un
+   JETON rendu par `bgActivityStart(label)` et repassé à `bgActivityEnd(task)` ;
+   le libellé affiché est celui de la plus récente ENCORE EN COURS
+   (`bgActivityCurrentLabel`, utils.js). Un compteur avec un libellé unique ne
+   gérait pas les chevauchements : une vérification MCP éclair lancée pendant
+   un long résumé laissait son libellé affiché jusqu'à la fin du résumé.
+   **Toujours encadrer par `try/finally`** pour que `bgActivityEnd(task)` passe
+   même en cas d'erreur. En pratique, passer par la mécanique réutilisable
+   `runBackgroundTask(label, fn)` (main.js) : elle encadre une tâche LLM
+   silencieuse par l'indicateur + try/finally + échec silencieux (retourne
+   `null`). Titrage (`maybeTitle`) et résumé (`summarizeIfNeeded`) en sont deux
+   clients. Le backfill l'enveloppe une fois et met à jour SON libellé
+   (`résumés n/N`) par le `setLabel` que `runBackgroundTask` passe à `fn` —
+   jamais le libellé de la dernière tâche démarrée.
 <a id="p9"></a>
 
 9. **Titrage robuste à la navigation.** `maybeTitle` fige `convId`/`thread`

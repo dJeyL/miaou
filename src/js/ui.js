@@ -3173,40 +3173,54 @@ function clearEditError(wrap) {
 }
 
 // ── Indicateur d'activité en arrière-plan ───────────────────────────────────
-// Point d'entrée unique avec compteur, pour gérer les chevauchements.
+// Point d'entrée unique, qui gère les chevauchements.
 //
 // L'indicateur est GLOBAL et anonyme : il dit « une tâche de fond tourne »,
 // jamais laquelle ni dans quelle conversation. C'est ce qui convient à ses
 // usages historiques (résumé, titrage, description de fichier), qui n'ont
 // aucune autre surface.
 //
+// Chaque tâche en cours est un JETON de `_bgTasks` portant SON libellé, et le
+// libellé affiché est celui de la plus récente encore en cours
+// (`bgActivityCurrentLabel`). Un compteur et un libellé unique ne suffisaient
+// pas : le libellé était celui de la dernière tâche DÉMARRÉE, jamais rétabli à
+// sa fin — une vérification MCP de quelques millisecondes lancée pendant un
+// long résumé laissait « vérification MCP… » affiché jusqu'à la fin du résumé.
+//
 // La compaction fait exception (lot AE, étape 8) : elle a une SECONDE surface,
 // la pilule d'activité de la topbar, qui dit la même chose en mieux dès qu'on
 // a quitté la conversation — elle la NOMME et permet d'y revenir d'un clic.
 // Les deux allumées en même temps font doublon (signalé par Julien,
 // 2026-09-22). D'où `_bgSuppressed` : un drapeau qui éteint l'indicateur sans
-// toucher au compteur, de sorte que les tâches CONCURRENTES (un titrage qui
-// tournerait pendant la compaction) continuent d'être comptées et que la levée
+// toucher aux jetons, de sorte que les tâches CONCURRENTES (un titrage qui
+// tournerait pendant la compaction) continuent d'être suivies et que la levée
 // du drapeau les retrouve.
-let _bgCount = 0;
+const _bgTasks = [];
 let _bgSuppressed = false;
+// Rend le jeton à repasser à `bgActivityEnd` et `bgActivityLabel`.
 function bgActivityStart(label) {
-  _bgCount++;
-  $('bg-label').textContent = label;
+  const task = { label: label };
+  _bgTasks.push(task);
   syncBgActivity();
+  return task;
 }
-function bgActivityEnd() {
-  _bgCount = Math.max(0, _bgCount - 1);
+function bgActivityEnd(task) {
+  const i = _bgTasks.indexOf(task);
+  if (i >= 0) _bgTasks.splice(i, 1);
   syncBgActivity();
 }
 
-// Écrivain UNIQUE de la classe `.active` — les trois points qui la
-// changeaient (start, end, et la suppression) passent par ici, sinon le
-// dernier à parler gagnerait (souvenir `concurrent-writers`).
+// Écrivain UNIQUE de la classe `.active` ET du libellé — les points qui les
+// changeaient (start, end, relabel, et la suppression) passent par ici, sinon
+// le dernier à parler gagnerait (souvenir `concurrent-writers`). Le libellé
+// n'est pas vidé quand plus rien ne tourne : la pilule s'estompe, et le vider
+// ferait sauter sa largeur pendant la transition.
 function syncBgActivity() {
   const el = $('bg-activity');
   if (!el) return;
-  el.classList.toggle('active', _bgCount > 0 && !_bgSuppressed);
+  const label = bgActivityCurrentLabel(_bgTasks);
+  if (label !== null) $('bg-label').textContent = label;
+  el.classList.toggle('active', _bgTasks.length > 0 && !_bgSuppressed);
 }
 
 // Masque l'indicateur alors qu'une tâche tourne toujours : la tâche a une
@@ -3218,8 +3232,12 @@ function setBgActivitySuppressed(on) {
   _bgSuppressed = !!on;
   syncBgActivity();
 }
-function bgActivityLabel(label) {
-  $('bg-label').textContent = label;
+// Relibellé d'UNE tâche (progression du backfill) : n'apparaît que si elle est
+// la plus récente en cours, et lui revient quand celles lancées après finissent.
+function bgActivityLabel(task, label) {
+  if (!task) return;
+  task.label = label;
+  syncBgActivity();
 }
 
 // ── Sidebar / sections temporelles ──────────────────────────────────────────
@@ -4387,7 +4405,14 @@ let _backendLastProbe = 0;      // horodatage de la dernière SONDE (pas des éc
 //
 // Point d'écriture UNIQUE de `_backendProbe` : c'est ce qui garantit qu'un
 // verdict ne peut pas être posé sans que la pastille suive.
-function noteBackendProbe(ok) {
+//
+// `serverId` : id du serveur INTERROGÉ, capturé avant l'appel. Le verdict est
+// global et qualifie le serveur actif au moment où il est posé : un appel qui
+// revient après un changement de serveur actif jugerait sinon un serveur qu'il
+// n'a jamais touché (cf. backendVerdictApplies). Omis = appliqué tel quel.
+function noteBackendProbe(ok, serverId) {
+  const active = activeApiServer();
+  if (!backendVerdictApplies(serverId, active ? active.id : null)) return;
   _backendProbe = { ok: !!ok };
   syncConnDot();
 }
@@ -4433,9 +4458,10 @@ function syncConnDot() {
 }
 
 // Compat : les points d'échange (main.js) posent leur verdict par cet ancien
-// nom. 'ok' / 'err' sont les deux seules valeurs jamais passées.
-function setConnDot(state) {
-  noteBackendProbe(state === 'ok');
+// nom. 'ok' / 'err' sont les deux seules valeurs jamais passées ; `serverId`
+// est celui du serveur interrogé (cf. noteBackendProbe).
+function setConnDot(state, serverId) {
+  noteBackendProbe(state === 'ok', serverId);
 }
 
 // Écrivain DOM UNIQUE du chat soucieux. Une seule classe sur <body> pilote les

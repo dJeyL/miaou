@@ -526,6 +526,11 @@ async function silentCompletion(messages, opts) {
     const out = await _cascade();
     // Le modèle vient de servir : sa fenêtre servie est lisible (AF-2 révisée).
     if (typeof noteModelCalled === 'function') noteModelCalled(url, model);
+    // Un résumé ou un titre obtenu prouve que le backend répond, au même titre
+    // qu'un échange : sans ce verdict, le « rétabli » attendait le prochain
+    // message de l'utilisateur. Le succès SEUL : un échec d'appel d'arrière-
+    // plan (timeout sur un backend lent, notamment) n'est pas une panne.
+    if (typeof noteBackendProbe === 'function') noteBackendProbe(true, server && server.id);
     return out;
   } catch (e) {
     // UN seul rejeu dégradé — le flag posé par claimVisionRetry fait prendre la
@@ -755,6 +760,7 @@ async function streamCompletion(messages, opts) {
   let usage = null;
   let answered = false;   // le backend a accepté la requête (réponse 2xx avec corps)
   let refused = false;    // le backend a refusé la requête (non-2xx) : rien consommé
+  let streamed = false;   // au moins un chunk SSE valide reçu : verdict de santé posé
 
   try {
     // Le chien de garde couvre AUSSI la connexion, pas seulement le flux : un
@@ -821,6 +827,17 @@ async function streamCompletion(messages, opts) {
 
         const chunk = sseDataObject(line);
         if (!chunk) continue;
+        // Premier chunk SSE valide — raisonnement, contenu, appel d'outil ou
+        // usage : le backend répond, verdict posé TOUT DE SUITE. L'attendre en
+        // fin d'échange retardait le « rétabli » de toute la réponse, tours
+        // d'outils compris, alors que le moindre octet streamé le prouvait
+        // déjà. Pas sur le seul 2xx : un 200 dont le flux meurt aussitôt
+        // donnerait un « rétabli » aussitôt démenti par le chien de garde.
+        // Rattaché au serveur interrogé (cf. backendVerdictApplies).
+        if (!streamed) {
+          streamed = true;
+          if (typeof noteBackendProbe === 'function') noteBackendProbe(true, server && server.id);
+        }
         // Chunk terminal stream_options.include_usage : choices=[], capté AVANT
         // le filtrage sur choix vide (piège 4 adapté) — pas de delta à agréger.
         if (chunk.usage) usage = chunk.usage;
@@ -1078,7 +1095,7 @@ async function runConversation(messages, hooks) {
             });
           }
         } else {
-          bgActivityStart('outil…');
+          const bgTask = bgActivityStart('outil…');
           try {
             // Pour les outils distants, callRemoteTool pousse l'ack dans
             // _pendingToolAcks de manière synchrone (avant son premier await).
@@ -1160,7 +1177,7 @@ async function runConversation(messages, hooks) {
               webMeta,
             });
           } finally {
-            bgActivityEnd();
+            bgActivityEnd(bgTask);
           }
         }
 

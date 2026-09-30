@@ -493,6 +493,30 @@ function resolveBackendHealth(cfg, requireKey, probe) {
   return 'ok';
 }
 
+// Libellé de l'indicateur d'activité de fond : celui de la tâche la plus
+// récemment démarrée ENCORE EN COURS, `null` si rien ne tourne. `tasks` est la
+// liste des jetons dans l'ordre de démarrage (cf. bgActivityStart, ui.js).
+// Quand une tâche courte lancée pendant une longue finit, le libellé revient à
+// la longue au lieu de rester sur la courte. Pure, testable en QuickJS.
+function bgActivityCurrentLabel(tasks) {
+  if (!tasks || !tasks.length) return null;
+  return tasks[tasks.length - 1].label;
+}
+
+// Un verdict observé s'applique-t-il encore au serveur ACTIF ? Le verdict est
+// global (`_backendProbe` ne dit rien du serveur qu'il juge) : il qualifie le
+// serveur actif au moment où il est posé, pas celui qu'on a interrogé. Tout
+// appel qui traverse un `await` — un stream, un résumé, une sonde /models —
+// peut donc revenir après un changement de serveur actif et accuser (ou
+// absoudre) un serveur qu'il n'a jamais touché. L'appelant passe l'id du
+// serveur capturé AVANT l'appel ; un id absent (`null`/`undefined`) garde
+// l'ancien comportement, pour un appelant qui n'a rien à capturer.
+// Pure, testable en QuickJS.
+function backendVerdictApplies(verdictServerId, activeServerId) {
+  if (verdictServerId == null) return true;
+  return verdictServerId === activeServerId;
+}
+
 // Faut-il sonder le backend au retour de l'utilisateur ? Même séparation que
 // pour le MCP — `resolveBackendHealth` répond à « qu'affiche-t-on ? », celle-ci
 // à « que retente-t-on ? ».

@@ -41,6 +41,31 @@ renseignées », effaçant un rouge légitime dès qu'on passait dans les régla
 `syncConfigured` dérive désormais son propre `configured` du MÊME prédicat
 (« pas `unconfigured` »), plutôt que de réécrire le test.
 
+**Un verdict juge le serveur INTERROGÉ, pas le serveur actif.** `_backendProbe`
+est global : posé tel quel, il qualifie le serveur actif au moment de
+l'écriture. Or tout verdict arrive après un `await` (stream, résumé, sonde
+`/models`), pendant lequel l'utilisateur a pu changer de serveur actif : un
+échec sur A accusait alors B, qu'il n'avait jamais touché. Chaque appelant
+capture donc l'id du serveur AVANT l'appel et le passe en second argument
+(`noteBackendProbe(ok, serverId)`, `setConnDot(state, serverId)`) ; le pur
+`backendVerdictApplies` écarte le verdict si ce n'est plus le serveur actif. Un
+id omis garde l'ancien comportement.
+
+**Le verdict « joignable » tombe au premier signe de vie.** `streamCompletion`
+(api.js) pose `ok` dès le premier chunk SSE valide — raisonnement, contenu,
+appel d'outil ou usage —, et non en fin d'échange : le toast « rétabli »
+attendait sinon toute la réponse, tours d'outils compris, alors que le moindre
+octet streamé prouvait déjà que le serveur répond. Pas sur le seul 2xx : un 200
+dont le flux meurt aussitôt donnerait un « rétabli » démenti quelques secondes
+plus tard par le chien de garde. `silentCompletion` (résumés, titres,
+descriptions) pose `ok` sur un succès, jamais `down` sur un échec : un appel
+d'arrière-plan qui expire sur un backend lent n'est pas une panne. Les verdicts
+de fin d'échange de `dispatchSend` restent (redondants pour `ok`, seuls
+porteurs de `down`). Non-régression : `verify-backend-verdict-early.mjs` (flux
+retenu après son premier chunk, `silentCompletion` réussi et en échec, bascule
+de serveur actif pendant un échange ; rouge sur les trois blocs contre le code
+d'avant).
+
 **Reprise active.** `probeBackend()` (main.js) réutilise `/models` via
 `loadServerModels(server, true)` — aucune requête d'un nouveau genre : c'est
 l'appel déjà fait au démarrage et à chaque changement de serveur, dont l'échec

@@ -2293,7 +2293,7 @@ async function prefetchModels() {
   // envoie aux réglages, pas vers un serveur à attendre).
   if (server) {
     markBackendProbed(Date.now());
-    noteBackendProbe(!_modelsEntryOf(server).error);
+    noteBackendProbe(!_modelsEntryOf(server).error, server.id);
   }
   syncModelUI();
 }
@@ -2322,7 +2322,7 @@ async function probeBackend() {
   // APRÈS l'await — un instantané pris avant serait celui de l'état précédent.
   await loadServerModels(server, true);
   const entry = _modelsEntryOf(server);
-  noteBackendProbe(!entry.error);
+  noteBackendProbe(!entry.error, server.id);
   syncModelUI();
 }
 
@@ -4026,6 +4026,9 @@ async function dispatchSend(matches, continuation) {
   // en parts CE tour-ci.
   const model = activeModel();   // modèle qui va produire cette réponse (override conv ou défaut)
   const serverName = (activeApiServer() || {}).name || '';   // provenance, persistée sur chaque message assistant
+  // Serveur interrogé, capturé ici : les verdicts de santé posés en fin
+  // d'échange le jugent LUI, pas le serveur devenu actif entre-temps.
+  const serverId = (activeApiServer() || {}).id || null;
   const reasoningEffort = activeReasoningEffort();
 
   // Génération de cet échange (lot T-1a). À partir d'ici, TOUS les hooks mutent
@@ -4542,7 +4545,7 @@ async function dispatchSend(matches, continuation) {
             applyUsageToLastManifest(usage);
             syncContextCounter();
           }
-          setConnDot('ok');
+          setConnDot('ok', serverId);
           // Ni maybeTitle() ni nouveau ts : le message garde son horodatage
           // d'origine, la conversation a déjà été titrée (ou pas) à sa création.
           return;
@@ -4569,7 +4572,7 @@ async function dispatchSend(matches, continuation) {
         // (le `catch` de fin de fonction ne l'a jamais conditionné non plus).
         // Seul le bandeau d'erreur l'est — il parle de la conversation affichée.
         if (stalled) {
-          setConnDot('err');
+          setConnDot('err', serverId);
           if (genOwnsScreen(gen)) {
             showComposerError('Connexion interrompue : le flux s\'est tu trop longtemps. La réponse est incomplète.');
           }
@@ -4600,7 +4603,7 @@ async function dispatchSend(matches, continuation) {
           applyUsageToLastManifest(usage);
           syncContextCounter();
         }
-        setConnDot('ok');
+        setConnDot('ok', serverId);
         maybeTitle(gen);
       },
       onHalt: (leadIn, question, { usage } = {}) => {
@@ -4641,7 +4644,7 @@ async function dispatchSend(matches, continuation) {
             () => sendUserText('Oui'),
             () => sendUserText('Non'));
         }
-        setConnDot('ok');
+        setConnDot('ok', serverId);
       },
       onError: (msg) => { if (genOwnsScreen(gen)) finalizeAssistantError(gen.wrap, msg); },
     });
@@ -4655,7 +4658,7 @@ async function dispatchSend(matches, continuation) {
     // échec de transport (fetch rejeté : DNS, CORS, connexion refusée).
     const detail = (e && e.message) || String(e);
     if (genOwnsScreen(gen)) finalizeAssistantError(gen.wrap, /^HTTP \d/.test(detail) ? detail : 'Erreur réseau : ' + detail);
-    setConnDot('err');
+    setConnDot('err', serverId);
   } finally {
     // Désenregistrement AVANT setSending : ce dernier dérive `sending` du
     // registre (« la conv AFFICHÉE génère-t-elle ? »), il doit donc voir un
@@ -4743,15 +4746,17 @@ async function wakeParentWithPendingAgentResults(parentConvId) {
 // Encadre une tâche asynchrone (appel LLM silencieux) par l'indicateur
 // d'activité, avec garde try/finally et échec silencieux (retourne null).
 // Sert au titrage comme à la génération de résumés.
+// `taskFn` reçoit `setLabel(label)` : relibelle SA tâche, pas la dernière
+// démarrée (cf. bgActivityLabel).
 async function runBackgroundTask(label, taskFn) {
-  bgActivityStart(label);
+  const task = bgActivityStart(label);
   try {
-    return await taskFn();
+    return await taskFn((l) => bgActivityLabel(task, l));
   } catch (e) {
     if (typeof console !== 'undefined') console.warn('[miaou] tâche « ' + label + ' » échouée :', (e && e.message) || e);
     return null;   // abandon silencieux côté UI
   } finally {
-    bgActivityEnd();
+    bgActivityEnd(task);
   }
 }
 
@@ -5527,11 +5532,11 @@ async function runBackfill() {
   const cands = await backfillCandidates();
   if (!cands.length) return;
   const N = cands.length;
-  await runBackgroundTask('résumés 0/' + N, async () => {
+  await runBackgroundTask('résumés 0/' + N, async (setLabel) => {
     let n = 0;
     for (const c of cands) {
       n++;
-      bgActivityLabel('résumés ' + n + '/' + N);     // maj du libellé sans toucher au compteur
+      setLabel('résumés ' + n + '/' + N);            // maj du libellé de CETTE tâche
       if (!isSummaryCandidate(c.id)) continue;        // re-vérif (suppression entre-temps)
       try {
         const s = await generateSummary(c.messages);
