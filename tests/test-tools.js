@@ -3,6 +3,21 @@
 // Helpers : flattenToolResult(callTool(...)) reproduit l'ancien runTool(name, args).
 function ct(name, args) { return flattenToolResult(callTool(name, args)); }
 
+// Appel d'un outil qui exige la lecture d'une skill (requiresSkill), pour les
+// tests qui ne portent pas sur cette garde : l'ack de lecture est posé dans la
+// file du lot juste avant l'appel, puis retiré par identité, pour ne rien laisser
+// dans _pendingToolAcks que le test lirait ensuite. La garde elle-même est testée
+// dans « Lecture de skill imposée avant un outil ».
+function callAfterSkillRead(slug, name, args, ctx) {
+  var read = { kind: 'skill_read', slug: slug };
+  _pendingToolAcks.push(read);
+  try { return callTool(name, args, ctx); }
+  finally {
+    var i = _pendingToolAcks.indexOf(read);
+    if (i >= 0) _pendingToolAcks.splice(i, 1);
+  }
+}
+
 describe('flattenToolResult', function() {
   it('renvoie une chaîne vide sur entrée nulle ou sans content', function() {
     expect(flattenToolResult(null)).toBe('');
@@ -838,18 +853,18 @@ describe('js__eval exposé au modèle (registre TOOLS, lot L, multi-entrées L-2
     // tandis que passer les gardes atteint runInQuickJs et rend une PROMISE.
     // C'est `.then` qui distingue les deux — pas le texte aplati, qui vaut ''
     // sur une Promise et ferait passer ce test sans qu'il atteigne son chemin.
-    var r = callTool('miaou__js__eval', { code: '1' });
+    var r = callAfterSkillRead('js-eval', 'miaou__js__eval', { code: '1' });
     expect(typeof r.then === 'function').toBe(true);
     // Contrôle de prémisse : le MÊME helper rend bien un refus aplatissable quand
     // une garde mord vraiment (ici `code` manquant), sinon l'assertion ci-dessus
     // serait vraie pour toute entrée et ne prouverait rien.
-    var refus = callTool('miaou__js__eval', {});
+    var refus = callAfterSkillRead('js-eval', 'miaou__js__eval', {});
     expect(typeof refus.then === 'function').toBe(false);
     expect(flattenToolResult(refus)).toBe('Code manquant.');
   });
   it('rejette un input_handles PRÉSENT mais pas un objet (string)', function() {
     // Distinction load-bearing : absent = légitime, présent-mais-malformé = refusé.
-    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: 'att-1', code: '1' }));
+    var r = flattenToolResult(callAfterSkillRead('js-eval', 'miaou__js__eval', { input_handles: 'att-1', code: '1' }));
     expect(r.indexOf('input_handles invalide') >= 0).toBeTruthy();
   });
   it('rejette un TABLEAU : typeof object ne suffit pas, la garde Array.isArray est nécessaire', function() {
@@ -857,27 +872,27 @@ describe('js__eval exposé au modèle (registre TOOLS, lot L, multi-entrées L-2
     // donc sans Array.isArray il passerait la première garde et Object.keys en
     // ferait des clés numériques — une forme positionnelle acceptée en douce.
     expect(typeof []).toBe('object');
-    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: ['att-1'], code: '1' }));
+    var r = flattenToolResult(callAfterSkillRead('js-eval', 'miaou__js__eval', { input_handles: ['att-1'], code: '1' }));
     expect(r.indexOf('input_handles invalide') >= 0).toBeTruthy();
   });
   it('un input_handles VIDE est accepté, comme un input_handles absent', function() {
     // {} n'est plus un refus : le modèle qui écrit la forme cérémonielle obtient
     // le même mode calcul pur que celui qui omet le paramètre. Même discriminant
     // que ci-dessus — une Promise prouve qu'on a atteint l'exécution.
-    var r = callTool('miaou__js__eval', { input_handles: {}, code: '1' });
+    var r = callAfterSkillRead('js-eval', 'miaou__js__eval', { input_handles: {}, code: '1' });
     expect(typeof r.then === 'function').toBe(true);
   });
   it('rejette au-delà de JS_EVAL_MAX_INPUTS clés, en nommant le compte et la limite', function() {
     var many = {};
     for (var i = 0; i <= JS_EVAL_MAX_INPUTS; i++) many['k' + i] = 'att-1';
-    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: many, code: '1' }));
+    var r = flattenToolResult(callAfterSkillRead('js-eval', 'miaou__js__eval', { input_handles: many, code: '1' }));
     expect(r.indexOf(String(JS_EVAL_MAX_INPUTS + 1) + ' clés') >= 0).toBeTruthy();
     expect(r.indexOf('maximum ' + JS_EVAL_MAX_INPUTS) >= 0).toBeTruthy();
     // Contrôle de prémisse : le MÊME appel à la limite exacte ne bute PAS sur ce
     // message (sinon le test passerait pour une raison sans rapport).
     var ok = {};
     for (var j = 0; j < JS_EVAL_MAX_INPUTS; j++) ok['k' + j] = 'att-1';
-    var r2 = flattenToolResult(callTool('miaou__js__eval', { input_handles: ok, code: '1' }));
+    var r2 = flattenToolResult(callAfterSkillRead('js-eval', 'miaou__js__eval', { input_handles: ok, code: '1' }));
     expect(r2.indexOf('maximum') >= 0).toBe(false);
   });
   it('doctrine ET description annoncent le calcul sans ressource', function() {
@@ -890,11 +905,11 @@ describe('js__eval exposé au modèle (registre TOOLS, lot L, multi-entrées L-2
     expect(def.description.indexOf('FACULTATIF') >= 0).toBeTruthy();
   });
   it('rejette un code manquant en erreur synchrone', function() {
-    expect(flattenToolResult(callTool('miaou__js__eval', { input_handles: { a: 'att-1' } })))
+    expect(flattenToolResult(callAfterSkillRead('js-eval', 'miaou__js__eval', { input_handles: { a: 'att-1' } })))
       .toBe('Code manquant.');
   });
   it('rejette un handle de forme invalide en NOMMANT la clé fautive', function() {
-    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: { src: 'res-x' }, code: '1' }));
+    var r = flattenToolResult(callAfterSkillRead('js-eval', 'miaou__js__eval', { input_handles: { src: 'res-x' }, code: '1' }));
     expect(r.indexOf('Handle invalide pour la clé "src"') >= 0).toBeTruthy();
   });
   it('REFUS TOTAL : c\'est la PREMIÈRE clé fautive qui arrête tout, pas la dernière lue', function() {
@@ -903,7 +918,7 @@ describe('js__eval exposé au modèle (registre TOOLS, lot L, multi-entrées L-2
     // résolution et de rendre l'erreur de la dernière. Hors environnement de test
     // aucun handle n'est résoluble, donc on éprouve la garde de FORME, atteinte
     // avant toute résolution — d'où deux handles malformés plutôt qu'un valide.
-    var r = flattenToolResult(callTool('miaou__js__eval',
+    var r = flattenToolResult(callAfterSkillRead('js-eval', 'miaou__js__eval',
       { input_handles: { premiere: 'pas-un-handle', seconde: 'pas-non-plus' }, code: '1' }));
     expect(r.indexOf('Handle invalide pour la clé "premiere"') >= 0).toBeTruthy();
     expect(r.indexOf('"seconde"') >= 0).toBe(false);
@@ -912,12 +927,12 @@ describe('js__eval exposé au modèle (registre TOOLS, lot L, multi-entrées L-2
     // Cas distinct du précédent : la forme passe, c'est resolveHandleRecord qui
     // rend null (herméticité piège 18 — un handle hors-scope répond « introuvable »,
     // sans oracle). La clé doit être nommée là aussi.
-    var r = flattenToolResult(callTool('miaou__js__eval',
+    var r = flattenToolResult(callAfterSkillRead('js-eval', 'miaou__js__eval',
       { input_handles: { absente: 'att-1' }, code: '1' }));
     expect(r.indexOf('Handle introuvable pour la clé "absente"') >= 0).toBeTruthy();
   });
   it('rejette une clé dont le handle est une string vide, en la nommant', function() {
-    var r = flattenToolResult(callTool('miaou__js__eval', { input_handles: { vide: '   ' }, code: '1' }));
+    var r = flattenToolResult(callAfterSkillRead('js-eval', 'miaou__js__eval', { input_handles: { vide: '   ' }, code: '1' }));
     expect(r.indexOf('Handle manquant pour la clé "vide"') >= 0).toBeTruthy();
   });
 });
@@ -2441,5 +2456,128 @@ describe('REFS_DOCTRINE (constante de ROOT_SYSTEM_PROMPT, remplace la doctrine c
   });
   it('nomme la voie pour un résultat d\'outil sans res_', function() {
     expect(REFS_DOCTRINE).toContain('miaou__resource__from_result');
+  });
+});
+
+describe('Lecture de skill imposée avant un outil (requiresSkill)', function() {
+  function readAck(slug) { return { role: 'tool-ack', kind: 'skill_read', slug: slug }; }
+  function callIn(messages, name, args) {
+    localStorage.clear();
+    _activeGenerations.clear();
+    clearPendingToolAcks();
+    saveConversation({ id: 'g1', title: 'g', timestamp: 1, messages: messages });
+    var r = callInternalTool(name, args, { convId: 'g1', spaceId: 'default' });
+    return r;
+  }
+  it('les outils gardés sont exactement ceux attendus, avec leur skill', function() {
+    var gated = {};
+    TOOLS.forEach(function(t) { if (t.requiresSkill) gated[t.name] = t.requiresSkill; });
+    expect(gated).toEqual({
+      'js__eval': 'js-eval',
+      'docs__list': 'docs', 'docs__extract': 'docs', 'docs__read': 'docs',
+      'docs__render_page': 'docs', 'docs__pack': 'docs',
+      'agent__spawn': 'agents',
+    });
+  });
+  it('chaque skill gardée a son motif de refus', function() {
+    TOOLS.forEach(function(t) {
+      if (t.requiresSkill) expect(typeof SKILL_GATE_REASONS[t.requiresSkill]).toBe('string');
+    });
+  });
+  it('js__eval sans lecture : refus qui nomme la skill, dit que rien n\'est fait, AVANT la validation', function() {
+    // `code` manquant : sans la garde, le refus serait « Code manquant. ».
+    var r = callIn([], 'js__eval', {});
+    var txt = flattenToolResult(r);
+    expect(txt).toContain('lis d\'abord la skill « js-eval »');
+    expect(txt).toContain('Rien n\'a été fait');
+    expect(txt).toContain(SKILL_GATE_REASONS['js-eval']);
+    expect(r.isError).toBe(false);
+  });
+  it('le refus laisse une trace tool_failed au nom canonique', function() {
+    callIn([], 'docs__list', { ref: 'att-1' });
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(1);
+    expect(acks[0].kind).toBe('tool_failed');
+    expect(acks[0].name).toBe('miaou__docs__list');
+    clearPendingToolAcks();
+  });
+  it('TOUT outil qui déclare requiresSkill refuse sans lecture : aucun handler n\'a oublié la garde', function() {
+    // Les handlers docs__* sont async : leur résultat est une Promise que le
+    // runner n'attend pas. La garde, elle, tourne avant le premier await, donc
+    // son ack tool_failed est déjà dans la file au retour de l'appel.
+    var names = TOOLS.filter(function(t) { return t.requiresSkill; }).map(function(t) { return t.name; });
+    expect(names.length > 0).toBe(true);
+    names.forEach(function(n) {
+      callIn([], n, { prompt: 'x', intent: 'y' });
+      var acks = getPendingToolAcks();
+      var slug = TOOLS.find(function(t) { return t.name === n; }).requiresSkill;
+      expect(n + ' → ' + (acks[0] && acks[0].message || 'aucun refus'))
+        .toContain(n + ' → Refusé : lis d\'abord la skill « ' + slug + ' »');
+      _activeGenerations.clear();
+    });
+    clearPendingToolAcks();
+  });
+  it('lue dans le fil : la garde laisse passer (le handler répond)', function() {
+    var txt = flattenToolResult(callIn([readAck('js-eval')], 'js__eval', {}));
+    expect(txt).toBe('Code manquant.');
+    clearPendingToolAcks();
+  });
+  it('lue dans le même lot : la garde laisse passer', function() {
+    localStorage.clear();
+    clearPendingToolAcks();
+    saveConversation({ id: 'g1', title: 'g', timestamp: 1, messages: [] });
+    _pendingToolAcks.push({ kind: 'skill_read', slug: 'js-eval' });
+    var txt = flattenToolResult(callInternalTool('js__eval', {}, { convId: 'g1', spaceId: 'default' }));
+    clearPendingToolAcks();
+    expect(txt).toBe('Code manquant.');
+  });
+  it('la lecture d\'une AUTRE skill gardée ne compte pas', function() {
+    expect(flattenToolResult(callIn([readAck('docs')], 'js__eval', {}))).toContain('« js-eval »');
+    clearPendingToolAcks();
+  });
+  it('un outil non gardé n\'est jamais refusé', function() {
+    expect(flattenToolResult(callIn([], 'resource__create', {}))).toBe(
+      flattenToolResult(callIn([readAck('js-eval'), readAck('docs')], 'resource__create', {})));
+    clearPendingToolAcks();
+  });
+});
+
+describe('skillReadSince (pur)', function() {
+  function readAck(slug, extra) { return Object.assign({ role: 'tool-ack', kind: 'skill_read', slug: slug }, extra || {}); }
+  it('lue dans le fil, après la dernière frontière', function() {
+    expect(skillReadSince('docs', [readAck('docs')], [])).toBe(true);
+    expect(skillReadSince('docs', [{ role: 'compaction', content: 'r' }, readAck('docs')], [])).toBe(true);
+  });
+  it('lue AVANT la dernière compaction : ne compte plus', function() {
+    expect(skillReadSince('docs', [readAck('docs'), { role: 'compaction', content: 'r' }], [])).toBe(false);
+  });
+  it('lecture en échec : ne compte pas, ni dans le fil ni dans le lot', function() {
+    expect(skillReadSince('docs', [readAck('docs', { error: true })], [])).toBe(false);
+    expect(skillReadSince('docs', [], [{ kind: 'skill_read', slug: 'docs', error: true }])).toBe(false);
+  });
+  it('lue dans le lot en cours', function() {
+    expect(skillReadSince('js-eval', [], [{ kind: 'skill_read', slug: 'js-eval' }])).toBe(true);
+  });
+  it('un message qui n\'est pas un ack ne compte pas, même s\'il en a la forme', function() {
+    expect(skillReadSince('docs', [{ role: 'assistant', kind: 'skill_read', slug: 'docs' }], [])).toBe(false);
+  });
+  it('fil et lot absents : non lue', function() {
+    expect(skillReadSince('docs', null, null)).toBe(false);
+  });
+});
+
+describe('withSkillReaderIfGated (trousse d\'agent)', function() {
+  it('un outil gardé délégué seul : skills__read ajouté en fin', function() {
+    expect(withSkillReaderIfGated(['miaou__docs__read'], TOOLS))
+      .toEqual(['miaou__docs__read', 'miaou__skills__read']);
+  });
+  it('skills__read déjà délégué : pas de doublon', function() {
+    expect(withSkillReaderIfGated(['miaou__skills__read', 'miaou__js__eval'], TOOLS))
+      .toEqual(['miaou__skills__read', 'miaou__js__eval']);
+  });
+  it('aucun outil gardé : liste inchangée', function() {
+    expect(withSkillReaderIfGated(['miaou__conv__get', 'srv__fetch_url'], TOOLS))
+      .toEqual(['miaou__conv__get', 'srv__fetch_url']);
+    expect(withSkillReaderIfGated([], TOOLS)).toEqual([]);
   });
 });

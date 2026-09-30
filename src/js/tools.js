@@ -790,6 +790,85 @@ function pushRepeatLimitAck(name, message) {
   _pendingToolAcks.push({ kind: 'tool_failed', name, message, error: true });
 }
 
+// ── Lecture de skill imposée avant un outil ─────────────────────────────────
+// Plusieurs doctrines demandent de lire une skill système avant le premier appel
+// à un outil (AGENT_DOCTRINE, DOCS_DOCTRINE, JS_EVAL_DOCTRINE). Une doctrine se
+// saute : un modèle a lancé ses agents sans jamais ouvrir « agents » (mesuré le
+// 2026-09-30), et toutes ses consignes lui restaient inconnues. Un outil qui
+// porte `requiresSkill: '<slug>'` dans TOOLS est donc refusé tant que la lecture
+// n'est pas constatée (skillReadSince), par son handler via refuseUnlessSkillRead.
+// Dans le handler et pas dans callInternalTool : un refus structurel doit passer
+// AVANT, sans quoi un agent qui appelle agent__spawn serait envoyé lire une skill
+// (avec un outil qu'il n'a souvent pas) pour s'entendre refuser ensuite la
+// profondeur. Qu'aucun outil gardé n'oublie l'appel, un test le vérifie sur tout
+// le registre.
+// Le motif d'un refus — ce que la skill apporte — est ici, une fois par skill,
+// pas sur chacun des outils qu'elle couvre (cinq pour « docs »).
+const SKILL_GATE_REASONS = {
+  'agents': 'Elle dit comment rédiger le prompt d\'un agent qui démarre sans rien de cette ' +
+    'conversation, et comment suivre plusieurs agents jusqu\'à leurs résultats.',
+  'docs': 'Elle donne la forme exacte du selector de chaque format, quand sortir une ' +
+    'lecture en ressource, comment lire les refus, et comment nommer les membres ' +
+    'd\'une archive.',
+  'js-eval': 'Elle donne la signature d\'appel exacte, les primitives disponibles dans ' +
+    'le bac à sable et les contraintes de sortie.',
+};
+
+// La skill `slug` a-t-elle été lue dans cette conversation ? Constatée :
+//   - dans le fil, APRÈS la dernière frontière de compaction (seul l'aval est
+//     émis : une lecture d'avant n'est plus dans le contexte) ;
+//   - ou plus tôt dans le MÊME lot d'appels (`pendingAcks`, la file des acks de
+//     la manche en cours), sans quoi un modèle qui lit puis appelle dans un seul
+//     lot paierait un aller-retour de plus. L'appel de ce lot-là a été écrit sans
+//     la skill ; c'est accepté pour toutes les skills gardées, parce qu'un refus
+//     ne coûte pas moins qu'un appel écrit à l'aveugle qui échoue (le modèle se
+//     corrige skill en main dans les deux cas), et qu'un appel à l'aveugle qui
+//     réussit ne coûte rien.
+// Une lecture en échec (slug inconnu, skill désactivée) ne compte pas.
+// Pure, testable en QuickJS.
+function skillReadSince(slug, thread, pendingAcks) {
+  const isRead = (m) => !!m && m.kind === 'skill_read' && m.slug === slug && !m.error;
+  const t = thread || [];
+  for (let i = lastCompactionIndex(t) + 1; i < t.length; i++) {
+    if (isAckRole(t[i] && t[i].role) && isRead(t[i])) return true;
+  }
+  return (pendingAcks || []).some(isRead);
+}
+
+// Refus d'un outil gardé dont la skill n'a pas été lue, ou null. Le texte nomme
+// la skill, dit que rien n'a été fait (le modèle ne doit pas croire son appel
+// passé) et ce que la skill apporte.
+function skillGateRefusal(slug, thread, pendingAcks) {
+  if (!slug || skillReadSince(slug, thread, pendingAcks)) return null;
+  return 'Refusé : lis d\'abord la skill « ' + slug + ' » avec miaou__skills__read, ' +
+    'puis relance cet appel. Rien n\'a été fait. ' + (SKILL_GATE_REASONS[slug] || '');
+}
+
+// Garde d'un handler d'outil gardé : le refus (poussé en ack tool_failed par
+// toolFail) si la skill déclarée par `requiresSkill` n'a pas été lue, sinon
+// null. `c` est le ctx résolu du handler (toolCtx).
+function refuseUnlessSkillRead(toolName, c) {
+  const tool = TOOLS.find(t => t.name === toolName);
+  const refusal = skillGateRefusal(tool && tool.requiresSkill,
+    toolConvThread(c && c.convId), _pendingToolAcks);
+  return refusal ? toolFail(toolName, refusal) : null;
+}
+
+// Trousse d'un agent : un outil gardé lui est inutilisable sans l'outil de
+// lecture, que le parent n'a aucune raison de penser à déléguer. Il est donc
+// ajouté d'office dès qu'un outil délégué porte `requiresSkill`. `names` sont les
+// noms exposés (`miaou__…`, ou distants) ; `tools` le registre. Pure.
+function withSkillReaderIfGated(names, tools) {
+  const list = names || [];
+  const entry = (n) => {
+    const k = resolveInternalToolName(n, tools);
+    return k == null ? null : tools.find(t => t.name === k);
+  };
+  if (!list.some(n => { const t = entry(n); return !!(t && t.requiresSkill); })) return list;
+  if (list.some(n => { const t = entry(n); return !!(t && t.name === 'skills__read'); })) return list;
+  return list.concat(['miaou__skills__read']);
+}
+
 // File des blocs NON-text renvoyés par un outil distant (image / resource /
 // binaire). Vidée par le hook UI au même moment que les acks (après l'exécution
 // des outils d'un tour) et rendue dans la bulle assistant courante via la cascade
@@ -1851,6 +1930,7 @@ const TOOLS = [
     // skills__read. Herméticité (piège 18) : resolveHandleRecord lit le cache
     // session, un handle hors-scope → null → « handle introuvable » (pas d'oracle).
     name: 'js__eval',
+    requiresSkill: 'js-eval',   // lecture imposée, cf. skillReadSince
     // Description dégraissée (campagne contexte) : ce qui EST parti est ce que
     // la skill système `js-eval` dit déjà, et mieux — l'énumération des
     // primitives et leur sémantique (§ « Primitives disponibles », liste
@@ -1903,6 +1983,8 @@ const TOOLS = [
     // un mode d'usage réel est pire qu'un hint légèrement pessimiste dans l'autre.
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('js__eval', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
       // `input_handles` ABSENT est un cas légitime (calcul pur : arithmétique,
       // manipulation de chaînes, vérification d'une formule — rien à lire). On
       // distingue donc « absent » de « présent mais malformé » : le premier passe,
@@ -2038,6 +2120,7 @@ const TOOLS = [
     // Herméticité (piège 18) : resolveHandleRecord lit le cache session, un
     // handle hors-scope → null → « introuvable » (no-oracle, comme conv__get).
     name: 'docs__list',
+    requiresSkill: 'docs',   // lecture imposée, cf. skillReadSince
     description:
       "Donne la STRUCTURE d'un document référencé par son handle (att-N, file-<id> " +
       "ou res_<id>), sans en renvoyer le contenu : les pages et le sommaire d'un " +
@@ -2057,6 +2140,8 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: true, destructiveHint: false },   // lecture seule, aucune écriture d'état
     handler: async (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('docs__list', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
       const ref = String((args && args.ref) || '').trim();
       if (!ref) return toolFail('docs__list', 'Handle manquant.');
       if (classifyHandleRef(ref) === null) {
@@ -2086,6 +2171,7 @@ const TOOLS = [
     // pris sur le seul central directory, donc AVANT toute allocation — on ne
     // décompresse jamais pour découvrir après coup que c'était trop gros.
     name: 'docs__extract',
+    requiresSkill: 'docs',   // lecture imposée, cf. skillReadSince
     description:
       "Extrait UN membre d'une archive zip (handle + chemin exact du membre, tel que " +
       "donné par miaou__docs__list) et le matérialise en ressource res_… adressable, " +
@@ -2103,6 +2189,8 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },   // écrit un record IDB
     handler: async (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('docs__extract', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
       const ref = String((args && args.ref) || '').trim();
       const path = String((args && args.path) || '').trim();
       if (!ref) return toolFail('docs__extract', 'Handle manquant.');
@@ -2185,6 +2273,7 @@ const TOOLS = [
     // La contrepartie : as_resource + js__eval, en deux appels, sur n'importe
     // quelle taille de document.
     name: 'docs__read',
+    requiresSkill: 'docs',   // lecture imposée, cf. skillReadSince
     description:
       "Lit une partie d'un document référencé par handle (att-N, file-<id> ou " +
       "res_<id>) : PDF, classeur Excel, document Word et présentation PowerPoint. " +
@@ -2212,6 +2301,8 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },   // as_resource écrit un record IDB
     handler: async (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('docs__read', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
       const ref = String((args && args.ref) || '').trim();
       const selector = String((args && args.selector) || '').trim();
       const asResource = !!(args && args.as_resource);
@@ -2303,6 +2394,7 @@ const TOOLS = [
     // plage. C'est la garde qui applique le « jamais de rendu en lot » (chaque
     // page coûte du contexte) — pas une valeur à surveiller, une forme d'API.
     name: 'docs__render_page',
+    requiresSkill: 'docs',   // lecture imposée, cf. skillReadSince
     description:
       "Rend UNE page d'un PDF (handle att-N, file-<id> ou res_<id>) en image et te la " +
       "met sous les yeux, pour que tu la lises toi-même. À utiliser quand la " +
@@ -2321,6 +2413,8 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },   // stocke un attachment IDB
     handler: async (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('docs__render_page', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
       const ref = String((args && args.ref) || '').trim();
       if (!ref) return toolFail('docs__render_page', 'Handle manquant.');
       const pageNum = Math.floor(Number(args && args.page));
@@ -2404,6 +2498,7 @@ const TOOLS = [
     // Herméticité (piège 18) : resolveHandleRecord lit le cache session, un
     // handle hors-scope → null → « introuvable » (no-oracle, comme docs__list).
     name: 'docs__pack',
+    requiresSkill: 'docs',   // lecture imposée, cf. skillReadSince
     description:
       "Regroupe plusieurs ressources déjà stockées (handles att-N, file-<id> ou res_<id>) " +
       "en une seule archive zip que l'utilisateur peut télécharger depuis le fil. " +
@@ -2470,6 +2565,8 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },   // écrit un record IDB
     handler: async (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('docs__pack', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
       const handles = args && Array.isArray(args.handles) ? args.handles : [];
       const baseRef = args && args.base != null ? String(args.base).trim() : '';
       const removes = args && Array.isArray(args.remove) ? args.remove : [];
@@ -2657,6 +2754,7 @@ const TOOLS = [
   // `ctx` en argument explicite partout (piège 28) : jamais currentConvId.
   {
     name: 'agent__spawn',
+    requiresSkill: 'agents',   // lecture imposée, cf. skillReadSince
     // Description construite DYNAMIQUEMENT (agentSpawnToolDef, plus bas) : le
     // défaut annoncé de reasoning_effort est le niveau COURANT de la
     // conversation, sans dire que c'est le sien (astuce X-h). Ce qui suit est le
@@ -2678,16 +2776,11 @@ const TOOLS = [
       if (self && isAgentConversation(self)) {
         return toolFail('agent__spawn', 'Un agent ne peut pas en lancer un autre : la profondeur est bornée à un niveau.');
       }
-      // Lecture préalable de la skill « agents », imposée ici plutôt que
-      // laissée à la doctrine, qui se saute (agentsSkillRead). Avant les
-      // bornes : c'est la première chose à faire, quel que soit le nombre
-      // d'agents déjà en cours.
-      if (!agentsSkillRead(toolConvThread(c.convId), _pendingToolAcks)) {
-        return toolFail('agent__spawn', 'Refusé : lis d\'abord la skill « ' + AGENTS_SKILL_SLUG +
-          ' » avec miaou__skills__read, puis relance ce lancement. Rien n\'a été lancé. ' +
-          'Elle dit comment rédiger le prompt d\'un agent qui démarre sans rien de cette ' +
-          'conversation, et comment suivre plusieurs agents jusqu\'à leurs résultats.');
-      }
+      // Lecture préalable de la skill « agents » (requiresSkill). Après la garde
+      // de profondeur, qui ne se lève pas en lisant quoi que ce soit ; avant les
+      // bornes, qui ne concernent qu'un lancement légitime.
+      const skillRefusal = refuseUnlessSkillRead('agent__spawn', c);
+      if (skillRefusal) return skillRefusal;
       // Deux bornes, et le refus NOMME celle qui est atteinte. Les
       // constantes vivent dans storage.js (dérivation BUILD_CONFIG) et ne sont
       // lues qu'ici, en corps de fonction (contrainte de portée inter-fichier).
@@ -2699,6 +2792,9 @@ const TOOLS = [
       // les noms valides (referme la découverte sans outil dédié).
       const v = validateAgentToolList(args && args.tools, agentDelegatableToolNames());
       if (!v.ok) return toolFail('agent__spawn', v.error);
+      // Un outil délégué qui exige une skill emmène l'outil de lecture avec lui
+      // (withSkillReaderIfGated) : le retour l'annonce, l'agent l'a vraiment.
+      const agentTools = withSkillReaderIfGated(v.tools, TOOLS);
       // Fichiers délégués (X-1b) : résolus ICI, dans le référentiel du PARENT
       // (`c`), parce que c'est le seul instant et le seul ctx où les handles du
       // parent résolvent quelque chose. Ce qui est figé est l'ID DE RECORD, pas
@@ -2732,7 +2828,7 @@ const TOOLS = [
         spaceId: c.spaceId,
         prompt: prompt,
         intent: intent,   // JAMAIS de normalisation de casse : c'est le libellé rédigé par le modèle
-        tools: v.tools,
+        tools: agentTools,
         files: files,
         reasoningEffort: effort,
       });
@@ -2747,7 +2843,7 @@ const TOOLS = [
         : 'aucun';
       return 'Agent lancé — identifiant : ' + id + '.\n' +
         'Ton tour continue : ne l\'attends pas. Tu seras prévenu automatiquement quand il aura terminé.\n' +
-        'Outils qui lui ont été délégués : ' + (v.tools.length ? v.tools.join(', ') : 'aucun') + '.\n' +
+        'Outils qui lui ont été délégués : ' + (agentTools.length ? agentTools.join(', ') : 'aucun') + '.\n' +
         'Fichiers qui lui ont été délégués : ' + filesLine + '.';
     },
   },

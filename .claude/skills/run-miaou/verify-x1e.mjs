@@ -205,7 +205,7 @@ const initScript = () => {
         try {
           if (spawn) {
             // La skill « agents » est lue dans le MÊME lot, avant le(s) lancement(s) :
-            // agent__spawn refuse tant qu'elle n'a pas été lue (agentsSkillRead).
+            // agent__spawn refuse tant qu'elle n'a pas été lue (requiresSkill).
             toolCall('miaou__skills__read', { slug: 'agents' }, 0);
             toolCall('miaou__agent__spawn', Object.assign({
               prompt: spawn.prompt, intent: spawn.intent, tools: spawn.tools || [],

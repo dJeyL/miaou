@@ -1002,7 +1002,7 @@ describe('Les quatre handlers agent__* : garde de parenté partagée (X-1, étap
 });
 
 // Ack de lecture de la skill « agents », que agent__spawn exige dans le fil du
-// parent (agentsSkillRead). Posé dans les parents des tests de lancement, qui
+// parent (requiresSkill, skillReadSince). Posé dans les parents des tests de lancement, qui
 // ne portent pas sur cette garde ; elle est testée pour elle-même plus bas.
 function agentsSkillReadAck() {
   return { role: 'tool-ack', kind: 'skill_read', slug: 'agents', title: 'agents' };
@@ -1019,7 +1019,7 @@ describe('agent__spawn : la skill « agents » doit avoir été lue', function()
   it('jamais lue : refus qui nomme la skill et dit que rien n\'est lancé', function() {
     var out = spawnIn([{ role: 'user', content: 'lance un agent' }]);
     expect(out).toContain('lis d\'abord la skill « agents »');
-    expect(out).toContain('Rien n\'a été lancé');
+    expect(out).toContain('Rien n\'a été fait');
     expect(listAllConversations().filter(function(c) { return c.parentConvId === 'p1'; }).length).toBe(0);
   });
   it('lue dans le fil : lancement accepté', function() {
@@ -1039,8 +1039,36 @@ describe('agent__spawn : la skill « agents » doit avoir été lue', function()
     expect(spawnIn([ack])).toContain('lis d\'abord la skill');
   });
   it('lue plus tôt dans le MÊME lot d\'appels (file des acks du tour) : accepté', function() {
-    expect(agentsSkillRead([], [{ kind: 'skill_read', slug: 'agents' }])).toBe(true);
-    expect(agentsSkillRead([], [{ kind: 'skill_read', slug: 'agents', error: true }])).toBe(false);
+    localStorage.clear();
+    _activeGenerations.clear();
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [] });
+    clearPendingToolAcks();
+    _pendingToolAcks.push({ kind: 'skill_read', slug: 'agents' });
+    var out = callInternalTool('agent__spawn', { prompt: 'x', intent: 'y' },
+      { convId: 'p1', spaceId: 'default' }).content[0].text;
+    clearPendingToolAcks();
+    _activeGenerations.clear();
+    expect(out).toContain('Agent lancé');
+  });
+});
+
+describe('agent__spawn : un outil délégué qui exige une skill emmène skills__read', function() {
+  function spawnWith(tools) {
+    localStorage.clear();
+    _activeGenerations.clear();
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [agentsSkillReadAck()] });
+    var out = callInternalTool('agent__spawn', { prompt: 'x', intent: 'y', tools: tools },
+      { convId: 'p1', spaceId: 'default' }).content[0].text;
+    _activeGenerations.clear();
+    return out;
+  }
+  it('js__eval délégué seul : miaou__skills__read ajouté, et annoncé au parent', function() {
+    var out = spawnWith(['miaou__js__eval']);
+    expect(out).toContain('miaou__js__eval, miaou__skills__read');
+  });
+  it('outil non gardé délégué : trousse inchangée', function() {
+    var out = spawnWith(['miaou__conv__get']);
+    expect(out).toContain('délégués : miaou__conv__get.');
   });
 });
 

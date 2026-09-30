@@ -18,6 +18,7 @@
 //
 // Usage : node verify-resource-append.mjs [--headed]
 import { launchIsolated } from './stub-backend.js';
+import { assumeSkillsRead } from './skill-reads.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,6 +47,8 @@ await page.waitForFunction(
   () => document.getElementById('boot-overlay').classList.contains('boot-done'),
   null, { timeout: 10000 },
 );
+// Lecture de skill imposée (requiresSkill) : hors sujet ici, cf. skill-reads.js.
+await assumeSkillsRead(page);
 
 // Helper de page : appelle un outil natif et renvoie son texte de résultat.
 // Globals référencés par nom NU (script concaténé, rien sur window).

@@ -461,3 +461,8 @@ d'injection. Cf. §2, et `docs/compaction.md` pour le geste qu'elles déclenchen
      pages PDF) doit **mettre à jour cette skill**, pas en créer une autre ni
      ajouter à la doctrine — c'est le critère qui a fait choisir une skill
      unique plutôt qu'une par format.
+   - **Lecture imposée** (2026-09-30) : `js-eval` et `docs`, comme `agents`, ne
+     sont plus seulement demandées par leur doctrine. Leurs outils portent
+     `requiresSkill` et refusent tant que la skill n'a pas été lue — cf.
+     `docs/tools.md`, « Lecture de skill imposée avant un outil ».
+     `files-promote` ne l'est pas, `mermaid` ne peut pas l'être (aucun outil).

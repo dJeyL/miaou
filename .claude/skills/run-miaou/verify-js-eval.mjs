@@ -29,6 +29,7 @@
 // Réseau : le premier appel js__eval charge quickjs-emscripten depuis jsDelivr
 // (ensureQuickJs, ui.js). Nécessite donc un accès réseau. Usage : node verify-js-eval.mjs
 import { launchIsolated } from './stub-backend.js';
+import { assumeSkillsRead } from './skill-reads.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -49,6 +50,8 @@ await page.waitForFunction(() =>
   typeof runInQuickJs === 'function' &&
   typeof buildSystemMessage === 'function' &&
   typeof utf8Encode === 'function');
+// Lecture de skill imposée (requiresSkill) : hors sujet ici, cf. skill-reads.js.
+await assumeSkillsRead(page);
 
 // ── Point 9a : engine PAS chargé avant le premier appel (lazy-load) ──────────
 const lazyBefore = await page.evaluate(() => typeof _quickjsPromise === 'undefined' || _quickjsPromise === null);

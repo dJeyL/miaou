@@ -153,15 +153,17 @@ doubler un résultat à chaque relecture.
 `AGENT_DOCTRINE` demande de la lire avant le premier lancement, mais une
 doctrine se saute : un modèle a lancé ses agents sans jamais l'ouvrir (mesuré
 le 2026-09-30), et toutes les consignes de suivi lui restaient inconnues.
-`agent__spawn` refuse donc, avant même les bornes, tant que `agentsSkillRead`
-(pur) ne constate pas un ack `skill_read` du slug `agents` non en échec — dans
-le fil APRÈS la dernière frontière de compaction (une lecture d'avant n'est
-plus dans le contexte), ou plus tôt dans le même lot d'appels (la file
-`_pendingToolAcks` du tour). Ce second cas épargne un aller-retour au modèle
-qui lit puis lance dans un seul tour ; le prompt de ce lancement-là a été écrit
-sans la skill, mais le suivi en bénéficie, et c'est là que les défauts mesurés
-se trouvaient. Le fil lu est celui de la génération appelante quand elle tourne
-(`toolConvThread`, partagé avec `agent__result`). Les stubs des verify qui
+`agent__spawn` porte donc `requiresSkill: 'agents'` et refuse, après la garde
+de profondeur et avant les bornes, tant que `skillReadSince` (pur) ne constate
+pas un ack `skill_read` du slug `agents` non en échec — dans le fil APRÈS la
+dernière frontière de compaction, ou plus tôt dans le même lot d'appels. Ce
+second cas épargne un aller-retour au modèle qui lit puis lance dans un seul
+tour ; le prompt de ce lancement-là a été écrit sans la skill, mais le suivi en
+bénéficie, et c'est là que les défauts mesurés se trouvaient. Le mécanisme est
+commun aux outils `docs__*` et `js__eval` (`docs/tools.md`, « Lecture de skill
+imposée avant un outil »), qui a aussi une conséquence sur la trousse d'un
+agent : un outil gardé délégué emmène `skills__read` avec lui
+(`withSkillReaderIfGated`). Les stubs des verify qui
 lancent des agents émettent donc un `skills__read` en tête du lot ; retiré,
 aucun agent ne part (vérifié sur `verify-agent-busy-rewrite.mjs`).
 

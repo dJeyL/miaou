@@ -621,7 +621,12 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   du DOM (`_apiCatalogueView`, focus et curseur restaurés après re-rendu) ; et le
   pur `modelMenuChoices`, point de passage commun du menu du composer (filtre
   hors de la liste qui défile, ↑ ↓ Entrée, Échap en deux temps) et de la palette.
-- **`docs/tools.md`** — registre d'outils (`tools.js`), mécanisme d'acks
+- **`docs/tools.md`** — registre d'outils (`tools.js`), lecture de skill
+  imposée avant un outil (`requiresSkill` sur `agent__spawn`, `docs__*` et
+  `js__eval` : prédicat pur `skillReadSince`, lecture du même lot acceptée,
+  garde `refuseUnlessSkillRead` dans le handler et pas au dispatch, test sur tout
+  le registre, `skills__read` ajouté d'office à la trousse d'un agent par
+  `withSkillReaderIfGated`), mécanisme d'acks
   (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,
   `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de
   présentation détachée du résultat par `splitToolResultNote`, ressources
@@ -742,7 +747,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 - **`docs/tests.md`** — ce qui est couvert par `tests/runner.py` (QuickJS) et
   ce qui doit être vérifié à la main (`docs/manual-tests.md`) ; porte aussi les
   fixtures des verify Playwright et leur serveur factice commun
-  (`stub-backend.js`, `launchIsolated`, qui isole de la config locale embarquée).
+  (`stub-backend.js`, `launchIsolated`, qui isole de la config locale embarquée),
+  et `assumeSkillsRead` (`skill-reads.js`) pour les appels directs à un outil
+  qui exige la lecture d'une skill.
 - **`docs/exports.md`** — export Markdown et export HTML standalone des
   conversations/messages (incluant traces d'outils) et fonctions d'horodatage.
 - **`docs/palettes.md`** — palettes de couleurs (lot S-a) : deux axes
@@ -796,7 +803,7 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 - **`docs/agents.md`** — agents (lot X) : sous-conversations lancées par le
   modèle, prédicat de racine `isRootConversation` et ses sites d'exclusion,
   outils `agent__*` et garde de parenté, lecture préalable de la skill `agents`
-  imposée au spawn (`agentsSkillRead`), `agent__result` qui ne redonne pas un
+  imposée au spawn (`requiresSkill`, cf. `docs/tools.md`), `agent__result` qui ne redonne pas un
   résultat déjà reçu (`agentResultDelivery`), note « encore en cours » sur un
   résultat remis pendant que ses frères travaillent, chemin d'exécution dédié, réveil du
   parent accroché au `finally` — et la **précondition de chaleur** de

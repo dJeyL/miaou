@@ -502,7 +502,9 @@ model-side unique sur la bibliothèque) :**
   Depuis l'extraction en skill système (cf. `docs/skills.md` §8), ce guidage
   (le COMMENT) vit dans `src/system-skills/js-eval.md` ; `JS_EVAL_DOCTRINE`
   (tools.js) ne garde que le QUAND (cas d'usage, fallback `docs__read`, cap de
-  sortie chiffré) et un pointeur `miaou__skills__read('js-eval')` — décision
+  sortie chiffré) et un pointeur `miaou__skills__read('js-eval')`, lecture
+  désormais imposée par le handler (« Lecture de skill imposée avant un
+  outil », plus haut) — décision
   volontaire d'invalider une fois le préfixe KV cache (piège 16) en réduisant
   cette doctrine, la plus grosse des sept de `ROOT_SYSTEM_PROMPT`, jugée plus
   coûteuse à garder entière sur chaque tour qu'à payer une fois l'invalidation.
@@ -780,6 +782,54 @@ même primitive de stockage.
 gelées, forme des selectors par format, caps de lecture, table `DOC_READERS`,
 descripteurs de bibliothèque, et la ligne de partage `docs.js` / `utils.js`
 (lot V-7).
+
+### Lecture de skill imposée avant un outil (`requiresSkill`)
+
+Des doctrines demandent de lire une skill système avant le premier appel à un
+outil : `AGENT_DOCTRINE` (skill `agents`, pour `agent__spawn`), `DOCS_DOCTRINE`
+(`docs`, pour les `docs__*` natifs) et `JS_EVAL_DOCTRINE` (`js-eval`, pour
+`js__eval`). Une doctrine se saute : un modèle a lancé ses agents sans jamais
+ouvrir la sienne (mesuré le 2026-09-30). La lecture est donc **imposée** : l'outil
+porte `requiresSkill: '<slug>'` dans `TOOLS`, et son handler refuse tant que la
+lecture n'est pas constatée.
+
+- **Constat** — `skillReadSince(slug, thread, pendingAcks)` (pur) : un ack
+  `skill_read` du slug, non en échec, dans le fil APRÈS la dernière frontière de
+  compaction (une lecture d'avant n'est plus dans le contexte émis), ou plus tôt
+  dans le MÊME lot d'appels (`_pendingToolAcks`). Le fil est celui de la
+  génération appelante quand elle tourne (`toolConvThread`).
+- **Même lot accepté, pour toutes les skills gardées.** L'appel de ce lot-là a été écrit
+  sans la skill, mais un refus ne coûte pas moins qu'un appel écrit à l'aveugle
+  qui échoue — le modèle se corrige skill en main dans les deux cas —, et un
+  appel à l'aveugle qui réussit ne coûte rien. Pour `agents`, c'est de plus le
+  suivi qui importait, pas le premier prompt. Exclure le même lot coûterait une
+  manche d'outils (les acks d'une manche précédente rejoignent le fil à chaque
+  `onToolAcks`), pas un message utilisateur.
+- **Refus** — `skillGateRefusal` : nomme la skill, dit que **rien n'a été fait**
+  (le modèle ne doit pas croire son appel passé) et ce que la skill apporte,
+  motif lu dans `SKILL_GATE_REASONS` (une entrée par skill, pas par outil). Échec
+  MÉTIER poussé par `toolFail` (ack `tool_failed`), pas `isError`.
+- **Dans le handler, pas dans `callInternalTool`** — `refuseUnlessSkillRead(name,
+  c)`, appelé en tête de chaque handler gardé, sauf `agent__spawn` qui l'appelle
+  après sa garde de profondeur : un refus structurel doit passer avant, sans quoi
+  un agent qui appelle `agent__spawn` serait envoyé lire une skill (souvent avec
+  un outil qu'il n'a pas) pour s'entendre refuser ensuite. Ce qui protège de
+  l'oubli, c'est un test QuickJS qui appelle **tout** outil déclarant
+  `requiresSkill` sans lecture et exige le refus. Les handlers `docs__*` sont
+  async : la garde tourne avant leur premier `await`, son ack est donc dans la
+  file au retour synchrone de l'appel.
+- **Trousse d'agent** — un outil gardé est inutilisable sans `skills__read`, que
+  le parent n'a aucune raison de penser à déléguer : `withSkillReaderIfGated`
+  (pur) l'ajoute d'office à la liste validée d'`agent__spawn`, et le retour du
+  lancement l'annonce parmi les outils délégués.
+- **Hors périmètre** : `mermaid` (aucun outil, le diagramme sort en texte) ;
+  `files-promote` (possible, pas fait — une lecture émise dans le même lot
+  qu'`ask_confirmation` est ignorée par le halting, ce qui coûterait un
+  aller-retour après le « Oui ») ; les `docs__*` d'un serveur MCP, que la
+  doctrine ne vise pas.
+
+Aucun texte adressé au modèle n'a bougé dans le contexte fixe : le refus n'existe
+qu'en tool result, les doctrines sont inchangées.
 
 ## Agents (`agent__*`, lot X-1)
 

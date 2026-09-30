@@ -70,6 +70,7 @@
 // Usage : node verify-pptx-native.mjs [dossier-captures] [--headed]
 //   Prérequis : `python3 build.py` fait. Réseau requis (CDN fflate).
 import { launchIsolated } from './stub-backend.js';
+import { assumeSkillsRead } from './skill-reads.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -168,6 +169,8 @@ try {
   await page.goto('file://' + distPath);
   await page.waitForSelector('#composer-text', { timeout: 10000 });
   await page.waitForFunction(() => typeof currentThread !== 'undefined', null, { timeout: 15000 });
+  // Lecture de skill imposée (requiresSkill) : hors sujet ici, cf. skill-reads.js.
+  await assumeSkillsRead(page);
   // Overlay de boot : jamais retiré du DOM, plancher 1,8 s
   // (mémoire project_boot_overlay_hides_playwright_shots).
   await page.waitForSelector('.boot-done', { timeout: 15000 }).catch(() => {});

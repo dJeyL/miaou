@@ -27,6 +27,7 @@
 // Réseau : le premier appel charge quickjs-emscripten depuis jsDelivr.
 // Usage : node verify-js-eval-multi.mjs
 import { launchIsolated } from './stub-backend.js';
+import { assumeSkillsRead } from './skill-reads.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -47,6 +48,8 @@ await page.waitForFunction(() =>
   typeof runInQuickJs === 'function' &&
   typeof utf8Encode === 'function' &&
   typeof jsEvalHandlesSummary === 'function');
+// Lecture de skill imposée (requiresSkill) : hors sujet ici, cf. skill-reads.js.
+await assumeSkillsRead(page);
 
 // ── Fixtures : deux JSON distincts, joignables par un id commun ──────────────
 // Les données sont GÉNÉRÉES ici (côté script) pour pouvoir calculer l'oracle du

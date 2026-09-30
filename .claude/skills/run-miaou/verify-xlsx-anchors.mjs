@@ -87,6 +87,7 @@
 // Usage : node verify-xlsx-anchors.mjs [--headed]
 //   Prérequis : `python3 build.py` fait. Réseau requis (CDN SheetJS + fflate).
 import { launchIsolated } from './stub-backend.js';
+import { assumeSkillsRead } from './skill-reads.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -164,6 +165,8 @@ try {
   // sont JAMAIS posés sur `window` (mémoire project_globals_not_on_window).
   await page.waitForSelector('#composer-text', { timeout: 10000 });
   await page.waitForFunction(() => typeof currentThread !== 'undefined', null, { timeout: 15000 });
+  // Lecture de skill imposée (requiresSkill) : hors sujet ici, cf. skill-reads.js.
+  await assumeSkillsRead(page);
   await page.waitForSelector('.boot-done', { timeout: 15000 }).catch(() => {});
 
   // Chemin d'attachment NORMAL (input + envoi), seul chemin qui alloue un att-N

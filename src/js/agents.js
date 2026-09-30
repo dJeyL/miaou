@@ -1143,32 +1143,6 @@ function hasPendingAgentResults(convId) {
   return (_pendingAgentResults.get(convId) || []).length > 0;
 }
 
-// Slug de la skill système que la doctrine impose de lire avant le premier
-// lancement d'agent (AGENT_DOCTRINE, tools.js).
-const AGENTS_SKILL_SLUG = 'agents';
-
-// La skill « agents » a-t-elle été lue dans cette conversation ? La doctrine
-// l'impose avant le premier agent__spawn, mais une doctrine se saute : un
-// modèle a lancé ses agents sans jamais l'ouvrir (mesuré le 2026-09-30), et
-// toutes ses consignes (attendre sans interrompre, ne jamais rédiger soi-même
-// un résultat) lui restaient inconnues. agent__spawn refuse donc tant que la
-// lecture n'est pas constatée :
-//   - dans le fil, APRÈS la dernière frontière de compaction (seul l'aval est
-//     émis : une lecture d'avant n'est plus dans le contexte) ;
-//   - ou plus tôt dans le MÊME lot d'appels (`pendingAcks`, la file des acks du
-//     tour en cours), sans quoi un modèle qui lit puis lance dans un seul tour
-//     paierait un aller-retour de plus. Le prompt de ce lancement-là a été écrit
-//     sans la skill ; la suite du suivi, elle, en bénéficie.
-// Une lecture en échec (slug inconnu, skill désactivée) ne compte pas.
-// Pure, testable en QuickJS.
-function agentsSkillRead(thread, pendingAcks) {
-  const isRead = (m) => !!m && m.kind === 'skill_read' && m.slug === AGENTS_SKILL_SLUG && !m.error;
-  const t = thread || [];
-  for (let i = lastCompactionIndex(t) + 1; i < t.length; i++) {
-    if (isAckRole(t[i] && t[i].role) && isRead(t[i])) return true;
-  }
-  return (pendingAcks || []).some(isRead);
-}
 
 // Copie de la file d'un parent, SANS la drainer : pour la lire (agent__result),
 // jamais pour la consommer.

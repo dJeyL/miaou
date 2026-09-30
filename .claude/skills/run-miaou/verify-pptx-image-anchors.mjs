@@ -59,6 +59,7 @@
 // Usage : node verify-pptx-image-anchors.mjs [--headed]
 //   Prérequis : `python3 build.py` fait. Réseau requis (CDN fflate).
 import { launchIsolated } from './stub-backend.js';
+import { assumeSkillsRead } from './skill-reads.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -151,6 +152,8 @@ try {
   await page.goto('file://' + distPath);
   await page.waitForSelector('#composer-text', { timeout: 10000 });
   await page.waitForFunction(() => typeof currentThread !== 'undefined', null, { timeout: 15000 });
+  // Lecture de skill imposée (requiresSkill) : hors sujet ici, cf. skill-reads.js.
+  await assumeSkillsRead(page);
   await page.waitForSelector('.boot-done', { timeout: 15000 }).catch(() => {});
 
   const callTool = async (name, args) => page.evaluate(async ([n, a]) => {

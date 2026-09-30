@@ -213,6 +213,12 @@ délibérément en V-4). Un modèle qui appelle sans avoir lu la skill perd un t
 il ne se trompe pas silencieusement. C'est le contrat déjà accepté pour
 `js-eval`.
 
+**Depuis, la lecture est imposée** : les `docs__*` natifs portent
+`requiresSkill: 'docs'` et refusent tant que la skill n'a pas été lue (dans le
+fil après la dernière compaction, ou plus tôt dans le même lot d'appels). Le
+filet ci-dessus reste utile pour un appel du même lot, écrit sans la skill. Cf.
+`docs/tools.md`, « Lecture de skill imposée avant un outil ».
+
 **Aucune constante chiffrée dans la skill** : une skill système n'est pas
 rebuild depuis le JS, un cap recopié y dériverait en silence. Les caps se citent
 par renvoi — « le message de refus te donne le chiffre », ce qui est vrai de

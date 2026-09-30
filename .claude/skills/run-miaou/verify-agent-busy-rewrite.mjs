@@ -173,7 +173,7 @@ const initScript = () => {
         try {
           if (spawn) {
             // La skill « agents » est lue dans le MÊME lot, avant le(s) lancement(s) :
-            // agent__spawn refuse tant qu'elle n'a pas été lue (agentsSkillRead).
+            // agent__spawn refuse tant qu'elle n'a pas été lue (requiresSkill).
             send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_' + tag + '_skill',
               type: 'function', function: { name: 'miaou__skills__read',
                 arguments: JSON.stringify({ slug: 'agents' }) } }] } }] });

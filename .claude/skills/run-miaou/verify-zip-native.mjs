@@ -78,6 +78,7 @@
 // Usage : node verify-zip-native.mjs [dossier-captures] [--headed]
 //   Prérequis : `python3 build.py` fait. Aucun serveur à lancer.
 import { launchIsolated } from './stub-backend.js';
+import { assumeSkillsRead } from './skill-reads.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -182,6 +183,8 @@ try {
   await page.goto('file://' + distPath);
   await page.waitForSelector('#composer-text', { timeout: 10000 });
   await page.waitForFunction(() => typeof currentThread !== 'undefined', null, { timeout: 15000 });
+  // Lecture de skill imposée (requiresSkill) : hors sujet ici, cf. skill-reads.js.
+  await assumeSkillsRead(page);
   // Overlay de boot : jamais retiré du DOM, plancher 1,8 s — attendre .boot-done
   // AVANT toute capture, sinon on photographie le préchargement (mémoire projet
   // boot_overlay_hides_playwright_shots). Attendre la CLASSE, pas la visibilité :

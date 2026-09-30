@@ -19,6 +19,7 @@
 //
 // Usage : node verify-v8-pdf.mjs [--headed]
 import { launchIsolated } from './stub-backend.js';
+import { assumeSkillsRead } from './skill-reads.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,6 +62,8 @@ await page.waitForFunction(
   () => document.getElementById('boot-overlay').classList.contains('boot-done'),
   null, { timeout: 10000 },
 );
+// Lecture de skill imposée (requiresSkill) : hors sujet ici, cf. skill-reads.js.
+await assumeSkillsRead(page);
 
 // ── Chantier A : les numéros de page du sommaire ─────────────────────────────
 console.log('\nChantier A — sommaire numéroté');
@@ -319,6 +322,8 @@ await page.waitForFunction(
   () => document.getElementById('boot-overlay').classList.contains('boot-done'),
   null, { timeout: 10000 },
 );
+// Lecture de skill imposée (requiresSkill) : hors sujet ici, cf. skill-reads.js.
+await assumeSkillsRead(page);
 
 const afterReload = await page.evaluate(async ({ convId }) => {
   await openConversation(convId);

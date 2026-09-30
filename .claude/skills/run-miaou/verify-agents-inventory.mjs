@@ -143,7 +143,7 @@ const initScript = () => {
           // croire que le fantôme est lié à l'unicité.
           if (multi) {
             // La skill « agents » est lue dans le MÊME lot, avant le(s) lancement(s) :
-            // agent__spawn refuse tant qu'elle n'a pas été lue (agentsSkillRead).
+            // agent__spawn refuse tant qu'elle n'a pas été lue (requiresSkill).
             toolCall(0, 'miaou__skills__read', { slug: 'agents' });
             multi.forEach((sp, i) => toolCall(i + 1, 'miaou__agent__spawn', {
               prompt: sp.prompt, intent: sp.intent, tools: [],

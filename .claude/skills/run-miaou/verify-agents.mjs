@@ -303,7 +303,7 @@ const initScript = () => {
             // même batch.
             const spawnList = Array.isArray(spawn) ? spawn : [spawn];
             // La skill « agents » est lue dans le MÊME lot, avant le(s) lancement(s) :
-            // agent__spawn refuse tant qu'elle n'a pas été lue (agentsSkillRead).
+            // agent__spawn refuse tant qu'elle n'a pas été lue (requiresSkill).
             toolCall('miaou__skills__read', { slug: 'agents' }, 0);
             spawnList.forEach((sp, i) => {
               toolCall('miaou__agent__spawn', Object.assign({
@@ -1823,6 +1823,11 @@ check("10. le handle de PIÈCE JOINTE du parent n'apparaît PAS dans son cadrage
   deleg.firstUserText.indexOf(res10B.attRef) < 0);
 // La trousse reste indépendante des fichiers : deux axes, pas un.
 check("10. l'outil délégué est bien dans SON payload", deleg.toolNames.includes('miaou__js__eval'));
+// js__eval exige la skill « js-eval » (requiresSkill) : sans l'outil de lecture,
+// que le stub ne délègue pas, l'agent serait refusé à chaque appel
+// (withSkillReaderIfGated l'ajoute d'office).
+check("10. l'outil de lecture de skill l'accompagne, sans avoir été délégué",
+  deleg.toolNames.includes('miaou__skills__read'));
 check('10. et le payload reste restreint (pas tout le registre)', deleg.toolNames.length < 5);
 check('10. un ack agent_spawn a été poussé dans le fil du parent', deleg.ackPresent === true);
 await release('A:A10B');

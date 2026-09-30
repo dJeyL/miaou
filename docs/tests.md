@@ -661,5 +661,16 @@ scripts qui ne les stubent pas eux-mêmes. `VERIFY_NET_AUDIT=<fichier>` journali
 toute requête qui sortirait quand même vers la machine. Le mode d'emploi détaillé
 est dans le SKILL.md de run-miaou.
 
+**Lecture de skill imposée (`.claude/skills/run-miaou/skill-reads.js`).** Les
+outils qui portent `requiresSkill` (`docs__*`, `js__eval`, `agent__spawn`, cf.
+`docs/tools.md`) refusent tant que leur skill n'a pas été lue. Un verify qui
+appelle ces handlers directement, sans modèle, appelle `assumeSkillsRead(page)`
+après le chargement de la page et après chaque `reload` : elle enveloppe
+`callInternalTool` pour poser l'ack de lecture juste avant chaque appel gardé et
+le retirer au retour. La garde n'est pas le sujet de ces verify ; elle est
+couverte par les tests QuickJS. Un stub de modèle qui émet un appel gardé
+émet plutôt un `skills__read` en tête du même lot, comme le font les verify
+d'agents.
+
 Les verify obsolètes gardés comme archives exécutables vivent dans
 `run-miaou/archives/`, hors du parc rejoué.

@@ -5485,7 +5485,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-09-30 18:57 UTC */
+/* miaou — built: 2026-09-30 19:34 UTC */
 
 /* ── utils.js ── */
 
@@ -10962,7 +10962,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790794630}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790796850}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -14065,17 +14065,6 @@ function hasPendingAgentResults(convId) {
   return (_pendingAgentResults.get(convId) || []).length > 0;
 }
 
-const AGENTS_SKILL_SLUG = 'agents';
-
-function agentsSkillRead(thread, pendingAcks) {
-  const isRead = (m) => !!m && m.kind === 'skill_read' && m.slug === AGENTS_SKILL_SLUG && !m.error;
-  const t = thread || [];
-  for (let i = lastCompactionIndex(t) + 1; i < t.length; i++) {
-    if (isAckRole(t[i] && t[i].role) && isRead(t[i])) return true;
-  }
-  return (pendingAcks || []).some(isRead);
-}
-
 function peekPendingAgentResults(convId) {
   return (_pendingAgentResults.get(convId) || []).slice();
 }
@@ -16092,6 +16081,49 @@ function pushRepeatLimitAck(name, message) {
   _pendingToolAcks.push({ kind: 'tool_failed', name, message, error: true });
 }
 
+const SKILL_GATE_REASONS = {
+  'agents': 'Elle dit comment rédiger le prompt d\'un agent qui démarre sans rien de cette ' +
+    'conversation, et comment suivre plusieurs agents jusqu\'à leurs résultats.',
+  'docs': 'Elle donne la forme exacte du selector de chaque format, quand sortir une ' +
+    'lecture en ressource, comment lire les refus, et comment nommer les membres ' +
+    'd\'une archive.',
+  'js-eval': 'Elle donne la signature d\'appel exacte, les primitives disponibles dans ' +
+    'le bac à sable et les contraintes de sortie.',
+};
+
+function skillReadSince(slug, thread, pendingAcks) {
+  const isRead = (m) => !!m && m.kind === 'skill_read' && m.slug === slug && !m.error;
+  const t = thread || [];
+  for (let i = lastCompactionIndex(t) + 1; i < t.length; i++) {
+    if (isAckRole(t[i] && t[i].role) && isRead(t[i])) return true;
+  }
+  return (pendingAcks || []).some(isRead);
+}
+
+function skillGateRefusal(slug, thread, pendingAcks) {
+  if (!slug || skillReadSince(slug, thread, pendingAcks)) return null;
+  return 'Refusé : lis d\'abord la skill « ' + slug + ' » avec miaou__skills__read, ' +
+    'puis relance cet appel. Rien n\'a été fait. ' + (SKILL_GATE_REASONS[slug] || '');
+}
+
+function refuseUnlessSkillRead(toolName, c) {
+  const tool = TOOLS.find(t => t.name === toolName);
+  const refusal = skillGateRefusal(tool && tool.requiresSkill,
+    toolConvThread(c && c.convId), _pendingToolAcks);
+  return refusal ? toolFail(toolName, refusal) : null;
+}
+
+function withSkillReaderIfGated(names, tools) {
+  const list = names || [];
+  const entry = (n) => {
+    const k = resolveInternalToolName(n, tools);
+    return k == null ? null : tools.find(t => t.name === k);
+  };
+  if (!list.some(n => { const t = entry(n); return !!(t && t.requiresSkill); })) return list;
+  if (list.some(n => { const t = entry(n); return !!(t && t.name === 'skills__read'); })) return list;
+  return list.concat(['miaou__skills__read']);
+}
+
 let _pendingToolBlocks = [];
 function getPendingToolBlocks() { return _pendingToolBlocks.slice(); }
 function clearPendingToolBlocks() { _pendingToolBlocks = []; }
@@ -16869,6 +16901,7 @@ const TOOLS = [
   {
 
     name: 'js__eval',
+    requiresSkill: 'js-eval',
 
     description:
       "Exécute du JavaScript (que tu écris) dans un bac à sable isolé, qui peut lire le " +
@@ -16902,6 +16935,8 @@ const TOOLS = [
 
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('js__eval', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
 
       const hasInputs = !!(args && args.input_handles !== undefined && args.input_handles !== null);
       const rawInputs = hasInputs ? args.input_handles : null;
@@ -16984,6 +17019,7 @@ const TOOLS = [
   {
 
     name: 'docs__list',
+    requiresSkill: 'docs',
     description:
       "Donne la STRUCTURE d'un document référencé par son handle (att-N, file-<id> " +
       "ou res_<id>), sans en renvoyer le contenu : les pages et le sommaire d'un " +
@@ -17003,6 +17039,8 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: async (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('docs__list', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
       const ref = String((args && args.ref) || '').trim();
       if (!ref) return toolFail('docs__list', 'Handle manquant.');
       if (classifyHandleRef(ref) === null) {
@@ -17021,6 +17059,7 @@ const TOOLS = [
   {
 
     name: 'docs__extract',
+    requiresSkill: 'docs',
     description:
       "Extrait UN membre d'une archive zip (handle + chemin exact du membre, tel que " +
       "donné par miaou__docs__list) et le matérialise en ressource res_… adressable, " +
@@ -17038,6 +17077,8 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: async (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('docs__extract', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
       const ref = String((args && args.ref) || '').trim();
       const path = String((args && args.path) || '').trim();
       if (!ref) return toolFail('docs__extract', 'Handle manquant.');
@@ -17095,6 +17136,7 @@ const TOOLS = [
   {
 
     name: 'docs__read',
+    requiresSkill: 'docs',
     description:
       "Lit une partie d'un document référencé par handle (att-N, file-<id> ou " +
       "res_<id>) : PDF, classeur Excel, document Word et présentation PowerPoint. " +
@@ -17115,6 +17157,8 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: async (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('docs__read', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
       const ref = String((args && args.ref) || '').trim();
       const selector = String((args && args.selector) || '').trim();
       const asResource = !!(args && args.as_resource);
@@ -17178,6 +17222,7 @@ const TOOLS = [
   {
 
     name: 'docs__render_page',
+    requiresSkill: 'docs',
     description:
       "Rend UNE page d'un PDF (handle att-N, file-<id> ou res_<id>) en image et te la " +
       "met sous les yeux, pour que tu la lises toi-même. À utiliser quand la " +
@@ -17196,6 +17241,8 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: async (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('docs__render_page', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
       const ref = String((args && args.ref) || '').trim();
       if (!ref) return toolFail('docs__render_page', 'Handle manquant.');
       const pageNum = Math.floor(Number(args && args.page));
@@ -17249,6 +17296,7 @@ const TOOLS = [
   {
 
     name: 'docs__pack',
+    requiresSkill: 'docs',
     description:
       "Regroupe plusieurs ressources déjà stockées (handles att-N, file-<id> ou res_<id>) " +
       "en une seule archive zip que l'utilisateur peut télécharger depuis le fil. " +
@@ -17315,6 +17363,8 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
     handler: async (args, ctx) => {
+      const skillRefusal = refuseUnlessSkillRead('docs__pack', toolCtx(ctx));
+      if (skillRefusal) return skillRefusal;
       const handles = args && Array.isArray(args.handles) ? args.handles : [];
       const baseRef = args && args.base != null ? String(args.base).trim() : '';
       const removes = args && Array.isArray(args.remove) ? args.remove : [];
@@ -17459,6 +17509,7 @@ const TOOLS = [
 
   {
     name: 'agent__spawn',
+    requiresSkill: 'agents',
 
     description: '',
     inputSchema: { type: 'object', properties: {}, required: ['prompt', 'intent'] },
@@ -17476,12 +17527,8 @@ const TOOLS = [
         return toolFail('agent__spawn', 'Un agent ne peut pas en lancer un autre : la profondeur est bornée à un niveau.');
       }
 
-      if (!agentsSkillRead(toolConvThread(c.convId), _pendingToolAcks)) {
-        return toolFail('agent__spawn', 'Refusé : lis d\'abord la skill « ' + AGENTS_SKILL_SLUG +
-          ' » avec miaou__skills__read, puis relance ce lancement. Rien n\'a été lancé. ' +
-          'Elle dit comment rédiger le prompt d\'un agent qui démarre sans rien de cette ' +
-          'conversation, et comment suivre plusieurs agents jusqu\'à leurs résultats.');
-      }
+      const skillRefusal = refuseUnlessSkillRead('agent__spawn', c);
+      if (skillRefusal) return skillRefusal;
 
       const limitError = agentSpawnLimitError(
         countWorkingAgentsOf(c.convId), countWorkingAgentsTotal(),
@@ -17490,6 +17537,8 @@ const TOOLS = [
 
       const v = validateAgentToolList(args && args.tools, agentDelegatableToolNames());
       if (!v.ok) return toolFail('agent__spawn', v.error);
+
+      const agentTools = withSkillReaderIfGated(v.tools, TOOLS);
 
       const refs = (args && args.attachments != null) ? args.attachments : null;
       let files = [];
@@ -17514,7 +17563,7 @@ const TOOLS = [
         spaceId: c.spaceId,
         prompt: prompt,
         intent: intent,
-        tools: v.tools,
+        tools: agentTools,
         files: files,
         reasoningEffort: effort,
       });
@@ -17526,7 +17575,7 @@ const TOOLS = [
         : 'aucun';
       return 'Agent lancé — identifiant : ' + id + '.\n' +
         'Ton tour continue : ne l\'attends pas. Tu seras prévenu automatiquement quand il aura terminé.\n' +
-        'Outils qui lui ont été délégués : ' + (v.tools.length ? v.tools.join(', ') : 'aucun') + '.\n' +
+        'Outils qui lui ont été délégués : ' + (agentTools.length ? agentTools.join(', ') : 'aucun') + '.\n' +
         'Fichiers qui lui ont été délégués : ' + filesLine + '.';
     },
   },
