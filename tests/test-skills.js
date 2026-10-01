@@ -529,3 +529,28 @@ describe('resolveSkillDropTarget', function() {
     expect(t.slug).toBe('depuis-cartouche');
   });
 });
+
+describe('orphanSystemSkillSlugs', function() {
+  var records = [
+    { slug: 'mermaid', system: true },
+    { slug: 'ancienne', system: true },
+    { slug: 'perso', system: false },
+    { slug: 'perso-legacy' },
+  ];
+  it('rend les skills système absentes du bundle, et elles seules', function() {
+    expect(orphanSystemSkillSlugs(records, ['mermaid']).join(',')).toBe('ancienne');
+  });
+  it('bundle sans skill système : toutes les skills système sont orphelines', function() {
+    expect(orphanSystemSkillSlugs(records, []).join(',')).toBe('mermaid,ancienne');
+  });
+  it('une skill utilisateur n\'est jamais orpheline, même absente du bundle', function() {
+    var out = orphanSystemSkillSlugs(records, []);
+    expect(out.indexOf('perso')).toBe(-1);
+    expect(out.indexOf('perso-legacy')).toBe(-1);
+  });
+  it('base vide ou entrées nulles : rien à purger', function() {
+    expect(orphanSystemSkillSlugs([], ['mermaid']).length).toBe(0);
+    expect(orphanSystemSkillSlugs(null, null).length).toBe(0);
+    expect(orphanSystemSkillSlugs([null], ['mermaid']).length).toBe(0);
+  });
+});

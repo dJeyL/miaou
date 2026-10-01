@@ -30,7 +30,9 @@
    seule source de vérité, une édition IDB locale ne survivrait pas au
    prochain chargement de page. `enabled`/`autotrigger` sont FIGÉS à `true` à
    chaque upsert : aucun réglage utilisateur sur une skill système (cf.
-   ensureSystemSkills plus bas).
+   ensureSystemSkills plus bas). Symétriquement, une skill système que le
+   bundle ne connaît plus est SUPPRIMÉE au même démarrage
+   (orphanSystemSkillSlugs) : retirer le fichier source la retire de la base.
    ──────────────────────────────────────────────────────────────────────────── */
 
 // Contenu des skills système, injecté au build depuis src/system-skills/*.md
@@ -287,6 +289,19 @@ function bakeSkillMessage(literalText, resolved) {
   return lit + '\n\n' + blocks.join('\n\n');
 }
 
+// Slugs des skills système ORPHELINES : records `system: true` en base dont le
+// slug n'est plus dans `knownSlugs` (les clés de SYSTEM_SKILLS_CONTENT). Une
+// skill système retirée de src/system-skills/ restait sinon en base pour
+// toujours — active, autotrigger, listée au modèle à chaque tour, et
+// insupprimable par l'utilisateur (drawer en lecture seule, skills__write
+// refuse le slug). Une skill utilisateur n'est jamais orpheline. Pure.
+function orphanSystemSkillSlugs(records, knownSlugs) {
+  const known = new Set(knownSlugs || []);
+  return (records || [])
+    .filter(r => r && r.system === true && !known.has(r.slug))
+    .map(r => r.slug);
+}
+
 // ── Cache mémoire (méta seulement : slug, name, description, enabled) ─────────
 // Tableau d'ordre d'insertion stable. Muté par les CRUD IDB ET directement par
 // les tests (synchronisation cache/IDB vérifiée sans IDB réel).
@@ -466,6 +481,16 @@ async function loadSkillsCache() {
 // skills système à jour. Échec silencieux (IDB indisponible).
 async function ensureSystemSkills() {
   const slugs = Object.keys(SYSTEM_SKILLS_CONTENT);
+  // Purge AVANT le retour sur liste vide : un bundle sans aucune skill système
+  // doit justement retirer toutes celles d'avant. Couvre aussi l'import, qui
+  // réécrit les records tels quels (`system` compris) puis recharge la page.
+  try {
+    for (const slug of orphanSystemSkillSlugs(await getAllSkillRecords(), slugs)) {
+      await deleteSkillDb(slug);
+    }
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[miaou] ensureSystemSkills (purge):', e && e.message);
+  }
   if (!slugs.length) return;
   for (const slug of slugs) {
     const src = SYSTEM_SKILLS_CONTENT[slug];

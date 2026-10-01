@@ -261,6 +261,8 @@ const SYSTEM_SKILLS_CONTENT = (function () { try { return __MIAOU_SYSTEM_SKILLS_
 `loadSkillsCache()`) upsert chaque entrée en IDB **inconditionnellement à
 chaque démarrage** : le fichier `.md` source est la seule source de vérité
 pour `name`/`description`/`content` ; `enabled` et `autotrigger` sont **figés
-à `true`** (aucun réglage utilisateur possible sur une skill système). Sous
+à `true`** (aucun réglage utilisateur possible sur une skill système). Une
+skill système dont le fichier a disparu est supprimée au même démarrage
+(cf. `docs/skills.md`, purge des orphelines). Sous
 QuickJS, `SYSTEM_SKILLS_CONTENT` vaut `{}` (aucune skill système, comportement
 identique à l'absence du dossier).

@@ -375,6 +375,20 @@ d'injection. Cf. §2, et `docs/compaction.md` pour le geste qu'elles déclenchen
      système ne se désactive jamais et reste toujours proposée
      proactivement — **aucun réglage utilisateur possible**, pas de toggle
      dans le drawer, cf. `buildSystemSkillCard` ci-dessous).
+   - **Purge des orphelines, au même démarrage** : avant l'upsert, et avant le
+     retour anticipé sur liste vide, `ensureSystemSkills()` supprime tout
+     record `system: true` dont le slug n'est plus dans
+     `SYSTEM_SKILLS_CONTENT` (pur `orphanSystemSkillSlugs`). Sans elle, une
+     skill système retirée de `src/system-skills/` restait en base pour
+     toujours : active, listée au modèle à chaque tour, et insupprimable par
+     l'utilisateur (carte en lecture seule, écriture refusée). Le cas visé est
+     un fork qui retire les skills système qui lui sont propres ; la purge est
+     placée avant le retour sur liste vide pour couvrir aussi le cas limite
+     d'un bundle qui n'en garde aucune. Elle couvre aussi
+     l'import, qui réécrit les records tels quels (`system` compris) puis
+     recharge la page. Vérifié en conditions réelles par
+     `verify-orphan-system-skills.mjs` (hors cas limite, qui exigerait un build
+     sans skill système).
    - **Protection en écriture** : `miaou__skills__write` (`tools.js`) refuse
      toute écriture sur un slug dont la méta cache porte `system: true` —
      erreur explicite, avant même la vérification `overwrite`. Le modèle ne
