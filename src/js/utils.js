@@ -2727,16 +2727,6 @@ function groupByNamespace(tools) {
   return order.map(ns => ({ namespace: ns, tools: map[ns] }));
 }
 
-// Devine le transport MCP d'après le chemin d'URL. PRÉ-REMPLISSAGE
-// uniquement, jamais un override : l'appelant ne s'en sert que si le champ
-// transport n'est pas explicitement renseigné. `/sse` → 'sse', sinon (dont
-// `/mcp`) → 'streamable-http' par défaut.
-function guessMcpTransport(url) {
-  const u = String(url || '');
-  if (/\/sse\/?($|\?)/.test(u)) return 'sse';
-  return 'streamable-http';
-}
-
 // Valide le `name` local d'un serveur MCP (devient le préfixe d'outil envoyé au
 // modèle). Charset contraint, pas d'espace, pas de `__` (réservé au séparateur),
 // `miaou` interdit (anti-usurpation des outils internes), unicité. Retourne une

@@ -2385,7 +2385,6 @@ async function onSaveMcpCard(cardEl, originalName) {
   const tmoRaw = parseInt(get('.mcp-timeout'), 10);
   const server = {
     name, url,
-    transport: get('.mcp-transport') || 'streamable-http',
     enabled: enabledEl ? enabledEl.checked : true,
     authorization_token: get('.mcp-token'),
     timeout_s: (Number.isFinite(tmoRaw) && tmoRaw > 0) ? tmoRaw : MCP_DEFAULT_TIMEOUT_S,

@@ -80,7 +80,7 @@ couvertes
 (pas de `fetch` dans QuickJS) : tokenisation/scoring, les trois états de l'index
 de résumés, le registre d'outils, parsing SSE/résumés, **horodatages**
 (`formatMessageTime`, `formatFullDateFr`, `formatDateRelative`), **agrégation MCP**
-(`parseToolName`, `groupByNamespace`, `guessMcpTransport`, `validateMcpServerName`,
+(`parseToolName`, `groupByNamespace`, `validateMcpServerName`,
 `filterMcpTools`, routage `callTool` interne/erreur, CRUD `miaou-mcp-servers`
 — y compris `normalizeMcpServer` défauts/coercition, `getMcpServer`/`deleteMcpServer`
 par `name`), **serveurs API** (`miaou-api-servers` : `migrateApiServersIfNeeded`

@@ -218,7 +218,7 @@ Détail : [docs/skills.md](docs/skills.md).
 - MIAOU est un **client/agrégateur MCP** : en plus de ses outils internes, il
   délègue les appels qu'il ne sait pas servir à un ou plusieurs serveurs MCP
   distants. Pour le modèle il n'y a qu'un seul registre.
-- Configuration dans un sous-écran dédié : nom (= préfixe), URL, transport, jeton
+- Configuration dans un sous-écran dédié : nom (= préfixe), URL (transport streamable-http), jeton
   bearer optionnel, timeout (en secondes), listes blanche/noire d'outils. Un serveur
   injoignable n'expose aucun outil, le reste continue de fonctionner.
 - Un serveur tombé ou en attente d'autorisation est signalé en topbar et retenté
@@ -367,7 +367,7 @@ est faite au seul point de lecture.
   serveur MCP (défaut 30 s). Reste modifiable serveur par serveur dans l'UI.
 - `mcp_server` : serveur MCP pré-configuré, ajouté automatiquement au premier
   démarrage — de quoi livrer un build déjà branché sur un proxy MCP d'équipe.
-  Un objet `{ name, url }` (`transport`, `timeout_s`, `enabled`,
+  Un objet `{ name, url }` (`timeout_s`, `enabled`,
   `toolAllowlist`, `toolDenylist` optionnels), ou un tableau d'objets. L'ajout
   est **unique et non répété** : il n'a lieu que si aucun serveur existant ne
   porte déjà ce nom ou cette URL, et une carte supprimée ensuite ne revient pas.

@@ -644,7 +644,7 @@ def warn_unknown_config_keys(cfg: dict) -> list:
         sample_mcp = None
     if isinstance(sample_mcp, dict):
         sub_known |= set(sample_mcp.keys())
-    sub_known |= {'transport', 'enabled', 'toolAllowlist', 'toolDenylist'}
+    sub_known |= {'enabled', 'toolAllowlist', 'toolDenylist'}
     raw = cfg.get('mcp_server')
     entries = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
     for entry in entries:

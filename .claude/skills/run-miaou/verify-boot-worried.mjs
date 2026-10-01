@@ -118,7 +118,7 @@ function stopHangServer() {
 
 function mcpFixture(url) {
   return JSON.stringify([{
-    name: 'bidon', url, transport: 'http', enabled: true,
+    name: 'bidon', url, enabled: true,
     authorization_token: '', timeout_s: 130, toolAllowlist: [], toolDenylist: [],
   }]);
 }

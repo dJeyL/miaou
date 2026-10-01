@@ -224,11 +224,7 @@ Banc d'essai : `mcp_bench.py` (extrait dans le projet `miaou-mcp-servers`).
 Lancer depuis ce projet puis pointer MIAOU sur `http://127.0.0.1:8767/mcp`.
 
 17. **Ajout & validation d'un serveur** : Paramètres → Serveurs MCP → Ajouter.
-    Le transport est un dropdown pilule custom (`cfgPillSelect`, pas de select
-    natif) : clic → menu `.model-menu` avec coche sur la valeur courante,
-    fermeture au clic ailleurs. Saisir l'URL `…/mcp` → le transport se
-    pré-remplit en `streamable-http` (mais
-    ne s'écrase plus si on l'a changé à la main). Tenter `name = miaou`, un nom
+    La carte n'a pas de champ transport (streamable-http seul). Tenter `name = miaou`, un nom
     avec espace, avec `__`, ou un doublon → message d'erreur, pas d'enregistrement.
     Enregistrer `bench` → la carte passe « ● connecté — N outils ».
 18. **Préfixage & registre unique** : ouvrir « Voir les outils exposés » → deux
@@ -255,8 +251,10 @@ Lancer depuis ce projet puis pointer MIAOU sur `http://127.0.0.1:8767/mcp`.
     puis recharger MIAOU → la carte passe « ● injoignable », ses outils
     disparaissent, **le reste de MIAOU fonctionne** (outils internes + autres
     serveurs intacts). Aucun gel.
-23. **`sse` différé** : choisir le transport `sse` sur une carte et appeler un
-    outil → erreur claire « non implémenté », jamais de demi-câblage.
+23. **Carte héritée d'un champ `transport`** : poser à la main
+    `transport: 'sse'` sur une carte de `miaou-mcp-servers` (DevTools), recharger
+    → la carte se connecte en streamable-http comme les autres ; l'enregistrer
+    une fois → le champ a disparu du stockage.
 24. **Ack `mcp_call` — affichage pendant le round-trip** : appeler un outil distant
     (ex. `bench__echo`) → la ligne « 🔧 Appel : `bench` › `echo` » apparaît dans la
     bulle **avant** la réponse, dès le démarrage de l'appel réseau (pas seulement

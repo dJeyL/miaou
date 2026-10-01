@@ -384,12 +384,6 @@ describe('resolveInternalToolName (le registre tranche, pas la forme du nom — 
   });
 });
 
-describe('guessMcpTransport (pré-remplissage, jamais override)', function() {
-  it('/sse → sse', function() { expect(guessMcpTransport('https://h/sse')).toBe('sse'); });
-  it('/mcp → streamable-http', function() { expect(guessMcpTransport('https://h/mcp')).toBe('streamable-http'); });
-  it('chemin inconnu → streamable-http par défaut', function() { expect(guessMcpTransport('https://h/x')).toBe('streamable-http'); });
-  it('/sse avec query', function() { expect(guessMcpTransport('https://h/sse?x=1')).toBe('sse'); });
-});
 
 describe('validateMcpServerName', function() {
   it('accepte un nom valide', function() { expect(validateMcpServerName('jira', [])).toBe(null); });

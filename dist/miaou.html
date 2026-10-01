@@ -5485,7 +5485,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-01 21:33 UTC */
+/* miaou — built: 2026-10-01 23:27 UTC */
 
 /* ── utils.js ── */
 
@@ -6955,12 +6955,6 @@ function groupByNamespace(tools) {
     map[ns].push({ bareName, def });
   }
   return order.map(ns => ({ namespace: ns, tools: map[ns] }));
-}
-
-function guessMcpTransport(url) {
-  const u = String(url || '');
-  if (/\/sse\/?($|\?)/.test(u)) return 'sse';
-  return 'streamable-http';
 }
 
 function validateMcpServerName(name, existingNames) {
@@ -10962,7 +10956,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790890382}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790897255}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11528,7 +11522,6 @@ function seedBuildMcpServersIfNeeded() {
   const next = existing.concat(candidates.map(c => normalizeMcpServer({
     name: c.name,
     url: c.url,
-    transport: c.transport,
     enabled: c.enabled,
     timeout_s: c.timeout_s,
     toolAllowlist: c.toolAllowlist,
@@ -11556,7 +11549,6 @@ function normalizeMcpServer(s) {
   return {
     name: String(o.name || '').trim(),
     url: String(o.url || '').trim(),
-    transport: o.transport === 'sse' ? 'sse' : 'streamable-http',
     enabled: o.enabled !== false,
     authorization_token: o.authorization_token ? String(o.authorization_token) : '',
 
@@ -15541,7 +15533,6 @@ async function mcpReinitialize(server) {
 
 async function mcpRpc(server, method, params, opts) {
   const o = opts || {};
-  if (server.transport === 'sse') throw new Error('Transport sse non implémenté (différé en V2).');
   try {
     return await mcpRpcAttempt(server, method, params, o);
   } catch (e) {
@@ -25100,7 +25091,7 @@ function addMcpServerCard() {
   const empty = wrap.querySelector('.mem-empty');
   if (empty) empty.remove();
   wrap.insertBefore(buildMcpCard({
-    name: '', url: '', transport: '', enabled: true,
+    name: '', url: '', enabled: true,
     authorization_token: '', timeout_s: MCP_DEFAULT_TIMEOUT_S, toolAllowlist: [], toolDenylist: [],
   }, true), wrap.firstChild);
 }
@@ -25316,27 +25307,13 @@ function buildMcpCard(server, isNew) {
 
   const nameI = mkInput('mcp-name', 'text', server.name, 'jira');
   const urlI  = mkInput('mcp-url', 'text', server.url, 'https://host/mcp');
-
-  const transport = cfgPillSelect('mcp-transport', [
-    { value: 'streamable-http', label: 'streamable-http' },
-    { value: 'sse', label: 'sse' },
-  ], server.transport || 'streamable-http',
-    () => { transport.input.dataset.touched = '1'; });
-  if (server.transport) transport.input.dataset.touched = '1';
-  urlI.addEventListener('input', () => {
-    if (!transport.input.dataset.touched) transport.setValue(guessMcpTransport(urlI.value));
-  });
-
   const tokenI = mkInput('mcp-token', 'password', server.authorization_token, 'Bearer (optionnel)');
   const tmoI = mkInput('mcp-timeout', 'number', mcpTimeoutSeconds(server) || MCP_DEFAULT_TIMEOUT_S, String(MCP_DEFAULT_TIMEOUT_S));
   const allowI = mkInput('mcp-allow', 'text', (server.toolAllowlist || []).join(', '), 'outil1, outil2 (vide = tous)');
   const denyI  = mkInput('mcp-deny', 'text', (server.toolDenylist || []).join(', '), 'outils à masquer');
 
   editSection.appendChild(cfgField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
-  editSection.appendChild(cfgField('URL', urlI));
-
-  editSection.appendChild(cfgField('Transport', transport.root,
-    'streamable-http seul est implémenté ; sse est différé.'));
+  editSection.appendChild(cfgField('URL', urlI, 'Transport streamable-http.'));
   editSection.appendChild(cfgField('Jeton d\'autorisation', tokenI, 'Stocké en clair (localStorage) — usage non-prod encouragé.'));
   editSection.appendChild(cfgField('Timeout (s)', tmoI));
   editSection.appendChild(cfgField('Outils autorisés', allowI));
@@ -31391,7 +31368,6 @@ async function onSaveMcpCard(cardEl, originalName) {
   const tmoRaw = parseInt(get('.mcp-timeout'), 10);
   const server = {
     name, url,
-    transport: get('.mcp-transport') || 'streamable-http',
     enabled: enabledEl ? enabledEl.checked : true,
     authorization_token: get('.mcp-token'),
     timeout_s: (Number.isFinite(tmoRaw) && tmoRaw > 0) ? tmoRaw : MCP_DEFAULT_TIMEOUT_S,

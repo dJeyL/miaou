@@ -4874,7 +4874,7 @@ document.addEventListener('click', (e) => {
     const sr = $('set-reasoning-menu');
     if (sr) sr.classList.remove('show');
   }
-  // Dropdowns pilule des formulaires (cfgPillSelect — ex. transport MCP).
+  // Dropdowns pilule des formulaires (cfgPillSelect).
   if (!e.target.closest('.cfg-pill-select')) {
     document.querySelectorAll('.cfg-pill-select .model-menu.show').forEach(m => m.classList.remove('show'));
   }
@@ -8396,15 +8396,14 @@ function renderMcpServers() {
   }
 }
 
-// Ajoute une carte vierge (nouveau serveur) en tête de liste, transport deviné
-// au fil de la saisie d'URL (pré-remplissage, jamais override).
+// Ajoute une carte vierge (nouveau serveur) en tête de liste.
 function addMcpServerCard() {
   const wrap = $('mcp-list');
   if (!wrap) return;
   const empty = wrap.querySelector('.mem-empty');
   if (empty) empty.remove();
   wrap.insertBefore(buildMcpCard({
-    name: '', url: '', transport: '', enabled: true,
+    name: '', url: '', enabled: true,
     authorization_token: '', timeout_s: MCP_DEFAULT_TIMEOUT_S, toolAllowlist: [], toolDenylist: [],
   }, true), wrap.firstChild);
 }
@@ -8665,32 +8664,13 @@ function buildMcpCard(server, isNew) {
 
   const nameI = mkInput('mcp-name', 'text', server.name, 'jira');
   const urlI  = mkInput('mcp-url', 'text', server.url, 'https://host/mcp');
-  // Transport : dropdown pilule custom (cfgPillSelect — pas de <select> natif).
-  // La valeur vit dans l'input hidden .mcp-transport, lu tel quel par
-  // onSaveMcpCard. Choix explicite → marqué « touché » : la devinette d'URL
-  // ne l'écrase jamais ; serveur existant → touché d'office.
-  const transport = cfgPillSelect('mcp-transport', [
-    { value: 'streamable-http', label: 'streamable-http' },
-    { value: 'sse', label: 'sse' },
-  ], server.transport || 'streamable-http',
-    () => { transport.input.dataset.touched = '1'; });
-  if (server.transport) transport.input.dataset.touched = '1';
-  urlI.addEventListener('input', () => {
-    if (!transport.input.dataset.touched) transport.setValue(guessMcpTransport(urlI.value));
-  });
-
   const tokenI = mkInput('mcp-token', 'password', server.authorization_token, 'Bearer (optionnel)');
   const tmoI = mkInput('mcp-timeout', 'number', mcpTimeoutSeconds(server) || MCP_DEFAULT_TIMEOUT_S, String(MCP_DEFAULT_TIMEOUT_S));
   const allowI = mkInput('mcp-allow', 'text', (server.toolAllowlist || []).join(', '), 'outil1, outil2 (vide = tous)');
   const denyI  = mkInput('mcp-deny', 'text', (server.toolDenylist || []).join(', '), 'outils à masquer');
 
   editSection.appendChild(cfgField('Nom (préfixe)', nameI, 'Unique, sans espace ni « __ ». « miaou » réservé.'));
-  editSection.appendChild(cfgField('URL', urlI));
-  // Le libellé « sse » reste nu dans la pilule (harmonisation des dropdowns) :
-  // l'avertissement « différé » vit dans le hint du champ, pas dans l'option —
-  // `sse` lève à l'usage (mcpRpc, mcp.js), l'info ne doit pas disparaître.
-  editSection.appendChild(cfgField('Transport', transport.root,
-    'streamable-http seul est implémenté ; sse est différé.'));
+  editSection.appendChild(cfgField('URL', urlI, 'Transport streamable-http.'));
   editSection.appendChild(cfgField('Jeton d\'autorisation', tokenI, 'Stocké en clair (localStorage) — usage non-prod encouragé.'));
   editSection.appendChild(cfgField('Timeout (s)', tmoI));
   editSection.appendChild(cfgField('Outils autorisés', allowI));

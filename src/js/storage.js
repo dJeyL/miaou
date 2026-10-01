@@ -927,7 +927,7 @@ function modelPropsFor(server, modelId) {
 
 // ── Serveurs MCP distants ─────────────────────────────────────────────────────
 // Configuration des backends MCP délégués (brief de délégation MCP). Tableau d'objets :
-//   { name, url, transport, enabled, authorization_token?, timeout,
+//   { name, url, enabled, authorization_token?, timeout_s,
 //     toolAllowlist?, toolDenylist? }
 // `name` est le préfixe d'outil (unique, charset contraint, `miaou` interdit).
 // Le token est stocké EN CLAIR (posture assumée non-prod) : tout ce que
@@ -974,7 +974,6 @@ function seedBuildMcpServersIfNeeded() {
   const next = existing.concat(candidates.map(c => normalizeMcpServer({
     name: c.name,
     url: c.url,
-    transport: c.transport,
     enabled: c.enabled,
     timeout_s: c.timeout_s,
     toolAllowlist: c.toolAllowlist,
@@ -997,14 +996,18 @@ function saveMcpServers(arr) {
   return arr;
 }
 
-// Normalise un serveur saisi : défauts de transport/timeout/enabled, filtres en
-// tableaux de noms nus. Ne valide PAS le nom (cf. validateMcpServerName, utils).
+// Normalise un serveur saisi : défauts de timeout/enabled, filtres en tableaux
+// de noms nus. Ne valide PAS le nom (cf. validateMcpServerName, utils).
+//
+// Seul streamable-http est parlé : le transport HTTP+SSE historique, déprécié
+// par la spec MCP, n'a jamais été implémenté et son champ `transport` a été
+// retiré. Une carte ancienne qui le porte encore le perd ici, à sa prochaine
+// écriture ; d'ici là il reste inerte, plus rien ne le lit.
 function normalizeMcpServer(s) {
   const o = s || {};
   return {
     name: String(o.name || '').trim(),
     url: String(o.url || '').trim(),
-    transport: o.transport === 'sse' ? 'sse' : 'streamable-http',
     enabled: o.enabled !== false,
     authorization_token: o.authorization_token ? String(o.authorization_token) : '',
     // En SECONDES, et le nom le dit. Les millisecondes n'avaient aucun intérêt

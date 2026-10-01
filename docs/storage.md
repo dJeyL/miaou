@@ -518,7 +518,7 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   non-supprimées ; sans argument, toutes (usage historique, export/import) ;
   avec un tableau de scopes (ex. `['profile', activeSpaceId]`), filtre en plus
   sur `scope` (cf. Spaces ci-dessous). `forgetMemory(id)` supprime définitivement l'entrée du tableau.
-- `miaou-mcp-servers` : tableau de backends MCP distants `[{ name, url, transport,
+- `miaou-mcp-servers` : tableau de backends MCP distants `[{ name, url,
   enabled, authorization_token, timeout_s, toolAllowlist, toolDenylist }]`
   (cf. `docs/mcp.md`). `name` est l'identité **et** le
   préfixe d'outil (unique, charset `[A-Za-z0-9_-]`, pas de `__`, `miaou` interdit).

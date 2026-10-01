@@ -376,7 +376,7 @@
 
 /* pilule de sélection générique (bouton pilule + .model-menu) : sert le
    sélecteur de raisonnement du composer, celui des réglages globaux, et
-   cfgPillSelect (Vision, transport MCP) — même mécanique que .composer-model,
+   cfgPillSelect (formulaires de cartes, filtres) — même mécanique que .composer-model,
    liste statique de valeurs fixes, pas de fetch, pas de recherche. */
 .pill-select { position: relative; margin-left: auto; display: flex; }
 .pill-select[hidden] { display: none; }

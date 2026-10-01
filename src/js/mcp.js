@@ -173,7 +173,6 @@ async function mcpReinitialize(server) {
 // session préventivement — on ne réagit qu'à sa mort avérée, et au plus une fois.
 async function mcpRpc(server, method, params, opts) {
   const o = opts || {};
-  if (server.transport === 'sse') throw new Error('Transport sse non implémenté (différé en V2).');
   try {
     return await mcpRpcAttempt(server, method, params, o);
   } catch (e) {

@@ -43,14 +43,19 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
    branches interne/erreur synchrones, donc **testables sans async** — le runner
    QuickJS exécute `it()` sans attendre les promesses (le chemin distant se
    vérifie à la main, cf. `docs/manual-tests.md`).
-4. **Transport.** `streamable-http` implémenté (JSON-RPC 2.0 ; un seul endpoint
-   POST, réponse JSON **ou** flux SSE `event:message`/`data:` agrégé par
-   `readSseJsonRpc`). `sse` legacy **différé** : `mcpRpc` **lève** « non
-   implémenté » plutôt que de demi-câbler. Devinette de transport
-   (`guessMcpTransport`, pur) = **pré-remplissage seulement**, jamais un override :
-   l'UI ne l'applique que si le champ n'a pas été touché (`dataset.touched`).
-   Côté UI, le choix passe par le dropdown pilule custom `cfgPillSelect`
-   (ui.js — valeur dans l'input hidden `.mcp-transport`), pas un select natif.
+4. **Transport : `streamable-http`, et lui seul** (JSON-RPC 2.0 ; un seul
+   endpoint POST, réponse JSON **ou** flux SSE `event:message`/`data:` agrégé
+   par `readSseJsonRpc`). Le transport HTTP+SSE historique (GET `EventSource`
+   plus endpoint POST séparé) a été d'abord différé, puis **abandonné** : la
+   spec MCP l'a déprécié au profit de streamable-http, et un upstream qui ne
+   parlerait que lui se branche derrière le proxy MCP, qui fait le pont — pas
+   dans un client navigateur, où il serait le plus coûteux à porter (deux
+   canaux, CORS sur le GET long). Le champ `transport` des cartes a disparu
+   avec sa pilule et la devinette d'URL qui pouvait choisir d'elle-même
+   l'option non implémentée. Une carte ancienne qui le porte encore le perd à
+   sa prochaine normalisation (`normalizeMcpServer`) ; d'ici là il est inerte.
+   Côté `config.json`, la clef `mcp_server.transport` lève désormais le WARN de
+   clef inconnue au build.
 5. **Timeout via `AbortController`.** Chaque appel `mcpRpc` arme un
    `setTimeout` → `abort()` ; sur abort, résultat `{ isError: true }` au
    message clair. Sans ça le champ `timeout_s` serait décoratif. **Tout le

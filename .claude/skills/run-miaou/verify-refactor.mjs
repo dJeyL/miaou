@@ -4,7 +4,7 @@
 //   - sidebar (épinglé, sections), acks enrichis (intent 2 niveaux, erreur,
 //     multi-outils + conv_ref), displayText slash-skill, raisonnement,
 //   - suppression armée (sidebar + carte skill), cartes cfg (API/MCP/skills),
-//   - dropdown pilule transport MCP (cfgPillSelect) + devinette d'URL,
+//   - dropdown pilule (cfgPillSelect) sur la carte API, carte MCP sans transport,
 //   - thème clair résolu en JS.
 // Usage : node verify-refactor.mjs <dossier-captures> [--headed]
 import { launchIsolated } from './stub-backend.js';
@@ -139,27 +139,37 @@ await page.click('#api-list .drawer-btn:text("Modifier")');
 await page.waitForTimeout(200);
 await shot('05-api-card-edit.png');
 
-// ── 7. MCP : carte neuve, pilule transport + devinette d'URL ─────────────────
+// ── 7. Pilule cfgPillSelect (carte API) + carte MCP sans transport ──────────
+// La pilule générique se vérifiait jadis sur le transport MCP ; ce champ a été
+// retiré (streamable-http seul), la mécanique se vérifie donc sur la première
+// pilule de la carte API, ouverte en édition au bloc 6.
+await page.click('#api-list .cfg-card.is-editing .cfg-pill-select .pill-select-btn');
+await page.waitForTimeout(150);
+check('pilule : menu ouvert avec coche sur la valeur courante', await page.evaluate(() =>
+  !!document.querySelector('#api-list .cfg-card.is-editing .cfg-pill-select .model-menu.show .model-opt.selected')));
+await shot('06-cfg-pill.png');
+await page.evaluate(() => document.getElementById('api-drawer')
+  .dispatchEvent(new MouseEvent('click', { bubbles: true })));
+await page.waitForTimeout(150);
+check('pilule : fermée au clic ailleurs', await page.evaluate(() =>
+  !document.querySelector('#api-list .cfg-pill-select .model-menu.show')));
+
 await page.evaluate(() => { closeApiServers(); openMcpServers(); });
 await page.waitForSelector('#mcp-drawer.show');
 await page.waitForTimeout(350);
 await page.evaluate(() => addMcpServerCard());
-const tLabel = () => page.evaluate(() =>
-  document.querySelector('#mcp-list .cfg-pill-select .pill-select-btn span').textContent);
-check('MCP : pilule transport par défaut streamable-http', (await tLabel()) === 'streamable-http');
-await page.fill('#mcp-list .mcp-url', 'https://host/sse');
-check('MCP : devinette d\'URL → sse', (await tLabel()) === 'sse');
-await page.click('#mcp-list .cfg-pill-select .pill-select-btn');
-await page.waitForTimeout(150);
-check('MCP : menu pilule ouvert avec coche', await page.evaluate(() =>
-  !!document.querySelector('#mcp-list .cfg-pill-select .model-menu.show .model-opt.selected')));
-await shot('06-mcp-transport-pill.png');
-// choix explicite → touché → la devinette n'écrase plus
-await page.locator('#mcp-list .cfg-pill-select .model-opt', { hasText: 'streamable-http' }).first().dispatchEvent('mousedown');
-await page.fill('#mcp-list .mcp-url', 'https://host2/sse');
-check('MCP : choix explicite non écrasé par la devinette', (await tLabel()) === 'streamable-http');
-check('MCP : input hidden .mcp-transport porte la valeur', await page.evaluate(() =>
-  document.querySelector('#mcp-list .mcp-transport').value === 'streamable-http'));
+const mcpCard = await page.evaluate(() => {
+  const card = document.querySelector('#mcp-list .cfg-card');
+  return {
+    card: !!card,
+    url: !!(card && card.querySelector('.mcp-url')),
+    transportInput: !!(card && card.querySelector('.mcp-transport')),
+    pills: card ? card.querySelectorAll('.cfg-pill-select').length : -1,
+  };
+});
+// Prémisse d'abord : sans elle les deux absences qui suivent seraient vides.
+check('MCP : carte neuve rendue en édition (champ URL présent)', mcpCard.card && mcpCard.url);
+check('MCP : aucun champ transport sur la carte', !mcpCard.transportInput && mcpCard.pills === 0);
 
 // ── 8. Skills : cartes seedées + suppression armée « Confirmer ? » ──────────
 await page.evaluate(() => { closeMcpServers(); openSkills(); });
