@@ -182,9 +182,11 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   `docs/backend-health.md` pour la raison du montage et l'impasse `<use>`.
 - **`__MIAOU_SYSTEM_SKILLS__`** ← `src/system-skills/*.md` (un fichier par
   skill, nom de fichier = slug) parsés en `{slug: {name, description,
-  content}}` (injecté dans `skills.js`, upserté en IDB à chaque démarrage par
-  `ensureSystemSkills()` — skills non éditables par l'utilisateur, `enabled`/
-  `autotrigger` figés à `true`, cf. `docs/skills.md`).
+  content, userInvocable}}` (injecté dans `skills.js`, upserté en IDB à chaque
+  démarrage par `ensureSystemSkills()` — skills non éditables par
+  l'utilisateur, `enabled`/`autotrigger` figés à `true`, absentes de
+  l'autocomplétion du `/` sauf `metadata.user-invocable: true`, cf.
+  `docs/skills.md`).
 
 Les commentaires sont retirés au passage (`strip_js_comments`/`strip_css_comments`/
 `strip_html_comments`, testés dans `run_build_unit_tests`) : `src/` reste la

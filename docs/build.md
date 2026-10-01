@@ -247,7 +247,9 @@ Substitué par le contenu des skills système (`src/system-skills/*.md`, cf.
 erreur bruyante si le cartouche est absent ou sans `name`, ou si le corps est
 vide (contrairement à `config.json`, ces fichiers sont censés être valides dès
 qu'ils existent). `load_system_skills()` agrège tous les fichiers du dossier
-en objet ordonné `{slug: {name, description, content}}` ; dossier absent ou
+en objet ordonné `{slug: {name, description, content, userInvocable}}` (le
+dernier lu sous `metadata.user-invocable`, valeur stricte `true`/`false`,
+défaut `false`) ; dossier absent ou
 vide → `{}` (additif, pas un prérequis de build). Sérialisé par `json.dumps` +
 échappement `</`, mêmes contraintes que les marqueurs précédents.
 

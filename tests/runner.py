@@ -598,9 +598,22 @@ def run_build_unit_tests() -> tuple[int, int]:
         '---\nname: fake\ndescription: Une skill de test\nmetadata:\n  title: Une skill de test\n---\n'
         '\nCorps de la skill.\n',
         fake_path, 'fake')
-    check('system-skills : cartouche nominal → {name, description, content}',
+    check('system-skills : cartouche nominal → {name, description, content, userInvocable}',
           nominal_skill == {'name': 'Une skill de test', 'description': 'Une skill de test',
-                             'content': 'Corps de la skill.'})
+                             'content': 'Corps de la skill.', 'userInvocable': False})
+
+    invocable = build.parse_system_skill_file(
+        '---\nname: fake\nmetadata:\n  title: T\n  user-invocable: true\n---\n\nCorps.\n',
+        fake_path, 'fake')
+    check('system-skills : metadata.user-invocable: true → userInvocable vrai (titre conservé)',
+          invocable['userInvocable'] is True and invocable['name'] == 'T')
+    try:
+        build.parse_system_skill_file(
+            '---\nname: fake\nmetadata:\n  user-invocable: oui\n---\n\nCorps.\n',
+            fake_path, 'fake')
+        check('system-skills : user-invocable hors true/false → ValueError', False)
+    except ValueError:
+        check('system-skills : user-invocable hors true/false → ValueError', True)
 
     no_desc_skill = build.parse_system_skill_file(
         '---\nname: fake\n---\n\nCorps.\n', fake_path, 'fake')
@@ -643,7 +656,9 @@ def run_build_unit_tests() -> tuple[int, int]:
     real_skills = build.load_system_skills()
     check('system-skills : load_system_skills() lit src/system-skills/*.md et trouve « mermaid »',
           'mermaid' in real_skills
-          and set(real_skills['mermaid'].keys()) == {'name', 'description', 'content'})
+          and set(real_skills['mermaid'].keys()) == {'name', 'description', 'content', 'userInvocable'})
+    check('system-skills : seule « mermaid » est proposée à l\'autocomplétion',
+          {k for k, v in real_skills.items() if v['userInvocable']} == {'mermaid'})
     check('system-skills : trouve aussi « files-promote » et « js-eval » (doctrines extraites de ROOT_SYSTEM_PROMPT)',
           'files-promote' in real_skills and 'js-eval' in real_skills)
 

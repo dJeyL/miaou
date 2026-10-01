@@ -209,7 +209,8 @@ Détail : [docs/spaces.md](docs/spaces.md).
   Agent Skills pré-remplit l'édition (slug, nom, description), à défaut de
   cartouche depuis le nom du fichier.
 - **Skills système** fournies par l'application : toujours actives, non
-  éditables, consultables en lecture seule.
+  éditables, consultables en lecture seule ; adressées au modèle, elles ne sont
+  proposées à l'autocomplétion du `/` que sur décision explicite.
 
 Détail : [docs/skills.md](docs/skills.md).
 

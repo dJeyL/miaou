@@ -10,7 +10,7 @@
       la base `miaou` v2 via openResourceDB() (resources.js).
 
    Schéma d'enregistrement IDB : { slug, name, description, enabled, content,
-   autotrigger }. Le cache mémoire NE contient PAS `content` (chargé depuis IDB
+   autotrigger, system, userInvocable }. Le cache mémoire NE contient PAS `content` (chargé depuis IDB
    à l'invocation seulement) : il alimente l'autocomplétion du composer, qui
    filtre à chaque frappe et ne peut pas attendre IDB. cf. brief stage 1.
 
@@ -33,11 +33,14 @@
    ensureSystemSkills plus bas). Symétriquement, une skill système que le
    bundle ne connaît plus est SUPPRIMÉE au même démarrage
    (orphanSystemSkillSlugs) : retirer le fichier source la retire de la base.
+   `userInvocable` (cartouche `metadata.user-invocable`) décide seul si une
+   skill système est proposée par l'autocomplétion du `/` (cf.
+   skillOfferedForCompletion) ; masquée, elle reste invocable tapée en entier.
    ──────────────────────────────────────────────────────────────────────────── */
 
 // Contenu des skills système, injecté au build depuis src/system-skills/*.md
 // (parse_system_skill_file, build.py) : { slug: { name, description,
-// autotrigger, content } }. Même mécanisme que HELP_CONTENT (tools.js) :
+// content, userInvocable } }. Même mécanisme que HELP_CONTENT (tools.js) :
 // marqueur unique en position de valeur, garde try/catch pour les sources non
 // buildées (tests QuickJS) où __MIAOU_SYSTEM_SKILLS__ est un identifiant nu →
 // ReferenceError → {}.
@@ -309,7 +312,7 @@ function orphanSystemSkillSlugs(records, knownSlugs) {
 let _skillsCache = [];
 
 function _skillMeta(rec) {
-  return { slug: rec.slug, name: rec.name || '', description: rec.description || '', enabled: rec.enabled !== false, autotrigger: rec.autotrigger === true, system: rec.system === true };
+  return { slug: rec.slug, name: rec.name || '', description: rec.description || '', enabled: rec.enabled !== false, autotrigger: rec.autotrigger === true, system: rec.system === true, userInvocable: rec.userInvocable === true };
 }
 
 // Remplace tout le cache (chargement initial depuis IDB).
@@ -358,11 +361,23 @@ function getAutotriggerSkillsMeta() {
     .map(s => ({ slug: s.slug, name: s.name, description: s.description, system: s.system === true }));
 }
 
+// Une skill système s'adresse au modèle (« Tu as décidé de… ») : l'invoquer
+// par `/` est rarement utile, et contre-productif sur celles qui gardent un
+// outil (`skillReadSince`, tools.js, attend un `skills__read`, pas un corps
+// injecté — le contenu serait payé deux fois). Seules celles dont le cartouche
+// porte `metadata.user-invocable: true` sont proposées. Le filtre vit ICI et
+// pas dans listEnabledSkills, qui sert aussi `skills__list`, le bloc
+// autotrigger et la reconnaissance à l'envoi : masquée, une skill reste
+// invocable tapée en entier. Pur.
+function skillOfferedForCompletion(meta) {
+  return !!meta && (meta.system !== true || meta.userInvocable === true);
+}
+
 // Filtre les skills activées dont le slug (ou le name) matche un préfixe de saisie.
 // Pour l'autocomplétion du composer (après `/`). Pur, synchrone.
 function matchSkillCompletions(query) {
   const q = String(query == null ? '' : query).toLowerCase();
-  return listEnabledSkills().filter(s =>
+  return listEnabledSkills().filter(s => skillOfferedForCompletion(s)).filter(s =>
     s.slug.toLowerCase().indexOf(q) >= 0 ||
     (s.name && s.name.toLowerCase().indexOf(q) >= 0));
 }
@@ -408,6 +423,7 @@ function putSkill(record) {
     content: String(record.content || ''),
     autotrigger: record.autotrigger === true,
     system: record.system === true,
+    userInvocable: record.userInvocable === true,
   };
   return openResourceDB().then(function(db) {
     return new Promise(function(resolve, reject) {
@@ -503,6 +519,7 @@ async function ensureSystemSkills() {
         system: true,
         enabled: true,
         autotrigger: true,
+        userInvocable: src.userInvocable === true,
       });
     } catch (e) {
       if (typeof console !== 'undefined') console.warn('[miaou] ensureSystemSkills:', slug, e && e.message);

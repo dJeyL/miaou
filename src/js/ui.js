@@ -5142,6 +5142,9 @@ function cmdkModeItems(query) {
   if (_cmdkMode === 'skill') {
     return matchSkillCompletions(query).map(s => ({
       label: s.name || s.slug, note: s.name ? ('/' + s.slug) : '',
+      // Même étiquette que dans l'autocomplétion du `/`, au format de la
+      // palette (annotation de droite, comme le statut d'un agent).
+      hint: s.system ? 'système' : '',
       run: () => { closeCommandPalette(); insertSkillIntoComposer(s.slug); },
     }));
   }
@@ -10040,7 +10043,7 @@ function updateSkillAutocomplete(state) {
     ? matchCommandCompletions(trig.slug).map(c => ({ slug: c.slug, label: c.label, command: true }))
     : [];
   const skills = matchSkillCompletions(trig.slug).map(s => ({
-    slug: s.slug, label: s.name, command: false,
+    slug: s.slug, label: s.name, command: false, system: s.system === true,
   }));
   const matches = commands.concat(skills);
   if (!matches.length) { hideSkillAutocomplete(state); return; }
@@ -10071,10 +10074,14 @@ function renderSkillAutocomplete(state, matches) {
       nameEl.textContent = s.label;
       opt.appendChild(nameEl);
     }
-    if (s.command) {
+    // Une skill système porte son étiquette comme une commande la sienne :
+    // non éditable, elle ne doit pas se faire chercher parmi les skills de
+    // l'utilisateur dans le drawer.
+    const tagText = s.command ? 'commande' : (s.system ? 'système' : '');
+    if (tagText) {
       const tag = document.createElement('span');
       tag.className = 'skill-ac-tag';
-      tag.textContent = 'commande';
+      tag.textContent = tagText;
       opt.appendChild(tag);
     }
     opt.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSkillCompletion(state, s.slug); });

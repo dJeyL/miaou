@@ -507,12 +507,18 @@ def parse_system_skill_file(text: str, path: Path, slug: str) -> dict:
 
     Pas de clé `autotrigger` ni `enabled` : une skill système est TOUJOURS
     activée et autotrigger (figé par ensureSystemSkills, skills.js — aucun
-    réglage possible dessus, cf. docs/skills.md)."""
+    réglage possible dessus, cf. docs/skills.md).
+
+    `metadata.user-invocable: true` la propose dans l'autocomplétion du `/`
+    (défaut : masquée — ces skills s'adressent au modèle, et un `/slug` sur une
+    skill qui garde un outil ne vaut pas lecture). Valeur stricte `true`/`false` :
+    une faute de frappe masquerait la skill sans rien dire."""
     m = _SKILL_FRONTMATTER_RE.match(text)
     if not m:
         raise ValueError(f'{path} : cartouche frontmatter --- manquant en tête de fichier.')
     meta = {}
     title = None
+    user_invocable = False
     in_metadata = False
     for line in m.group(1).split('\n'):
         indented = re.match(r'^\s+\S', line) is not None
@@ -526,6 +532,11 @@ def parse_system_skill_file(text: str, path: Path, slug: str) -> dict:
         if indented:
             if in_metadata and key == 'title' and val:
                 title = val
+            elif in_metadata and key == 'user-invocable':
+                if val not in ('true', 'false'):
+                    raise ValueError(
+                        f'{path} : « user-invocable: {val} » — valeur attendue : true ou false.')
+                user_invocable = val == 'true'
             continue
         in_metadata = (key == 'metadata' and not val)
         meta[key] = val
@@ -543,12 +554,13 @@ def parse_system_skill_file(text: str, path: Path, slug: str) -> dict:
         'name': title or system_skill_display_name(slug),
         'description': meta.get('description', ''),
         'content': body,
+        'userInvocable': user_invocable,
     }
 
 
 def load_system_skills() -> dict:
     """Lit `src/system-skills/*.md` → dict ordonné {slug: {name, description,
-    content}}. Dossier absent ou vide → {} (pas d'erreur : les skills système
+    content, userInvocable}}. Dossier absent ou vide → {} (pas d'erreur : les skills système
     sont une fonctionnalité additive, pas un prérequis de build)."""
     d = SRC / 'system-skills'
     if not d.exists():

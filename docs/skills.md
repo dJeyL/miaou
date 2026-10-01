@@ -19,7 +19,8 @@ reconnaissance et l'autocomplétion — pas le stockage ni le mécanisme
 d'injection. Cf. §2, et `docs/compaction.md` pour le geste qu'elles déclenchent.
 
 1. **Stockage = IDB store `skills`** (base `miaou` v2, keyPath `slug`) :
-   `{ slug, name, description, enabled, content, autotrigger, system }`.
+   `{ slug, name, description, enabled, content, autotrigger, system,
+   userInvocable }`.
    `autotrigger` (stage 2, défaut `false` — **opposé** de `enabled`) : pas de
    bump de version IDB pour ce seul ajout (schemaless, absence == `false`).
    `system` (défaut `false`, même logique schemaless) marque une skill système
@@ -358,8 +359,23 @@ d'injection. Cf. §2, et `docs/compaction.md` pour le geste qu'elles déclenchen
      `skillDisplayNameFromSlug`).
      **Pas de clé `autotrigger`/`enabled`** : une skill système n'expose AUCUN
      réglage, cf. upsert ci-dessous.
+   - **Proposée au `/` sur décision explicite** : `metadata.user-invocable:
+     true` (valeur stricte, toute autre fait échouer le build ; défaut
+     `false`) devient le champ `userInvocable` du record, que l'upsert réécrit à
+     chaque démarrage. Motif du défaut masqué : ces skills parlent au modèle
+     (« Tu as décidé de… »), et sur une skill qui garde un outil un `/slug` ne
+     vaut PAS lecture — `skillReadSince` attend un ack `skill_read` —, donc le
+     modèle se fait refuser son appel, relit la skill, et le contenu est payé
+     deux fois. Le filtre est `skillOfferedForCompletion`, appliqué dans
+     `matchSkillCompletions` (autocomplétion du composer, de l'édition, sous-mode
+     `skill` de la palette) et **jamais dans `listEnabledSkills`**, qui sert
+     aussi `skills__list`, `getAutotriggerSkillsMeta` et `resolveSend` : une
+     skill masquée reste invocable tapée en entier, et la garde « aucune skill
+     activée » de `resolveSend` garde son sens. Une skill système proposée porte
+     l'étiquette « système » dans le panneau, au même gabarit que « commande »,
+     et la même en annotation de droite (`hint`) dans la palette.
    - **Injection au build** : `load_system_skills()` (`build.py`) lit tous les
-     `.md` du dossier, sérialise `{slug: {name, description, content}}` en
+     `.md` du dossier, sérialise `{slug: {name, description, content, userInvocable}}` en
      JSON, remplace le marqueur `__MIAOU_SYSTEM_SKILLS__` dans `assemble_js()`
      — même mécanisme que `__MIAOU_CONFIG__`/`__MIAOU_HELP__` (marqueur unique
      en position de valeur, échappement `</`). Côté source,

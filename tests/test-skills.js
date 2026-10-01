@@ -235,6 +235,26 @@ describe('cache skills — synchronisation', function() {
     var byName = matchSkillCompletions('synth').map(function(s) { return s.slug; });
     expect(byName).toEqual(['resume']);
   });
+  // Une skill système n'est proposée que si son cartouche le demande ; le
+  // filtre vit dans matchSkillCompletions et PAS dans listEnabledSkills, qui
+  // sert aussi skills__list, le bloc autotrigger et la reconnaissance à l'envoi.
+  it('matchSkillCompletions masque les skills système sauf userInvocable', function() {
+    setSkillsCache([
+      { slug: 'mes-notes', name: 'Notes' },
+      { slug: 'docs', name: 'Documents', system: true },
+      { slug: 'mermaid', name: 'Diagrammes', system: true, userInvocable: true },
+    ]);
+    var offered = matchSkillCompletions('').map(function(s) { return s.slug; });
+    expect(offered).toEqual(['mes-notes', 'mermaid']);
+    var enabled = listEnabledSkills().map(function(s) { return s.slug; });
+    expect(enabled).toEqual(['mes-notes', 'docs', 'mermaid']);
+    expect(getSkillMeta('docs').enabled).toBe(true);
+  });
+  it('userInvocable par défaut false, projeté par le cache', function() {
+    setSkillsCache([{ slug: 'a', system: true }, { slug: 'b', system: true, userInvocable: true }]);
+    expect(getSkillMeta('a').userInvocable).toBe(false);
+    expect(getSkillMeta('b').userInvocable).toBe(true);
+  });
   it('autotrigger par défaut false (opposé de enabled) ; true respecté', function() {
     setSkillsCache([{ slug: 'a' }, { slug: 'b', autotrigger: true }]);
     expect(getSkillMeta('a').autotrigger).toBe(false);

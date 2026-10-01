@@ -479,7 +479,11 @@ exemple les règles de syntaxe pour générer un diagramme mermaid valide, ou le
 mode d'emploi de certains outils avancés). Elles apparaissent en tête du
 panneau Skills, dans une liste distincte, repérables à leur badge « Système ».
 Toujours actives, non modifiables ni supprimables : un bouton « Consulter »
-affiche leur contenu en lecture seule.
+affiche leur contenu en lecture seule. Elles s'adressent au modèle, qui les
+consulte seul quand il en a besoin : la plupart ne sont donc pas proposées par
+l'autocomplétion du `/` ni par la palette. Celles qui le sont (comme les règles
+mermaid) y portent une étiquette « système ». Une skill système non proposée
+reste invocable en tapant son slug en entier.
 
 ## agents — agents
 
