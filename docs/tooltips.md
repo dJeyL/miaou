@@ -78,7 +78,9 @@ infobulle ne porte de balisage (des infobulles citent des noms de fichiers, de
 conversations, des erreurs). Le second étage ne sert que si le porteur n'affiche
 pas déjà son libellé. Emplois : la pastille de connexion quand l'API n'est pas
 configurée (état, puis geste), la pilule MCP en erreur (sa pilule dit l'état, la
-bulle le geste puis la vérification).
+bulle le geste puis la vérification), et le modèle actif du composer et de la
+pilule topbar (nom complet, puis serveur qui le sert, seulement s'il y a
+plusieurs serveurs sélectionnables ; `activeModelTip`, ui.js).
 
 ## Affichage et masquage
 

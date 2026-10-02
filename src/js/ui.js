@@ -5841,6 +5841,18 @@ function composerModelLabelBudget() {
 // sidebar ni sur un resize de fenêtre qui raterait le cas sidebar.
 let _composerSelectorsRO = null;
 
+// Infobulle du modèle actif (composer et pilule topbar) : le nom complet en
+// libellé, puis le serveur qui le sert en détail — seulement quand il y a de
+// quoi les distinguer (plusieurs serveurs sélectionnables), même repli de nom
+// que la palette. Point unique : le ResizeObserver ci-dessous réécrit la bulle
+// du composer à chaque redimensionnement, il doit rendre la même forme.
+function activeModelTip(model) {
+  const active = activeApiServer();
+  if (!active || listSelectableApiServers().length < 2) return model;
+  const detail = active.name || active.url || '';
+  return detail ? { label: model, detail } : model;
+}
+
 function initComposerModelLabelFit() {
   const row = $('composer-selectors');
   if (!row || typeof ResizeObserver === 'undefined' || _composerSelectorsRO) return;
@@ -5852,7 +5864,7 @@ function initComposerModelLabelFit() {
     // redimensionnement, pour rien.
     const m = activeModel() || 'modèle';
     compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
-    setTip(compLabel, m);
+    setTip(compLabel, activeModelTip(m));
   });
   _composerSelectorsRO.observe(row);
 }
@@ -5864,7 +5876,7 @@ function syncModelUI() {
   const top = $('model-label');
   if (top) {
     top.textContent = shortenModelLabel(m, TOPBAR_MODEL_MAX_CHARS);
-    setTip(top, m);
+    setTip(top, activeModelTip(m));
   }
   // Bouton composer : nom ABRÉGÉ (auteur retiré, puis fin tronquée) — le nom
   // complet reste dans la liste déroulée ET en infobulle, pour rester récupérable.
@@ -5878,7 +5890,7 @@ function syncModelUI() {
   const compLabel = $('composer-model-label');
   if (compLabel) {
     compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
-    setTip(compLabel, m);
+    setTip(compLabel, activeModelTip(m));
   }
   const box = $('composer-model');
   if (box) {

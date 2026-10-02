@@ -5485,7 +5485,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-02 19:09 UTC */
+/* miaou — built: 2026-10-02 23:13 UTC */
 
 /* ── utils.js ── */
 
@@ -10956,7 +10956,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790968151}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790982807}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -23214,6 +23214,13 @@ function composerModelLabelBudget() {
 
 let _composerSelectorsRO = null;
 
+function activeModelTip(model) {
+  const active = activeApiServer();
+  if (!active || listSelectableApiServers().length < 2) return model;
+  const detail = active.name || active.url || '';
+  return detail ? { label: model, detail } : model;
+}
+
 function initComposerModelLabelFit() {
   const row = $('composer-selectors');
   if (!row || typeof ResizeObserver === 'undefined' || _composerSelectorsRO) return;
@@ -23223,7 +23230,7 @@ function initComposerModelLabelFit() {
 
     const m = activeModel() || 'modèle';
     compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
-    setTip(compLabel, m);
+    setTip(compLabel, activeModelTip(m));
   });
   _composerSelectorsRO.observe(row);
 }
@@ -23234,7 +23241,7 @@ function syncModelUI() {
   const top = $('model-label');
   if (top) {
     top.textContent = shortenModelLabel(m, TOPBAR_MODEL_MAX_CHARS);
-    setTip(top, m);
+    setTip(top, activeModelTip(m));
   }
 
   const cam = $('composer-model-vision');
@@ -23245,7 +23252,7 @@ function syncModelUI() {
   const compLabel = $('composer-model-label');
   if (compLabel) {
     compLabel.textContent = shortenModelLabel(m, composerModelLabelBudget());
-    setTip(compLabel, m);
+    setTip(compLabel, activeModelTip(m));
   }
   const box = $('composer-model');
   if (box) {

@@ -239,6 +239,16 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   like an app bug ("the thread doesn't render after reload") and is expensive to
   diagnose precisely because everything else is green. Add ~400ms after the class
   for the fade before screenshotting. Model in place: `verify-ack-errors.mjs`.
+- **`locator.click()` on a `position: sticky` element scrolls the page first.**
+  Playwright scrolls the target into view before clicking, and for a stuck
+  element that means towards its STATIC position: clicking the export's sticky
+  header at the bottom of a page moved `scrollY` by 368px. A real click does
+  not, nor does focusing what the label targets. So any check whose subject is
+  "this click does not scroll" goes red on correct code. Click at coordinates
+  instead (`getBoundingClientRect` centre, then `page.mouse.click(x, y)`), and
+  keep `locator.click` where the scroll is irrelevant. Paid on 2026-10-02
+  (`verify-export-theme-toggle.mjs`): three probes — focus, scroll anchoring —
+  before suspecting the click itself.
 - **A `.model-menu` refuses focus while it opens.** The base rule transitions
   `visibility` (drawers.css), so for the first frames after `.show` is added the
   menu is still `hidden`, and `focus()` on anything inside it silently does
@@ -430,9 +440,17 @@ off the class:
 
 ```js
 const visible = [...document.querySelectorAll(sel)]
-  .filter(el => !el.hidden && el.offsetParent !== null).length;
+  .filter(el => !el.hidden && el.getClientRects().length > 0).length;
 const cs = getComputedStyle(btn);   // opacity, cursor — not classList.contains
 ```
+
+Not `el.offsetParent !== null`, the older form of this idiom: `offsetParent` is
+**always null for an element in `position: fixed`**, visible or not, so the
+filter declares every fixed control absent. Paid on 2026-10-02 on the export
+reading controls (floating, fixed): the width control was "invisible" while on
+screen, and the script crashed on a null rect. `getClientRects()` is empty for
+`display: none` (self or ancestor) and non-empty for a rendered box, fixed
+included.
 
 Asserting `classList.contains('agent-busy')` only proves the JS ran; it says
 nothing about whether the cascade followed, which is the half that actually
