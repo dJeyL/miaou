@@ -174,6 +174,19 @@ describe('buildExportHtml', function() {
   });
 });
 
+describe('exportFaviconCss (une règle par favicon distincte)', function() {
+  var ICON = 'data:image/png;base64,iVBORw0KGgo=';
+  it('une règle par source, indice = classe', function() {
+    var css = exportFaviconCss([ICON, 'data:image/gif;base64,R0lG']);
+    expect(css).toContain('.body a.web-ref .wr-icon.wr-fav-0 { background-image: url("' + ICON + '"); }');
+    expect(css).toContain('.wr-fav-1 { background-image: url("data:image/gif;base64,R0lG"); }');
+  });
+  it('source non sûre : aucune règle, rien d\'interpolé', function() {
+    var css = exportFaviconCss(['data:image/png;base64,AA"); } body { x: url("y', 'data:image/svg+xml;base64,PHN2Zz4=']);
+    expect(css).toBe('');
+  });
+});
+
 describe('relativeWhen (libellé de date par conversation)', function() {
   // On teste le comportement (jour même → heure, plus « aujourd'hui »), pas le
   // format exact : QuickJS n'honore pas la locale fr-FR de toLocaleTimeString.

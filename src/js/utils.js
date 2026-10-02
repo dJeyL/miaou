@@ -2146,6 +2146,8 @@ function inlineTipAttrs(tip, opts) {
 // WEB_REF_MARKER_RE ; `target`/`rel` sont posés par le hook DOMPurify (ui.js).
 // La flèche ↗ du survol est en CSS : un nœud texte entrerait dans le nom
 // accessible du lien.
+// Favicon recopiée à chaque citation : la déduplication est l'affaire de
+// l'export (exportWebRefPills, export.js), pas de la pastille.
 function webRefPillHtml(url, source, overflow) {
   const s = source || {};
   const state = s.consulted ? '' : (s.relayed ? ' relayed' : ' unverified');
@@ -2184,9 +2186,10 @@ function webRefGroups(text) {
 
 // Résout les [web_ref:…] d'un texte assistant. PUR : `registry` est celui de
 // la conversation dont le texte est rendu (webSourceRegistry), fourni par
-// l'appelant. `opts.asPlainText` (export HTML) : un lien externe ordinaire
-// entre parenthèses, au libellé de la pastille, sans style — EXPORT_CSS est
-// figé (piège 22).
+// l'appelant. `opts.asPlainText` (export HTML) : les mêmes pastilles, mais
+// toutes visibles — un document n'a pas de « +N » à déplier. L'export en
+// convertit l'infobulle et la favicon (exportWebRefPills) ; leur CSS est porté
+// à la main dans EXPORT_CSS (piège 22).
 function resolveWebRefMarkers(text, registry, opts) {
   const asPlainText = !!(opts && opts.asPlainText);
   const reg = registry instanceof Map ? registry : new Map();
@@ -2194,9 +2197,9 @@ function resolveWebRefMarkers(text, registry, opts) {
   return String(text).replace(new RegExp(WEB_REF_GROUP_RE.source, 'g'), function(group) {
     const urls = webRefGroups(group)[0].urls;
     if (asPlainText) {
-      return urls.map(function(u) {
-        return ' <a href="' + escHtml(u) + '">(' + refLabelHtml(webSourceLabel(src(u), u)) + ')</a>';
-      }).join('');
+      return '<span class="web-refs">' + urls.map(function(u) {
+        return webRefPillHtml(u, src(u), false);
+      }).join('') + '</span>';
     }
     const fold = urls.length - WEB_REF_GROUP_VISIBLE >= 2;
     let html = '<span class="web-refs">';

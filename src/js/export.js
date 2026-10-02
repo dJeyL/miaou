@@ -278,6 +278,22 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .body strong { font-weight: 600; color: var(--text); }
 .body em { color: var(--text-2); }
 .body del { color: var(--text-3); }
+/* Pastilles de source web — portage de chat.css (.web-ref), PAS une
+   propagation : les deux jeux évoluent séparément (piège 22). Écarts assumés :
+   pas de « +N » (toutes les pastilles sont visibles), favicon posée en fond par
+   une classe .wr-fav-N que génère exportDedupeFavicons (une copie par site, pas
+   par citation), globe redéfini ici faute du jeton de base.css. */
+.body .web-refs { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 4px; vertical-align: middle; }
+.body a.web-ref { position: relative; display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 170px; height: 19px; box-sizing: border-box; padding: 0 7px 0 5px; border-radius: 10px; font-family: var(--sans); font-size: 11px; font-weight: 500; font-style: normal; line-height: 1; color: var(--text-2); background: var(--surface-3); border: 1px solid transparent; text-decoration: none; transition: color 120ms var(--ease), border-color 120ms var(--ease), background 120ms var(--ease); }
+.body a.web-ref:hover, .body a.web-ref:focus-visible { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); }
+.body a.web-ref .wr-icon { flex: none; display: block; width: 12px; height: 12px; border-radius: 2px; background: center / contain no-repeat; }
+.body a.web-ref .wr-globe { border-radius: 0; background: currentColor; -webkit-mask: var(--wr-globe-glyph) center / contain no-repeat; mask: var(--wr-globe-glyph) center / contain no-repeat; --wr-globe-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18'/%3E%3C/svg%3E"); }
+.body a.web-ref .wr-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.body a.web-ref::after { content: ''; display: none; position: absolute; right: 5px; top: 50%; transform: translateY(-50%); width: 10px; height: 10px; background: currentColor; -webkit-mask: var(--wr-arrow-glyph) center / contain no-repeat; mask: var(--wr-arrow-glyph) center / contain no-repeat; --wr-arrow-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17L17 7M9 7h8v8'/%3E%3C/svg%3E"); }
+.body a.web-ref:hover::after, .body a.web-ref:focus-visible::after { display: block; }
+.body a.web-ref:hover .wr-label, .body a.web-ref:focus-visible .wr-label { -webkit-mask-image: linear-gradient(to left, transparent 0, transparent 10px, #000 16px); mask-image: linear-gradient(to left, transparent 0, transparent 10px, #000 16px); }
+.body a.web-ref.unverified { background: transparent; border: 1px dashed var(--border-2); color: var(--text-3); }
+.body a.web-ref.unverified:hover, .body a.web-ref.unverified:focus-visible { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); }
 .body blockquote { border-left: 2px solid var(--border-2); padding: 2px 0 2px 14px; margin: 10px 0; color: var(--text-2); }
 .body hr { border: none; border-top: 1px solid var(--border-2); margin: 18px 0; }
 .body code:not([class*="language-"]) { font-family: var(--mono); font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; color: var(--code-inline-color); }
@@ -814,8 +830,60 @@ async function renderExportBody(thread, convId) {
   // pour un export lu sur grand écran. Seules les bornes changent (EXPORT_CSS
   // les calcule sur .export-body et le viewport, faute de sidebar et de --col).
   wrapWideTables(container);
+  exportWebRefPills(container);
   await embedExportMermaid(container);
   return container.innerHTML;
+}
+
+// Pastilles de source web, reprises après le rendu partagé avec l'écran :
+// - infobulle MIAOU (deux étages) rendue en `title` natif sur deux lignes —
+//   exportNativeTip ne reprend que le premier étage, or le second dit si la
+//   page a été consultée ; l'icône de l'infobulle n'a pas d'équivalent ;
+// - favicon : la pastille recopie sa data-URL à CHAQUE citation
+//   (webRefPillHtml), jusqu'à 32 Ko par occurrence. L'export n'en garde
+//   qu'une par favicon distincte, dans une règle de fond (.wr-fav-N), et la
+//   pastille ne porte plus que la classe. Règles composées par le pur
+//   exportFaviconCss ; <style> posé en tête du fragment, valide dans le corps.
+function exportWebRefPills(container) {
+  const pills = container.querySelectorAll('a.web-ref');
+  if (!pills.length) return;
+  const index = new Map();
+  for (const a of pills) {
+    const tip = a.getAttribute('data-tip');
+    if (tip) {
+      const detail = a.getAttribute('data-tip-detail');
+      a.setAttribute('title', detail ? tip + '\n' + detail : tip);
+    }
+    if (a.getAttribute('data-tip-aria') === 'description') a.removeAttribute('aria-description');
+    ['data-tip', 'data-tip-detail', 'data-tip-icon', 'data-tip-aria'].forEach(function(k) { a.removeAttribute(k); });
+    const img = a.querySelector('img.wr-icon');
+    if (!img) continue;
+    const src = img.getAttribute('src') || '';
+    const span = document.createElement('span');
+    if (isSafeIconSrc(src)) {
+      if (!index.has(src)) index.set(src, index.size);
+      span.className = 'wr-icon wr-fav-' + index.get(src);
+    } else {
+      span.className = 'wr-icon wr-globe';
+    }
+    img.replaceWith(span);
+  }
+  if (!index.size) return;
+  const style = document.createElement('style');
+  style.textContent = exportFaviconCss([...index.keys()]);
+  container.insertBefore(style, container.firstChild);
+}
+
+// Une règle par favicon, dans l'ordre reçu (indice = classe .wr-fav-N). Pur.
+// Une source qui ne passe pas isSafeIconSrc ne produit rien : c'est la regex
+// (base64 sans guillemet ni parenthèse) qui rend l'interpolation dans url("…")
+// sûre, on ne s'en remet pas à l'appelant.
+function exportFaviconCss(srcs) {
+  return (srcs || []).map(function(src, i) {
+    return isSafeIconSrc(src)
+      ? '.body a.web-ref .wr-icon.wr-fav-' + i + ' { background-image: url("' + src + '"); }'
+      : '';
+  }).filter(Boolean).join('\n');
 }
 
 // Passe Mermaid de l'export (lot E4) : chaque bloc ```mermaid du fragment

@@ -1767,7 +1767,8 @@ s'y ajoute.
    libellés, `web_ref` retiré. `lookups` (`refMarkerLookups`, ui.js) retrouve
    le titre d'une conversation et le nom d'un fichier. L'export HTML garde
    `renderMd(…, { asPlainText: true, refCtx, webSources })` : libellés nus, et
-   `web_ref` en lien externe ordinaire (cf. point 9).
+   `web_ref` en pastilles comme à l'écran mais toutes visibles, sans « +N »
+   (cf. point 9 et `docs/exports.md`).
 8. **Masquage en streaming.** `maskOpenRefMarker` (utils.js, pure) retire un
    marqueur ouvert en queue (ou son nom en cours d'écriture) sur le SEUL chemin
    de streaming (`renderStreamBlocks` avec `caret`). Le rendu final ne masque

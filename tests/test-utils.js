@@ -5580,9 +5580,16 @@ describe('resolveWebRefMarkers — pastilles', function() {
     expect(h).toContain('&lt;img src=x onerror=alert(1)&gt;');
     expect(h.indexOf('<img src=x')).toBe(-1);
   });
-  it('export (asPlainText) : lien ordinaire entre parenthèses, sans pastille', function() {
-    var h = resolveWebRefMarkers('Vrai. [web_ref:https://a.com/p] [web_ref:https://c.org/x]', reg(), { asPlainText: true });
-    expect(h).toBe('Vrai. <a href="https://a.com/p">(Site A)</a> <a href="https://c.org/x">(c.org)</a>');
+  it('export (asPlainText) : les mêmes pastilles qu\'à l\'écran', function() {
+    var t = 'Vrai. [web_ref:https://a.com/p] [web_ref:https://c.org/x]';
+    expect(resolveWebRefMarkers(t, reg(), { asPlainText: true })).toBe(resolveWebRefMarkers(t, reg()));
+  });
+  it('export (asPlainText) : au-delà de trois, tout visible et pas de « +N »', function() {
+    var t = [1, 2, 3, 4, 5].map(function(i) { return '[web_ref:https://s' + i + '.com]'; }).join(' ');
+    var h = resolveWebRefMarkers(t, new Map(), { asPlainText: true });
+    expect(h.split('class="web-ref ').length - 1).toBe(5);
+    expect(h.indexOf('wr-overflow')).toBe(-1);
+    expect(h.indexOf('web-ref-more')).toBe(-1);
   });
 });
 

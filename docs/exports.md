@@ -290,12 +290,23 @@ ultérieures du même lot).
   raisonnement précède l'appel d'outils qu'il motive) ; les acks précédant un
   `user` sont silencieusement droppés (même choix que `downloadConvMd`, pas une
   régression).
+  Pastilles de source reprises après rendu par `exportWebRefPills` : leur
+  infobulle à deux étages devient un `title` natif sur deux lignes
+  (`exportNativeTip` ne garderait que le premier, or le second dit si la page
+  a été consultée), et chaque favicon — une data-URL recopiée à CHAQUE
+  citation, jusqu'à 32 Ko — n'est plus écrite qu'une fois par favicon
+  distincte, en règle de fond `.wr-fav-N` dans un `<style>` en tête du corps
+  (`exportFaviconCss`, pur, qui revalide chaque source par `isSafeIconSrc` :
+  c'est la regex qui rend l'interpolation dans `url("…")` sûre). Les favicons
+  sont déjà des data-URL matricielles : le fichier n'appelle aucun réseau.
   Corps assistant via `renderMd(content, { asPlainText: true, refCtx, webSources })`
   (conv_ref et file_ref déliés en libellé nu ; `refCtx` est la conversation
   exportée, pas forcément celle affichée, pour le nom de repli d'un fichier ;
-  `web_ref` en lien externe ordinaire entre parenthèses, au libellé de la
-  pastille — nom de site, titre ou domaine — lu dans `webSources`, le registre
-  du thread EXPORTÉ ; aucun style de pastille, `EXPORT_CSS` étant figé), reasoning en `<details class="reasoning">` **fermé** par défaut, avec
+  `web_ref` en pastilles, état et libellé lus dans `webSources`, le registre
+  du thread EXPORTÉ — même HTML qu'à l'écran, mais aucune repliée derrière
+  « +N », un document n'ayant rien à déplier ; pointillés pour une page non
+  consultée et flèche au survol, CSS porté à la main dans `EXPORT_CSS`, piège
+  22), reasoning en `<details class="reasoning">` **fermé** par défaut, avec
   le contenu (`.reasoning-content`) **imbriqué DANS le `<summary>`** — même
   motif que `formatToolAcksHtml` (le détail est dans le summary, pas en frère) :
   tout le bloc est une zone de clic pliable **sans JS** (cf. piège
