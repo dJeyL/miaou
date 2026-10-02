@@ -18,6 +18,19 @@ la réponse, comme pour `promptOrder` (`docs/context-inspector.md`).
   propres à Mistral : `function_calling` pour les outils, `reasoning` pour le
   raisonnement, `completion_chat`, `vision`… Un vLLM nu expose
   `max_model_len` et aucune capacité.
+- **`/v1/models` au schéma d'OpenRouter** (relevé le 2026-10-03 sur 466
+  modèles). `context_length` est à plat ; il n'y a **pas** de champ
+  `capabilities`. Les capacités se lisent dans ce que le modèle **accepte** :
+  `architecture.input_modalities` (liste : `text`, `image`, `file`, `audio`,
+  `video`) pour la vision, et `supported_parameters`, liste des paramètres
+  de requête acceptés, pour les outils (`tools`) et le raisonnement
+  (`reasoning` ou `include_reasoning`). L'entrée porte aussi un objet
+  `reasoning` (`mandatory`, `supported_efforts`…) qu'on ne lit pas : il
+  existe sur des modèles dont `supported_parameters` ne liste pas
+  `reasoning` (`qwen/qwen3-max`), et c'est la requête acceptée qui décide de
+  ce que MIAOU peut envoyer. `top_provider.context_length` diffère de
+  `context_length` sur 41 modèles (plus petit, ou `null` sur les routeurs) :
+  on garde `context_length`, le maximum du modèle.
 - **`/api/tags` d'Ollama.** `capabilities` y est une **liste de chaînes**,
   qui **sous-déclare** : pour les GGUF, `tools` et `thinking` manquent
   (mesuré sur Ollama 0.34.2, `ornith-1.5:9b` y donne `completion, vision`,
@@ -47,7 +60,10 @@ déduit **que** d'une déclaration dont la forme est reconnue, c'est-à-dire
 qui contient au moins un nom connu, qu'il ait un équivalent consommé
 (`MODEL_CAP_ALIASES`) ou non (`MODEL_CAP_KNOWN_OTHER` : `completion`,
 `embedding`…). Une forme inconnue, une liste vide ou un objet aux noms
-étrangers rendent `null` partout.
+étrangers rendent `null` partout. Sur la forme d'OpenRouter, la règle
+s'applique à **chaque liste séparément** : quatre routeurs y ont une liste
+`supported_parameters` vide, ce qui laisse outils et raisonnement inconnus
+sans toucher à la vision, lue dans les modalités.
 
 La règle protège d'un défaut déjà payé. La première version de la sonde de
 découverte ne lisait que la forme liste, et concluait « ce backend ne
@@ -63,6 +79,12 @@ alias dès qu'un backend en montre un nouveau.
 
 - `normalizeModelCaps(raw, positiveOnly)` : liste ou objet → `{vision,
   tools, thinking}` tri-état. `positiveOnly` sert à `/api/tags`.
+- `modelCapsFromAcceptedInputs(entry)` : même sortie, lue dans
+  `input_modalities` et `supported_parameters` (forme d'OpenRouter), chacune
+  reconnue sur ses noms connus (`MODEL_INPUT_MODALITIES_KNOWN`,
+  `MODEL_REQUEST_PARAMS_KNOWN`). `modelPropsFromOpenAIModels` ne s'y replie
+  que si l'entrée n'a **pas** de champ `capabilities` : une déclaration
+  explicite fait foi.
 - `extractModelContextMax(obj)` → `{value, key}` ou `null`. Il essaie
   d'abord les clés à plat (`MODEL_CONTEXT_FLAT_KEYS`), puis
   `<general.architecture>.context_length`, puis toute clé en
@@ -80,7 +102,7 @@ alias dès qu'un backend en montre un nouveau.
   combine `/api/tags` (en positif) et `/api/show` (qui fait autorité).
 
 Les tests (`tests/test-api.js`) utilisent des réponses **réelles** élaguées
-des deux backends. Seul `/api/ps` est reconstruit sur sa forme documentée,
+des backends relevés. Seul `/api/ps` est reconstruit sur sa forme documentée,
 parce qu'aucun modèle n'était chargé au relevé.
 
 ## Persistance

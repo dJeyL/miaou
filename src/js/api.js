@@ -1514,7 +1514,9 @@ function searchSummaries(queryText, excludeId, spaceId) {
 // ── Propriétés déclarées des modèles (lot AF) ───────────────────────────────
 // Extraction PURE de ce que le backend déclare de chaque modèle : fenêtre de
 // contexte maximale et capacités. Aucune requête ici — les fonctions reçoivent
-// la réponse JSON déjà parsée. Trois formes mesurées (cf. docs/model-props.md) :
+// la réponse JSON déjà parsée. Formes mesurées (cf. docs/model-props.md) :
+//   - `/v1/models` au schéma d'OpenRouter : `context_length` à plat, pas de
+//     `capabilities` — cf. `modelCapsFromAcceptedInputs` ;
 //   - `/v1/models` au schéma Mistral : `max_context_length` à plat, capacités
 //     en OBJET de booléens aux noms propres (`function_calling`, `reasoning`) ;
 //     un vLLM nu y met `max_model_len`, sans capacités ;
@@ -1578,6 +1580,41 @@ function normalizeModelCaps(raw, positiveOnly) {
   return out;
 }
 
+// Seconde forme de déclaration, sans champ `capabilities` : les capacités se
+// lisent dans ce que le modèle ACCEPTE (schéma d'OpenRouter, mesuré sur 466
+// modèles) — `architecture.input_modalities` pour la vision, la liste
+// `supported_parameters` de la requête pour les outils (`tools`) et le
+// raisonnement (`reasoning`, `include_reasoning`). Même règle tri-état que
+// `normalizeModelCaps`, appliquée à CHAQUE liste séparément : une liste sans
+// aucun nom connu ne prouve rien, elle rend null pour les capacités qu'elle
+// porte. L'objet `reasoning` de l'entrée n'est pas lu : il existe sur des
+// modèles dont `supported_parameters` ne liste pas `reasoning` (mesuré), et
+// c'est la requête acceptée qui décide de ce que MIAOU peut envoyer.
+const MODEL_INPUT_MODALITIES_KNOWN = ['text', 'image', 'file', 'audio', 'video'];
+const MODEL_REQUEST_PARAMS_KNOWN = ['max_tokens', 'temperature', 'top_p', 'stop', 'seed',
+  'tools', 'tool_choice', 'reasoning', 'include_reasoning', 'response_format'];
+
+function _knownStringList(raw, known) {
+  if (!Array.isArray(raw)) return null;
+  const names = raw.filter(c => typeof c === 'string').map(c => c.toLowerCase());
+  return names.some(n => known.includes(n)) ? names : null;
+}
+
+function modelCapsFromAcceptedInputs(entry) {
+  const out = unknownModelCaps();
+  if (!entry || typeof entry !== 'object') return out;
+  const arch = entry.architecture;
+  const modalities = _knownStringList(arch && typeof arch === 'object' ? arch.input_modalities : null,
+    MODEL_INPUT_MODALITIES_KNOWN);
+  if (modalities) out.vision = modalities.includes('image');
+  const params = _knownStringList(entry.supported_parameters, MODEL_REQUEST_PARAMS_KNOWN);
+  if (params) {
+    out.tools = params.includes('tools');
+    out.thinking = params.includes('reasoning') || params.includes('include_reasoning');
+  }
+  return out;
+}
+
 function _positiveInt(v) {
   return (typeof v === 'number' && Number.isInteger(v) && v > 0) ? v : null;
 }
@@ -1634,8 +1671,11 @@ function modelPropsFromOpenAIModels(json) {
   for (const m of list) {
     if (!m || typeof m !== 'object' || typeof m.id !== 'string' || !m.id) continue;
     const ctx = extractModelContextMax(m);
-    out[m.id] = modelPropsRecord(ctx && ctx.value, ctx && ('models:' + ctx.key),
-      normalizeModelCaps(m.capabilities, false), null);
+    // `capabilities` déclaré fait foi ; à défaut, ce que le modèle accepte.
+    const caps = m.capabilities !== undefined
+      ? normalizeModelCaps(m.capabilities, false)
+      : modelCapsFromAcceptedInputs(m);
+    out[m.id] = modelPropsRecord(ctx && ctx.value, ctx && ('models:' + ctx.key), caps, null);
   }
   return out;
 }

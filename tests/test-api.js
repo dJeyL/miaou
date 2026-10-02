@@ -929,6 +929,81 @@ var AF_OLLAMA_PS = {
   ],
 };
 
+// `/api/v1/models` d'OpenRouter, entrées réelles élaguées (relevé du
+// 2026-10-03) : pas de `capabilities`, capacités lues dans ce que le modèle
+// accepte. Le troisième porte un objet `reasoning` sans que la requête accepte
+// `reasoning` ; le quatrième, un routeur, une liste de paramètres vide.
+var AF_OPENROUTER_MODELS = {
+  data: [
+    { id: 'openai/gpt-6.1-sol-pro', context_length: 1050000,
+      architecture: { modality: 'text+image+file->text', input_modalities: ['file', 'image', 'text'],
+        output_modalities: ['text'], tokenizer: 'GPT', instruct_type: null },
+      top_provider: { context_length: 1050000, max_completion_tokens: 128000, is_moderated: true },
+      supported_parameters: ['include_reasoning', 'max_completion_tokens', 'max_tokens', 'reasoning',
+        'reasoning_effort', 'response_format', 'seed', 'structured_outputs', 'tool_choice', 'tools', 'verbosity'],
+      reasoning: { mandatory: true } },
+    { id: 'inference-net/schematron-v2-turbo', context_length: 128000,
+      architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] },
+      supported_parameters: ['frequency_penalty', 'logit_bias', 'max_tokens', 'min_p', 'presence_penalty',
+        'repetition_penalty', 'response_format', 'seed', 'stop', 'structured_outputs', 'temperature', 'top_k', 'top_p'],
+      reasoning: null },
+    { id: 'qwen/qwen3-max', context_length: 262144,
+      architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] },
+      supported_parameters: ['frequency_penalty', 'logprobs', 'max_tokens', 'presence_penalty', 'response_format',
+        'seed', 'stop', 'structured_outputs', 'temperature', 'tool_choice', 'tools', 'top_k', 'top_logprobs', 'top_p'],
+      reasoning: { mandatory: false } },
+    { id: 'nvidia/switchyard', context_length: 1000000,
+      architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] },
+      top_provider: { context_length: null, max_completion_tokens: null, is_moderated: false },
+      supported_parameters: [], reasoning: null },
+  ],
+};
+
+describe('modelCapsFromAcceptedInputs (schéma OpenRouter réel)', function() {
+  it('modalité image + tools + reasoning acceptés → tout vrai', function() {
+    expect(modelCapsFromAcceptedInputs(AF_OPENROUTER_MODELS.data[0]))
+      .toEqual({ vision: true, tools: true, thinking: true });
+  });
+  it('listes reconnues sans le nom → false', function() {
+    expect(modelCapsFromAcceptedInputs(AF_OPENROUTER_MODELS.data[1]))
+      .toEqual({ vision: false, tools: false, thinking: false });
+  });
+  it('objet reasoning sans paramètre reasoning accepté → thinking false', function() {
+    expect(modelCapsFromAcceptedInputs(AF_OPENROUTER_MODELS.data[2]))
+      .toEqual({ vision: false, tools: true, thinking: false });
+  });
+  it('liste de paramètres vide : outils et raisonnement inconnus, vision lue', function() {
+    expect(modelCapsFromAcceptedInputs(AF_OPENROUTER_MODELS.data[3]))
+      .toEqual({ vision: false, tools: null, thinking: null });
+  });
+  it('include_reasoning seul suffit au raisonnement', function() {
+    expect(modelCapsFromAcceptedInputs({ supported_parameters: ['max_tokens', 'include_reasoning'] }).thinking)
+      .toBe(true);
+  });
+  it('listes aux noms étrangers ou absentes → inconnu', function() {
+    expect(modelCapsFromAcceptedInputs({ architecture: { input_modalities: ['pixels'] },
+      supported_parameters: ['frobnicate'] })).toEqual({ vision: null, tools: null, thinking: null });
+    expect(modelCapsFromAcceptedInputs({ id: 'x' })).toEqual({ vision: null, tools: null, thinking: null });
+    expect(modelCapsFromAcceptedInputs(null)).toEqual({ vision: null, tools: null, thinking: null });
+  });
+});
+
+describe('modelPropsFromOpenAIModels (schéma OpenRouter réel)', function() {
+  it('fenêtre context_length et capacités lues sans champ capabilities', function() {
+    var p = modelPropsFromOpenAIModels(AF_OPENROUTER_MODELS);
+    expect(p['openai/gpt-6.1-sol-pro']).toEqual({
+      contextMax: 1050000, contextSource: 'models:context_length', contextConfigured: null, served: null,
+      caps: { vision: true, tools: true, thinking: true },
+    });
+    expect(p['qwen/qwen3-max'].caps).toEqual({ vision: false, tools: true, thinking: false });
+  });
+  it('un champ capabilities présent fait foi, même à côté des listes', function() {
+    var p = modelPropsFromOpenAIModels({ data: [{ id: 'm', capabilities: { completion_chat: true, vision: true },
+      supported_parameters: ['max_tokens', 'tools'] }] });
+    expect(p.m.caps).toEqual({ vision: true, tools: false, thinking: false });
+  });
+});
+
 describe('normalizeModelCaps (tri-état, forme reconnue seulement)', function() {
   it('objet Mistral : alias function_calling → tools, reasoning → thinking', function() {
     expect(normalizeModelCaps(AF_MISTRAL_MODELS.data[0].capabilities, false))

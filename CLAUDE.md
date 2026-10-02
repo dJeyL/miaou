@@ -591,7 +591,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
 - **`docs/model-props.md`** — propriétés déclarées des modèles (lot AF) :
   fenêtre de contexte et capacités lues dans la réponse du backend, jamais
   devinées depuis son identité. Formes mesurées : l'objet de booléens
-  du schéma Mistral sur `/v1/models`, `/api/tags` d'Ollama lu en positif
+  du schéma Mistral sur `/v1/models`, celui d'OpenRouter qui n'a pas de
+  `capabilities` (lues dans `input_modalities` et `supported_parameters` par
+  `modelCapsFromAcceptedInputs`), `/api/tags` d'Ollama lu en positif
   seulement parce qu'il sous-déclare, et `/api/show`, qui fait autorité ;
   `/api/ps` donne la fenêtre servie. Capacités TRI-ÉTAT, avec `false`
   seulement sur une forme reconnue. Les purs sont `normalizeModelCaps`,
