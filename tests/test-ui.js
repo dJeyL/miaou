@@ -167,10 +167,110 @@ describe('buildExportHtml', function() {
     var r = buildExportHtml(base);
     expect(r.indexOf('<body>') >= 0).toBeTruthy();
   });
+  it('largeur de colonne : un radio par cran de l\'application, le cran demandé coché', function() {
+    var r = buildExportHtml(Object.assign({}, base, { colStep: 1 }));
+    expect(r.split('class="col-w"').length - 1).toBe(COL_WIDTH_STEPS.length);
+    expect(r).toContain('id="col-w-1" value="1" checked');
+    expect(r.split(' checked aria-label="Largeur').length - 1).toBe(1);
+  });
+  it('largeur de colonne : cran absent ou hors bornes → borné, jamais aucun coché', function() {
+    expect(buildExportHtml(base)).toContain('id="col-w-0" value="0" checked');
+    var last = COL_WIDTH_STEPS.length - 1;
+    expect(buildExportHtml(Object.assign({}, base, { colStep: 99 }))).toContain('id="col-w-' + last + '" value="' + last + '" checked');
+  });
+  it('largeur de colonne : contrôle statique, présent sans scriptTag', function() {
+    var r = buildExportHtml(base);
+    expect(r.indexOf('<script') >= 0).toBeFalsy();
+    expect(r).toContain('class="col-width-ctl"');
+  });
+  it('commandes de lecture DANS la barre du cartouche quand il y a un titre', function() {
+    var r = buildExportHtml(base);
+    var bar = r.slice(r.indexOf('<div class="export-topbar">'), r.indexOf('<div class="export-body">'));
+    expect(bar).toContain('<div class="export-tools"><div class="col-width-ctl"');
+    expect(bar).toContain('class="theme-switch-label"');
+    expect(r.indexOf('export-tools floating')).toBe(-1);
+  });
+  it('sans titre : commandes flottantes, aucun cartouche', function() {
+    var r = buildExportHtml(Object.assign({}, base, { title: null }));
+    expect(r.indexOf('export-topbar')).toBe(-1);
+    expect(r).toContain('<div class="export-tools floating"><div class="col-width-ctl"');
+  });
+  it('entrées (case et radios) en tête de body, avant toute commande visible', function() {
+    var r = buildExportHtml(base);
+    var b = r.indexOf('<body');
+    expect(b < r.indexOf('id="theme-switch"')).toBeTruthy();
+    expect(r.lastIndexOf('class="col-w"') < r.indexOf('class="export-tools')).toBeTruthy();
+  });
   it('la bascule de thème est du markup STATIQUE (présente sans scriptTag)', function() {
     var r = buildExportHtml(base);
     expect(r.indexOf('<script') >= 0).toBeFalsy();
     expect(r.indexOf('class="theme-switch-label"') >= 0).toBeTruthy();
+  });
+});
+
+describe('exportColWidthCss / exportColWidthControlHtml', function() {
+  it('largeurs = base x cran, la première en défaut sur body', function() {
+    var css = exportColWidthCss([1, 1.25, 1.5], 900);
+    expect(css).toContain('body { --export-col: 900px; }');
+    expect(css).toContain('body:has(#col-w-1:checked) { --export-col: 1125px; }');
+    expect(css).toContain('body:has(#col-w-2:checked) { --export-col: 1350px; }');
+  });
+  it('une paire affichée par cran coché', function() {
+    var css = exportColWidthCss([1, 1.25, 1.5], 900);
+    expect(css).toContain('body:has(#col-w-0:checked) .col-w-pair-0 { display: flex; }');
+    expect(css).toContain('body:has(#col-w-2:checked) .col-w-pair-2 { display: flex; }');
+  });
+  it('chaque paire vise ses voisins, butées éteintes', function() {
+    var h = exportColWidthControlHtml(3, 0);
+    var p0 = h.slice(h.indexOf('col-w-pair-0'), h.indexOf('col-w-pair-1'));
+    var p1 = h.slice(h.indexOf('col-w-pair-1'), h.indexOf('col-w-pair-2'));
+    var p2 = h.slice(h.indexOf('col-w-pair-2'));
+    expect(p0).toContain('<span class="col-width-btn is-off">');
+    expect(p0).toContain('for="col-w-1" title="Élargir la colonne"');
+    expect(p1).toContain('for="col-w-0" title="Resserrer la colonne"');
+    expect(p1).toContain('for="col-w-2" title="Élargir la colonne"');
+    expect(p2).toContain('for="col-w-1" title="Resserrer la colonne"');
+    expect(p2.split('is-off').length - 1).toBe(1);
+  });
+});
+
+describe('palette des exports', function() {
+  var P = ['ambre', 'encre', 'foret'];
+  var L = { ambre: 'Ambre', encre: 'Encre', foret: 'Forêt' };
+  it('tokens : un jeu sombre et un jeu clair par palette, clair = palette + case cochée', function() {
+    var by = { ambre: { dark: '--accent:A;', light: '--accent:a;' }, encre: { dark: '--accent:E;', light: '--accent:e;' }, foret: { dark: '--accent:F;', light: '--accent:f;' } };
+    var css = exportPaletteTokensCss(P, by);
+    expect(css.indexOf('body{--accent:A;}')).toBe(0);
+    expect(css).toContain('body:has(#pal-encre:checked){--accent:E;}');
+    expect(css).toContain('body:has(#pal-encre:checked):has(#theme-switch:checked){--accent:e;}');
+    expect(css).toContain('body:has(#pal-foret:checked):has(#theme-switch:checked){--accent:f;}');
+  });
+  it('pastilles : chacune vise la suivante, la dernière revient à la première', function() {
+    var h = exportPaletteSwatchesHtml(P, L);
+    expect(h).toContain('class="pal-swatch pal-swatch-ambre" for="pal-encre" title="Palette Ambre — cliquer pour Encre"');
+    expect(h).toContain('class="pal-swatch pal-swatch-encre" for="pal-foret"');
+    expect(h).toContain('class="pal-swatch pal-swatch-foret" for="pal-ambre" title="Palette Forêt — cliquer pour Ambre"');
+  });
+  it('une règle d\'affichage par palette cochée', function() {
+    var css = exportPaletteCss(P);
+    expect(css).toContain('body:has(#pal-encre:checked) .pal-swatch-encre { display: grid; }');
+    expect(css.split('display: grid').length - 1).toBe(P.length);
+  });
+  it('buildExportHtml : palette de l\'application cochée à l\'ouverture', function() {
+    var r = buildExportHtml({ title: 'T', dateDisplay: 'd', theme: 'dark', styleCss: '', bodyHtml: '', palette: 'foret' });
+    expect(r).toContain('id="pal-foret" value="foret" checked');
+    expect(r.split(' checked aria-label="Palette').length - 1).toBe(1);
+  });
+  it('buildExportHtml : palette inconnue ou absente → la première de PALETTES', function() {
+    var r = buildExportHtml({ title: 'T', dateDisplay: 'd', theme: 'dark', styleCss: '', bodyHtml: '', palette: 'zzz' });
+    expect(r).toContain('id="pal-' + PALETTES[0] + '" value="' + PALETTES[0] + '" checked');
+    var r2 = buildExportHtml({ title: 'T', dateDisplay: 'd', theme: 'dark', styleCss: '', bodyHtml: '' });
+    expect(r2).toContain('id="pal-' + PALETTES[0] + '" value="' + PALETTES[0] + '" checked');
+  });
+  it('buildExportHtml : une pastille par palette de l\'application, dans les commandes', function() {
+    var r = buildExportHtml({ title: 'T', dateDisplay: 'd', theme: 'dark', styleCss: '', bodyHtml: '' });
+    PALETTES.forEach(function(p) { expect(r).toContain('pal-swatch-' + p + '"'); });
+    expect(r.indexOf('class="pal-swatch') > r.indexOf('class="export-tools')).toBeTruthy();
   });
 });
 

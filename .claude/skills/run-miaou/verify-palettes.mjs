@@ -9,8 +9,8 @@
 //      inversement (les deux axes sont indépendants).
 //   4. Persistance + rechargement sans flash (data-palette posé par le boot).
 //   5. EXPORT : THEME_TOKENS reste couvert — aucun token résolu vide, et
-//      serializeThemeTokens capture la palette active (byte-neutralité prouvée
-//      au RUNTIME, pas par lecture).
+//      serializeThemeTokens capture TOUTES les palettes (pastille de palette
+//      de l'export), sans dépendre de la palette active ni la déplacer.
 // Usage : node verify-palettes.mjs [dossier-captures] [--headed]
 import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
@@ -207,17 +207,27 @@ const tokenCoverage = await page.evaluate(() => {
 check(`aucun THEME_TOKENS vide (${tokenCoverage.total} tokens)`, tokenCoverage.empty.length === 0);
 if (tokenCoverage.empty.length) console.log('        vides : ' + tokenCoverage.empty.join(', '));
 
-// serializeThemeTokens doit refléter la palette ACTIVE, et porter les deux thèmes.
+// serializeThemeTokens porte TOUTES les palettes depuis la pastille de palette
+// de l'export : ce qu'il émet ne dépend plus de la palette active (ancienne
+// assertion « change avec la palette », dont le contrat a changé), et il
+// restaure data-theme ET data-palette.
 const ser = await page.evaluate(() => {
-  const before = document.documentElement.getAttribute('data-theme');
+  const root = document.documentElement;
+  const before = root.getAttribute('data-theme');
   const out = { foret: serializeThemeTokens() };
+  out.paletteRestored = root.getAttribute('data-palette') === 'foret';
   selectPalette('encre');
   out.encre = serializeThemeTokens();
+  out.paletteRestored = out.paletteRestored && root.getAttribute('data-palette') === 'encre';
   selectPalette('foret');
-  out.themeRestored = document.documentElement.getAttribute('data-theme') === before;
+  out.themeRestored = root.getAttribute('data-theme') === before;
+  out.palettes = PALETTES.slice();
   return out;
 });
-check('serializeThemeTokens change avec la palette', ser.foret !== ser.encre);
+check('serializeThemeTokens identique quelle que soit la palette active', ser.foret === ser.encre);
+check('serializeThemeTokens porte un jeu par palette',
+      ser.palettes.every(p => ser.encre.includes('body:has(#pal-' + p + ':checked){')));
+check('serializeThemeTokens restaure data-palette (try/finally)', ser.paletteRestored === true);
 check('serializeThemeTokens porte les deux thèmes (body{…} + sélecteur clair)',
       /body\{/.test(ser.encre) && /theme-switch:checked/.test(ser.encre));
 check('serializeThemeTokens restaure data-theme (try/finally)', ser.themeRestored === true);

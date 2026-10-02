@@ -6586,6 +6586,9 @@ function selectTheme(theme) {
 
 // ── Palettes (axe orthogonal au thème clair/sombre, lot S-a) ────────────────
 const PALETTES = ['ambre', 'encre', 'foret'];
+// Libellés affichés hors du sélecteur des réglages (pastille de palette des
+// exports). Le sélecteur, lui, les porte en dur dans index.html.
+const PALETTE_LABELS = { ambre: 'Ambre', encre: 'Encre', foret: 'Forêt' };
 const PALETTE_HINTS = {
   ambre: "Orange chaud sur gris froids (palette d'origine).",
   encre: "Bleu franc sur bleu-nuit, gris-bleu en clair.",

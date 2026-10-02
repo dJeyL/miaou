@@ -97,9 +97,11 @@ garde les paliers globaux.
 ## Export : gratuit, sous condition
 
 `readThemeTokens` (export.js) lit les valeurs **résolues** via `getComputedStyle`,
-avec bascule temporaire de `data-theme` pour capturer les deux variantes
-(`serializeThemeTokens`). Une palette qui redéfinit des tokens **existants** est
-donc capturée sans toucher à l'export.
+avec bascule temporaire de `data-theme` ET de `data-palette` pour capturer les
+six combinaisons (`serializeThemeTokens`) : le lecteur d'un export peut changer
+de palette (pastille, cf. `docs/exports.md`). Une palette qui redéfinit des
+tokens **existants**, ou une palette ajoutée à `PALETTES` (avec son libellé dans
+`PALETTE_LABELS`), est donc capturée sans toucher à l'export.
 
 Attention : `getPropertyValue('--x')` rend la **déclaration**
 (`hsl(219 12% 4.9%)`), pas la couleur calculée. C'est sans conséquence pour

@@ -396,14 +396,16 @@ ultérieures du même lot).
   statique).
 
   **Depuis le lot R, les DEUX jeux de tokens sont émis** (avant : le seul thème
-  effectif) — c'est ce qui permet de changer de thème à la lecture.
+  effectif) — c'est ce qui permet de changer de thème à la lecture. **Puis un
+  jeu par (palette, luminosité)**, pour changer aussi de palette (cf. « Palette
+  dans l'export » plus bas).
 
   **La case à cocher `#theme-switch` est la SEULE source de vérité du thème**
-  dans un export. Les tokens sortent sous la forme `body{…sombre…}` +
-  `body:has(#theme-switch:checked){…clair…}` (helper `exportLightSelector()`,
-  formule unique partagée avec les surcharges Prism via
-  `prismThemeCssForExport()` — deux formules divergentes redonneraient le bug
-  « l'icône change mais pas les couleurs »).
+  dans un export. Les tokens sortent sous la forme
+  `body:has(#pal-P:checked){…sombre…}` + `body:has(#pal-P:checked):has(#theme-switch:checked){…clair…}`
+  pour chaque palette P (`exportPaletteTokensCss`, pur). Les surcharges Prism,
+  qui ne dépendent pas de la palette, passent par `exportLightSelector()` et
+  `prismThemeCssForExport()`.
 
   **Aucun `data-theme` n'est posé sur le `<html>` exporté**, contrairement à
   l'app. Première version du lot : attribut figé par `buildExportHtml` + bouton
@@ -415,16 +417,18 @@ ultérieures du même lot).
   **Pas de `@media (prefers-color-scheme)`** : `theme-light.css` proscrit
   explicitement ce doublon (« UNE seule variante ») et l'export s'aligne.
 
-  **Lecture du thème inactif : bascule temporaire de `documentElement`.** Les
-  tokens du thème non appliqué ne sont lisibles QUE sur l'élément racine — les
+  **Lecture du thème et des palettes inactifs : bascule temporaire de
+  `documentElement`** (`data-theme` ET `data-palette`, six lectures, la palette
+  par défaut sans attribut comme dans `applyPalette`). Les tokens d'un état non
+  appliqué ne sont lisibles QUE sur l'élément racine — les
   sélecteurs de l'app sont ancrés sur `html`, donc un élément détaché ou hors
   écran portant `data-theme` ne les résout pas (vérifié au spike : détaché →
   chaînes vides ; hors écran → valeurs du thème *actif*). `serializeThemeTokens()`
   bascule donc l'attribut de l'APP, mesure, restaure — **entièrement synchrone**
   (aucun `await` entre bascule et restauration, donc aucun repaint intercalé :
   invisible) et sous `try/finally`. L'attribut est touché **en direct**, jamais
-  via `applyTheme` (hooks Mermaid/accueil) ni `selectTheme` (persistance +
-  broadcast multi-onglets, piège 24).
+  via `applyTheme`/`applyPalette` (hooks Mermaid/accueil) ni `selectTheme`/
+  `selectPalette` (persistance + broadcast multi-onglets, piège 24).
 
 - **`PRISM_THEME_CSS`** (export.js, constante) : copie **figée** de
   `prism-tomorrow.min.css` (CDN, cf. `index.html`) + les overrides Prism clair
@@ -450,14 +454,15 @@ ultérieures du même lot).
   changée), `EXPORT_CSS` ne suit PAS automatiquement — seuls les tokens de
   couleur (voie `getComputedStyle`) restent synchronisés. Revue manuelle à la
   charge de qui retouche ce CSS.
-  - **Largeur de lecture : `900px` EN DUR**, pas via `var(--col)` (720px,
+  - **Largeur de lecture : `--export-col`**, pas `var(--col)` (720px,
     gabarit du composer écran) : `--col` est volontairement absent de
-    `THEME_TOKENS` (sans usage dans un document statique), donc y référencer
-    `var(--col)` résoudrait à rien. 900px choisi après retour manuel (« 720px
-    trop étroit ») pour une lecture plus confortable qu'à l'écran, sans
-    devenir disproportionné sur un grand écran (`.export-topbar`/
-    `.export-body`/`.export-footer` partagent tous cette valeur en dur — si
-    on la change, la changer aux trois endroits).
+    `THEME_TOKENS` (sans usage dans un document statique). Base
+    `EXPORT_COL_BASE` (900px, choisi après retour manuel « 720px trop
+    étroit »), réglable à la lecture par crans — cf. « Largeur de colonne dans
+    l'export » plus bas. Tout ce qui dépend de la colonne la lit dans cette
+    variable : cartouche, corps, footer, position de la bascule de thème et du
+    contrôle de largeur, bornes des tableaux élargis. Aucun pixel de largeur
+    n'est écrit dans `EXPORT_CSS`.
   - **`zoom: 0.9` sur `<html>`** : dézoom global de l'export (retour manuel —
     la mise en page par défaut était perçue comme trop grande). Choisi plutôt
     que `transform: scale(0.9)` (universellement supporté mais laisse un
@@ -533,11 +538,10 @@ motivé le passage au markup statique.
   Sans ce script, la bascule marche, le choix n'est simplement pas mémorisé d'une
   ouverture à l'autre. Il ne pose **aucun attribut de thème** (cf.
   `serializeThemeTokens()` : la case est seule source de vérité).
-- **Placement** : `position: fixed` — contrainte du sélecteur `:has()`, qui
-  impose que la case reste en tête de `body`. Calé sur la **colonne de lecture**
-  (`left: min(100vw - 50px, 50% + 450px)`), pas sur le bord du viewport. Deux
-  jets antérieurs rejetés : bas-droite (flottait dans le vide sous le contenu),
-  puis `right: 16px` (désolidarisé du cartouche sur grand écran).
+- **Placement** : la CASE reste en tête de `body` ; le LABEL vit dans
+  `.export-tools`, avec le contrôle de largeur (cf. « Placement des commandes
+  de lecture » plus bas). Rien ne les relie par un sélecteur de frère : icône et
+  focus passent par `body:has(#theme-switch:…)`.
 - **Icône** : soleil quand on est en sombre, lune quand on est en clair —
   l'icône montre **la destination**, pas l'état courant.
 - **Limite connue : les diagrammes Mermaid ne suivent pas.** `embedExportMermaid`
@@ -545,6 +549,70 @@ motivé le passage au markup statique.
   l'export** ; la bascule ne les recolore pas. Les faire suivre imposerait
   d'embarquer Mermaid dans le fichier exporté (hors sujet, ~2,5 Mo). Limite
   assumée, documentée aussi dans `src/help.md`.
+
+## Palette dans l'export
+
+Le lecteur n'est pas prisonnier de la palette de l'auteur : une pastille ronde
+fait défiler les palettes, sans JavaScript, sur le modèle de la largeur.
+
+- **Palettes** : celles de l'application, `PALETTES` (ui.js), libellés dans
+  `PALETTE_LABELS` — lus, jamais recopiés. Le fichier s'ouvre sur la palette de
+  l'auteur (`palette`, depuis `settings.palette` ; valeur inconnue → la
+  première, comme `applyPalette`).
+- **Mécanique** : un radio masqué `.pal-r` par palette en tête de `body`
+  (`exportPaletteRadiosHtml`) ; les tokens de chaque combinaison sont émis par
+  `exportPaletteTokensCss` (cf. plus haut).
+- **Pastille** (`exportPaletteSwatchesHtml`) : une étiquette par palette, seule
+  affichée quand sa palette est cochée (`exportPaletteCss`), visant le radio de
+  la SUIVANTE — un clic fait défiler, en boucle. Son disque est
+  `var(--accent)`, donc de la couleur ACTIVE sans règle par palette. Écart
+  assumé avec la bascule de thème, dont l'icône montre la destination : une
+  pastille de couleur se lit comme un état ; l'infobulle nomme la suivante
+  (« Palette Ambre — cliquer pour Encre »). Même gabarit que la bascule (34px,
+  40px en tactile), même resserrement au défilement. Visible sur mobile.
+- **Ordre dans `.export-tools`** : largeur, palette, thème — les deux réglages
+  d'apparence groupés à droite.
+- **Persistance** par `EXPORT_SCRIPT` (`miaou-export-palette`, clef commune à
+  tous les exports) : le choix du lecteur s'applique aux exports qu'il ouvre
+  ensuite, d'où qu'ils viennent.
+- **Limite** : les diagrammes Mermaid gardent les couleurs résolues à l'export,
+  pour la palette comme pour la luminosité.
+
+## Largeur de colonne dans l'export
+
+Même principe que la bascule de thème : **markup statique, sans JavaScript**,
+émis par `buildExportHtml` pour les deux producteurs (export de conversation et
+conversion Markdown).
+
+- **Crans** : ceux de l'application, `COL_WIDTH_STEPS` (ui.js), lus et jamais
+  recopiés, multipliés par `EXPORT_COL_BASE`. Le fichier s'ouvre au cran de
+  l'auteur au moment de l'export (`colStep`, depuis `settings.colWidth`, borné
+  par `clampColWidthStep`), comme le thème.
+- **Mécanique** : un radio masqué `.col-w` par cran en tête de `body`
+  (`exportColWidthRadiosHtml`), en `position: fixed` pour la même raison que
+  `#theme-switch` (le focus donné par un clic sur un label ferait sinon remonter
+  la page). `exportColWidthCss` émet
+  `body:has(#col-w-N:checked) { --export-col: … }`, dans un `<style>` à part de
+  `styleCss`. Les radios restent focalisables et portent le nom accessible : les
+  flèches du clavier changent de cran.
+- **Contrôle « – / + »** (`exportColWidthControlHtml`) : un label ne visant
+  qu'UN radio, chaque cran a sa paire `.col-w-pair-N`, seule affichée quand il
+  est coché ; « – » vise le cran du dessous, « + » celui du dessus, et la butée
+  est un `span.is-off` éteint. Le conteneur est `aria-hidden` : purement visuel
+  pour la souris, l'accès clavier passe par les radios.
+- **Placement** : « – + » à gauche de la bascule, dans `.export-tools`
+  (`exportToolsHtml`) — cf. « Placement des commandes de lecture » plus bas.
+  Masqué sous 767px, où la colonne occupe déjà l'écran. Deux jets écartés : à
+  gauche de la bascule SANS cartouche collé (le contrôle recouvrait le texte
+  au défilement), puis sous la bascule (la ligne du cartouche le coupait en
+  deux, et une paire empilée se lit comme un zoom).
+- **Transition** de `max-width` (cartouche, corps, footer) et de `right` (groupe
+  flottant) sous `prefers-reduced-motion: no-preference`. PAS sur les tableaux
+  élargis : leur largeur suit aussi le viewport, une transition permanente les
+  ferait traîner derrière un redimensionnement de fenêtre.
+- **Persistance** par `EXPORT_SCRIPT`, sous une clé unique pour tous les exports
+  (`miaou-export-col`), comme le thème ; un cran mémorisé qui n'existe plus est
+  ignoré.
 
 ## Conversion Markdown → HTML (lot R)
 
@@ -682,23 +750,55 @@ Deux correctifs, indissociables :
   passait pour absent — retour Julien). Opacité pleine, couleur `--text-2`, et
   cible portée à 40px.
 
-**Placement du bouton (deux correctifs successifs, tous deux mesurés).** Le
-label est en `position: fixed` — contrainte du sélecteur `:has()`, qui impose
-que la case reste en tête de `body` — donc **hors du flux** :
+**Placement des commandes de lecture.** Bascule de thème et contrôle de largeur
+forment un groupe, `.export-tools`, émis à l'un de deux endroits :
 
-- il ne réserve aucune place, et un titre long passait **dessous** en se faisant
-  amputer (constaté sur iPhone, chevauchement mesuré à 38px). D'où le
-  `padding-right` de `.export-topbar` (66px, 72px en tactile où le bouton est
-  plus gros) : c'est cette réserve, et rien d'autre, qui protège le titre. La
-  retirer ramènerait le bug.
-- calé sur `right: 16px`, il suivait le bord du **viewport** alors que le
-  cartouche est une colonne de 900px **centrée** : sur un écran de 1440px il
-  flottait à ~270px du cartouche, visuellement désolidarisé. Remplacé par
-  `left: min(100vw - 50px, 50% + 450px)` — bord droit de la colonne sur grand
-  écran, bord de l'écran quand le viewport est plus étroit qu'elle.
+- **Avec cartouche** : élément EN FLUX de la barre, après le titre (`flex: 1`,
+  `min-width: 0`). Alignement sur le bord droit du contenu et centrage vertical
+  sont ceux de la mise en page, quelle que soit la hauteur de la barre — titre
+  sur plusieurs lignes, resserrement au défilement, bascule tactile de 40px.
+  Le cartouche est **collé en haut à toutes les largeurs** (`position: sticky`,
+  fond `--topbar-bg` et flou de la topbar de l'application) : c'est ce qui
+  garde les commandes à portée sans qu'elles couvrent le texte, mobile compris,
+  où la bascule fixe passait sur le texte pendant tout le défilement.
+  `scroll-padding-top` fait viser les ancres internes sous lui.
+- **Sans cartouche** (Markdown sans titre) : groupe `.floating` en
+  `position: fixed`, calé sur le bord droit de la COLONNE
+  (`right: max(14px, 50% - min(--export-col, 100vw) / 2 - 36px)`) — une barre
+  vide aurait l'air d'un oubli.
 
-`verify-export-mobile` mesure les deux (chevauchement titre/bouton en mobile ET
-desktop, écart bouton/colonne sur grand écran).
+Historique, pour ne pas y revenir : la bascule a d'abord été seule en `fixed`
+(contrainte d'un sélecteur de frère `#theme-switch:checked + label`, abandonné
+pour `body:has`). Hors du flux, elle ne réservait aucune place et un titre long
+passait **dessous** (mesuré à 38px sur iPhone), d'où un `padding-right` de
+réserve ; calée sur `right: 16px`, elle flottait à ~270px du cartouche sur grand
+écran ; ajouter le contrôle de largeur à côté d'elle imposait de recaler des
+coordonnées fixes à chaque variante (bordures, hauteur de barre, tactile), et
+deux décalages de 2px en sont sortis à la première mesure. Le passage en flux
+supprime toutes ces constantes.
+
+**Resserrement au défilement**, en CSS seul (`animation-timeline: scroll(root)`
+sous `@supports`, sur les 80 premiers pixels) : logo 44 → 30px, titre 16 →
+14px, marges 14 → 8px, bascule 34 → 28px (pas en tactile, qui garde sa cible
+de 40px) ; les commandes, en flux, suivent d'elles-mêmes. Sans support, le
+cartouche garde sa taille. La hauteur perdue (26px) est rendue en
+`margin-bottom` sur le porteur sticky : son empreinte dans le flux ne bouge pas,
+sinon le contenu remonterait pendant le geste et un document à peine plus haut
+que l'écran oscillerait entre défilable et non défilable. Ce compte n'est
+exact que si le logo donne sa hauteur à la barre ; un titre sur plusieurs
+lignes ou la bascule tactile la déterminent alors en partie, et l'empreinte
+glisse de quelques pixels pendant ces 80 pixels — écart assumé. La bascule est
+resserrée pour cette raison : en flux et à 36px, elle bornait la barre
+resserrée à 52px (glissement de 6px mesuré).
+
+`verify-export-mobile` mesure, sur mobile (iPhone 13) puis sur grand écran à
+chaque cran de largeur, avant et après défilement : cartouche collé, commandes
+alignées sur le bord du contenu et centrées sur sa hauteur, titre non
+chevauché, pas de défilement horizontal ; sur grand écran en plus, empreinte du
+cartouche dans le flux constante, ratio des largeurs égal à `COL_WIDTH_STEPS`,
+butées, clavier, persistance au rechargement, et le cas sans titre (commandes
+flottantes hors colonne). L'empreinte n'est pas mesurée sur mobile, où le titre
+du test passe sur plusieurs lignes (écart assumé ci-dessus).
 
 ## Horodatages des messages
 

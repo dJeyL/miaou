@@ -39,8 +39,8 @@ function readThemeTokens() {
   return THEME_TOKENS.map(name => name + ':' + cs.getPropertyValue(name).trim() + ';').join('');
 }
 
-// Sérialise les DEUX jeux de tokens pour que l'export interactif puisse
-// basculer de thème (bouton posé par EXPORT_SCRIPT) — même forme que
+// Sérialise les jeux de tokens de CHAQUE palette, dans les deux luminosités,
+// pour que l'export puisse basculer de thème et de palette — même forme que
 // theme-light.css et PRISM_THEME_CSS : `:root` porte le sombre, le clair
 // surcharge sous `html[data-theme="light"]`. PAS de @media
 // (prefers-color-scheme) : theme-light.css proscrit explicitement ce doublon
@@ -48,10 +48,10 @@ function readThemeTokens() {
 // (arbitrage Julien) : un export NON interactif reste figé sur le thème actif
 // à l'export, sans suivi de l'OS — statu quo, pas une régression.
 //
-// Les tokens du thème inactif ne sont lisibles QUE sur documentElement : les
-// sélecteurs sont ancrés sur `html`, un élément détaché ou hors écran portant
-// data-theme ne les résout pas (spike tranché). D'où la bascule temporaire de
-// l'attribut, ENTIÈREMENT SYNCHRONE (aucun await entre bascule et restauration
+// Les tokens d'un thème ou d'une palette inactifs ne sont lisibles QUE sur
+// documentElement : les sélecteurs sont ancrés sur `html`, un élément détaché
+// ou hors écran portant data-theme ne les résout pas (spike tranché). D'où la
+// bascule temporaire des attributs, ENTIÈREMENT SYNCHRONE (aucun await entre bascule et restauration
 // → aucun repaint intercalé, invisible) et sous try/finally. On touche
 // l'attribut EN DIRECT, jamais via applyTheme (hooks Mermaid/accueil) ni
 // selectTheme (persistance + broadcast multi-onglets, piège 24).
@@ -80,38 +80,50 @@ function prismThemeCssForExport() {
 
 function serializeThemeTokens() {
   const root = document.documentElement;
-  const active = root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-  const activeCss = readThemeTokens();
-  let otherCss;
+  const savedTheme = root.getAttribute('data-theme');
+  const savedPalette = root.getAttribute('data-palette');
+  const byPalette = {};
   try {
-    root.setAttribute('data-theme', active === 'light' ? 'dark' : 'light');
-    otherCss = readThemeTokens();
+    PALETTES.forEach(function(p) {
+      // Même règle que applyPalette : la palette par défaut ne pose aucun
+      // attribut. On touche les attributs EN DIRECT (cf. plus haut).
+      if (p === PALETTES[0]) root.removeAttribute('data-palette');
+      else root.setAttribute('data-palette', p);
+      root.setAttribute('data-theme', 'dark');
+      const dark = readThemeTokens();
+      root.setAttribute('data-theme', 'light');
+      byPalette[p] = { dark: dark, light: readThemeTokens() };
+    });
   } finally {
-    root.setAttribute('data-theme', active);
+    if (savedTheme === null) root.removeAttribute('data-theme'); else root.setAttribute('data-theme', savedTheme);
+    if (savedPalette === null) root.removeAttribute('data-palette'); else root.setAttribute('data-palette', savedPalette);
   }
-  const darkCss = active === 'dark' ? activeCss : otherCss;
-  const lightCss = active === 'light' ? activeCss : otherCss;
-  // Les tokens sont portés par `body`, PAS `:root` : la bascule sans JS repose
-  // sur une case à cocher (#theme-switch, premier enfant de body) et un
-  // sélecteur de frère — un frère ne peut pas remonter jusqu'à <html>. Depuis
-  // body les variables héritent à tout le document, ce qui revient au même.
-  //
-  // Deux voies de surcharge claire, volontairement redondantes :
-  //  - `body:has(#theme-switch:checked)` : fonctionne **sans JavaScript**
-  //    (visionneuses type Quick Look iOS, qui n'exécutent aucun script).
-  //    `:has()` évite d'énumérer les frères de la case — sinon tout nouveau
-  //    bloc de premier niveau devrait être ajouté à la liste, et le fond de
-  //    `body` lui-même resterait non couvert.
-  //  - `html[data-theme="light"] body` : posée par EXPORT_SCRIPT quand le JS
-  //    tourne (et par buildExportHtml pour le thème d'ouverture).
-  // La case reflète le thème d'export à la génération ; le JS, quand il est
-  // présent, la garde synchronisée avec l'attribut.
-  // La CASE est la seule source de vérité du thème dans l'export — pas
-  // l'attribut. Un `html[data-theme]` figé par buildExportHtml gagnerait sur
-  // elle en permanence : sans JS pour le mettre à jour, le clic changeait
-  // l'icône mais pas les couleurs (bug constaté). L'attribut n'est donc plus
-  // posé du tout ; EXPORT_SCRIPT le reflète pour Prism (cf. exportLightSelector).
-  return 'body{' + darkCss + '}' + exportLightSelector('body') + '{' + lightCss + '}';
+  return exportPaletteTokensCss(PALETTES, byPalette);
+}
+
+// Compose les jeux de tokens de toutes les (palette, luminosité). Pur.
+// Les tokens sont portés par `body`, PAS `:root` : les entrées qui pilotent
+// thème et palette (case #theme-switch, radios .pal-r) sont dans body, et
+// :has() ne remonte pas au-delà de l'élément qui le porte. Depuis body les
+// variables héritent à tout le document, ce qui revient au même.
+// Chaque combinaison est écrite EXPLICITEMENT (palette seule = sombre,
+// palette + case cochée = clair) : la seconde est plus spécifique que la
+// première, et aucune règle ne dépend de l'ordre des autres. Le premier jeu
+// nu sur body n'est qu'un filet, aucun radio n'étant censé manquer.
+// La CASE est la seule source de vérité du thème dans l'export — pas
+// l'attribut. Un `html[data-theme]` figé par buildExportHtml gagnerait sur
+// elle en permanence : sans JS pour le mettre à jour, le clic changeait
+// l'icône mais pas les couleurs (bug constaté). L'attribut n'est donc plus
+// posé du tout. Même raisonnement pour la palette et ses radios.
+function exportPaletteTokensCss(palettes, byPalette) {
+  const first = byPalette[palettes[0]];
+  let css = 'body{' + first.dark + '}';
+  palettes.forEach(function(p) {
+    const t = byPalette[p];
+    const on = 'body:has(#pal-' + p + ':checked)';
+    css += on + '{' + t.dark + '}' + on + ':has(#theme-switch:checked){' + t.light + '}';
+  });
+  return css;
 }
 
 // Copie figée de prism-tomorrow.min.css (thème Prism dark chargé depuis le
@@ -176,13 +188,12 @@ const PRISM_THEME_CSS =
 // n'ont aucun sens dans un document statique. Écrite à la main, PAS un miroir
 // vivant de chat.css/tools.css/composer.css : dérive silencieusement si ces
 // fichiers évoluent (dette assumée, cf. docs/exports.md et mémoire projet).
-// Largeur de lecture (900px) EN DUR, pas via var(--col) (720px, gabarit
-// composer écran plus étroit) : --col est un token de mise en page écran,
-// volontairement absent de THEME_TOKENS (sans usage dans un document
-// statique) — le référencer ici résoudrait à rien puisque
-// serializeThemeTokens() ne l'émet jamais. 900px choisi pour l'export
-// (lecture plus confortable qu'à l'écran, sans devenir "vertigineux" sur un
-// grand écran). Si on veut la faire suivre `--col`, l'ajouter à THEME_TOKENS.
+// Largeur de lecture portée par --export-col, PAS par var(--col) (720px,
+// gabarit composer écran plus étroit) : --col est un token de mise en page
+// écran, volontairement absent de THEME_TOKENS. Sa base (EXPORT_COL_BASE) et
+// ses crans sont émis par exportColWidthCss, jamais écrits ici : tout ce qui
+// dépend de la largeur de colonne (cartouche, corps, footer, bascule de thème,
+// tableaux élargis) la lit dans cette variable.
 const EXPORT_CSS = `
 html { zoom: 0.9; }
 /* Sur mobile, le zoom 0.9 (confortable sur grand écran, où il donne de l'air à
@@ -211,23 +222,24 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 .export-topbar-wrap { border-bottom: 1px solid var(--border); }
-/* Le padding droit RÉSERVE la place du bouton de thème : celui-ci est en
-   position:fixed (contrainte du sélecteur :has(), cf. serializeThemeTokens) donc
-   hors du flux — sans cette réserve, un titre long passe DESSOUS et se fait
-   amputer (constaté sur iPhone). 34px de bouton + 16px de marge + respiration.
-   La variante tactile (bouton 40px) ajoute sa propre réserve plus bas. */
-.export-topbar { max-width: 900px; margin: 0 auto; padding: 14px 20px; padding-right: 66px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; }
+/* Les commandes de lecture sont un élément en flux de la barre (.export-tools,
+   après le titre) : le titre, en flex: 1 et min-width: 0, leur laisse leur
+   place et passe à la ligne au besoin. Quand la bascule était en fixed, hors
+   du flux, un padding droit devait lui réserver la place — sans quoi un titre
+   long passait DESSOUS (constaté sur iPhone). */
+.export-topbar { max-width: var(--export-col); margin: 0 auto; padding: 14px 20px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; }
 .export-logo { width: 44px; height: 44px; flex-shrink: 0; }
-/* Le cartouche ne porte plus que logo + titre (la date est passée au footer,
-   décision Julien) : plus de marge basse, plus de règle .export-meta. */
-.export-title { font-size: 16px; font-weight: 600; margin: 0; }
-.export-body { max-width: 900px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
+/* Le cartouche porte logo, titre et commandes de lecture (la date est passée
+   au footer, décision Julien) : plus de marge basse, plus de règle
+   .export-meta. */
+.export-title { flex: 1; min-width: 0; font-size: 16px; font-weight: 600; margin: 0; }
+.export-body { max-width: var(--export-col); margin: 0 auto; padding: 20px; box-sizing: border-box; }
 /* Sans cartouche (Markdown sans titre h1), le corps est le premier élément de
    la page : il lui faut sa propre respiration en haut, celle que la barre de
    séparation du cartouche apporte sinon. */
 .export-body:first-child { padding-top: 40px; }
 .export-footer-wrap { border-top: 1px solid var(--border); }
-.export-footer { max-width: 900px; margin: 0 auto; padding: 20px; font-size: 11px; color: var(--text-3); box-sizing: border-box; }
+.export-footer { max-width: var(--export-col); margin: 0 auto; padding: 20px; font-size: 11px; color: var(--text-3); box-sizing: border-box; }
 /* Le lien du dépôt se signale par la couleur d'accent, sans soulignement de
    base : dans un footer gris de 11px, l'orange tranche assez pour être lu
    comme lien. Le soulignement n'apparaît qu'au survol, pour accuser le
@@ -304,14 +316,14 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
    --col, la colonne est .export-body et la place disponible se lit directement
    sur le viewport, sans container query — donc les 40px retranchés sont bien une
    gouttière à soustraire ici, là où le 100cqw de l'écran exclut déjà son
-   padding. Les 860px sont sa largeur de CONTENU
-   (900 de box moins 2x20 de padding, box-sizing: border-box) : prendre 900
-   décalerait tout de 20px de chaque côté et ferait déborder même un tableau qui
-   tient dans la colonne. Les 40px retranchés du viewport sont la gouttière qui
+   padding. La largeur retranchée est celle du CONTENU de la colonne
+   (--export-col de box moins 2x20 de padding, box-sizing: border-box) : prendre
+   la box entière décalerait tout de 20px de chaque côté et ferait déborder même
+   un tableau qui tient dans la colonne. Les 40px retranchés du viewport sont la gouttière qui
    empêche le tableau de coller au bord de la fenêtre. Le scroll est porté par le
    PORTEUR et non par le tableau : un display:block sur un <table> casse la
    répartition des colonnes (cf. chat.css, étage 2). */
-.table-bleed { --table-bleed: max(0px, calc(100vw - 40px - 860px)); margin: 12px calc(var(--table-bleed, 0px) / -2); width: calc(100% + var(--table-bleed, 0px)); overflow-x: auto; }
+.table-bleed { --table-bleed: max(0px, calc(100vw - 40px - (var(--export-col) - 40px))); margin: 12px calc(var(--table-bleed, 0px) / -2); width: calc(100% + var(--table-bleed, 0px)); overflow-x: auto; }
 /* Réglage « Élargir les grands tableaux » (Apparence), figé à l'export : le
    fichier produit n'a pas de réglages, donc l'état du moment est gravé dans le
    markup par buildExportHtml (attribut sur body, faute de pouvoir toucher à
@@ -431,47 +443,130 @@ body[data-wide-tables="off"] .table-bleed { --table-bleed: 0px; }
 .md-doc h1 { font-size: 21px; margin: 24px 0 10px; }
 .md-doc h2 { font-size: 17px; margin: 22px 0 9px; }
 .md-doc > *:first-child { margin-top: 0; }
-/* Bascule de thème (export interactif uniquement) : le bouton est créé par
-   EXPORT_SCRIPT, ces règles restent inertes en export statique. Fixe en coin
-   bas-droite, discret au repos, révélé au survol — l'export est un document de
-   lecture, pas une app. */
-/* Bascule de thème SANS JavaScript (lot R révisé) : case masquée + label.
-   La case doit rester focusable au clavier — d'où opacity/position plutôt que
-   display:none, qui la sortirait de l'ordre de tabulation. En fixed et non en
-   absolute : un clic sur le label lui donne le focus, et le navigateur amène à
-   l'écran l'élément focalisé — en absolute en tête de body, la page remontait
-   tout en haut à chaque bascule. Fixe, elle est toujours à l'écran. */
-#theme-switch { position: fixed; top: 0; left: 0; opacity: 0; width: 0; height: 0; pointer-events: none; }
-/* Le label est en tête de body (contrainte du sélecteur :has / frère) mais doit
-   s'afficher dans le cartouche : on le cale en fixed sur la même ligne que la
-   topbar. Sans cartouche il occupe la même place, en haut à droite du document
-   — dans les deux cas il reste accessible au scroll. */
-/* Aligné sur la COLONNE de lecture (900px centrés), pas sur le bord du
-   viewport : sur grand écran, un right:16px le laissait flotter à ~270px du
-   cartouche, visuellement désolidarisé. left:50% + une demi-colonne le cale au
-   bord droit de la colonne ; min() le ramène au bord de l'écran quand le
-   viewport est plus étroit que la colonne (mobile).
+/* Commandes de lecture : bascule de thème et largeur de colonne, SANS
+   JavaScript. Les ENTRÉES (case #theme-switch, radios .col-w) sont en tête de
+   body et masquées ; les LABELS cliquables vivent ailleurs, dans
+   .export-tools. Ce qui relie les deux n'est jamais un sélecteur de frère :
+   c'est body:has(…), qui marche où que soit le label.
+   Entrées en fixed et non en absolute : un clic sur un label leur donne le
+   focus, et le navigateur amène à l'écran l'élément focalisé — en absolute en
+   tête de body, la page remontait tout en haut à chaque clic. Opacity plutôt
+   que display:none : elles restent focalisables, et les radios se pilotent aux
+   flèches du clavier.
    Pas de backtick ici : EXPORT_CSS est un template literal (piège 22). */
-.theme-switch-label { position: fixed; top: 16px; left: min(100vw - 50px, 50% + 450px); z-index: 10; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border-2); border-radius: 50%; background: var(--surface-2); color: var(--text-3); cursor: pointer; opacity: 0.55; transition: opacity var(--ease), color var(--ease), border-color var(--ease); }
+#theme-switch, .col-w, .pal-r { position: fixed; top: 0; left: 0; opacity: 0; width: 0; height: 0; margin: 0; pointer-events: none; }
+/* Avec cartouche, .export-tools est un élément EN FLUX de la barre, à droite
+   du titre : alignement sur le bord du contenu et centrage vertical sont ceux
+   de la mise en page, quelle que soit la hauteur de la barre (titre sur deux
+   lignes, resserrement au défilement, bouton tactile plus gros). Une version
+   antérieure les posait en fixed avec des coordonnées calculées, qu'il
+   fallait recaler à chaque variante. */
+.export-tools { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
+/* Sans cartouche (Markdown sans titre), le groupe flotte en haut à droite,
+   calé sur le bord droit de la COLONNE et non du viewport (un right:16px le
+   laissait à ~270px du texte sur grand écran) ; max() le ramène au bord de
+   l'écran quand le viewport est plus étroit que la colonne. Hors de la
+   colonne, il ne couvre pas le texte au défilement, sauf quand la fenêtre est
+   à peine plus large qu'elle. */
+.export-tools.floating { position: fixed; top: 16px; right: max(14px, 50% - min(var(--export-col), 100vw) / 2 - 36px); z-index: 10; }
+.theme-switch-label { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border-2); border-radius: 50%; background: var(--surface-2); color: var(--text-3); cursor: pointer; opacity: 0.55; transition: opacity var(--ease), color var(--ease), border-color var(--ease); }
 .theme-switch-label:hover { opacity: 1; color: var(--text); border-color: var(--accent-bd); }
-#theme-switch:focus-visible + .theme-switch-label { opacity: 1; color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+body:has(#theme-switch:focus-visible) .theme-switch-label { opacity: 1; color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 .theme-switch-label svg { width: 17px; height: 17px; }
 /* Une seule icône visible : elle montre la DESTINATION. Décochée = sombre →
    soleil ; cochée = clair → lune. */
 .theme-switch-label .ts-moon { display: none; }
-#theme-switch:checked + .theme-switch-label .ts-sun { display: none; }
-#theme-switch:checked + .theme-switch-label .ts-moon { display: block; }
-/* Sur écran tactile il n'y a PAS de survol : le bouton resterait indéfiniment à
-   demi-effacé et passe pour absent (retour Julien après test sur mobile). On le
-   rend pleinement visible d'emblée, et un peu plus grand pour la cible tactile
-   (34px est en dessous des 44px recommandés au doigt). */
+body:has(#theme-switch:checked) .theme-switch-label .ts-sun { display: none; }
+body:has(#theme-switch:checked) .theme-switch-label .ts-moon { display: block; }
+/* Largeur de colonne : un radio .col-w par cran, dont le coché fixe
+   --export-col (règles émises par exportColWidthCss). Le contrôle visible est
+   un « - + » comme celui du composer. Un label ne peut viser qu'UN radio, donc
+   chaque cran a sa paire (.col-w-pair-N), seule affichée quand ce cran est
+   coché : son « - » vise le cran d'en dessous, son « + » celui d'au-dessus, et
+   en butée le bouton est un span éteint. */
+.col-width-ctl { display: flex; opacity: 0.55; transition: opacity 140ms var(--ease); }
+.col-width-ctl:hover { opacity: 1; }
+body:has(.col-w:focus-visible) .col-width-ctl { opacity: 1; border-radius: var(--r-sm); box-shadow: 0 0 0 3px var(--accent-dim); }
+.col-w-pair { display: none; }
+/* Palette : un radio .pal-r par palette (PALETTES), même mécanique que la
+   largeur. La pastille montre la palette ACTIVE — son disque est var(--accent),
+   qui suit donc de lui-même — et un clic passe à la suivante, en boucle : une
+   étiquette par palette (.pal-swatch-P), seule affichée quand P est cochée,
+   visant le radio de la suivante (règles émises par exportPaletteCss).
+   Contrairement à la bascule de thème, dont l'icône montre la destination :
+   une pastille de couleur se lit comme un état, l'infobulle nomme la suivante.
+   Disque de 7px : le diamètre extérieur du cercle du soleil voisin (r=4 plus
+   le trait, sur une icône de 17px), 8px en tactile où l'icône fait 19px. */
+.pal-swatch { display: none; place-items: center; width: 34px; height: 34px; box-sizing: border-box; border: 1px solid var(--border-2); border-radius: 50%; background: var(--surface-2); cursor: pointer; opacity: 0.55; transition: opacity var(--ease), border-color var(--ease); }
+.pal-swatch::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.pal-swatch:hover { opacity: 1; border-color: var(--accent-bd); }
+body:has(.pal-r:focus-visible) .pal-swatch { opacity: 1; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.col-width-btn { display: grid; place-items: center; width: 26px; height: 28px; box-sizing: border-box; padding: 0; background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text-3); cursor: pointer; position: relative; transition: background 140ms var(--ease), color 140ms var(--ease); }
+.col-width-btn + .col-width-btn { margin-left: -1px; }
+.col-width-btn:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+.col-width-btn:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.col-width-btn:hover:not(.is-off) { background: var(--surface-3); color: var(--text-2); z-index: 1; }
+.col-width-btn.is-off { opacity: .7; cursor: default; }
+.col-width-btn svg { width: 12px; height: 12px; }
+/* Sur écran tactile il n'y a PAS de survol : les commandes resteraient
+   indéfiniment à demi-effacées et passeraient pour absentes (retour Julien
+   après test sur mobile). Pleinement visibles d'emblée, et la bascule un peu
+   plus grande pour la cible tactile (34px est sous les 44px recommandés). */
 @media (pointer: coarse) {
   .theme-switch-label { opacity: 1; color: var(--text-2); width: 40px; height: 40px; }
   .theme-switch-label svg { width: 19px; height: 19px; }
-  /* Bouton plus gros → réserve plus large dans le cartouche. */
-  .export-topbar { padding-right: 72px; }
+  .col-width-ctl { opacity: 1; }
+  .pal-swatch { opacity: 1; width: 40px; height: 40px; }
+  .pal-swatch::before { width: 8px; height: 8px; }
 }
-@media print { .theme-switch-label { display: none; } }
+/* Sur mobile la colonne occupe déjà tout l'écran : pas de contrôle de largeur. */
+@media (max-width: 767px) { .col-width-ctl { display: none; } }
+/* Cartouche collé en haut, à toutes les largeurs : c'est lui qui porte les
+   commandes, et collé il les garde à portée sans qu'elles couvrent jamais le
+   texte. Fond et flou de la topbar de l'application. Les ancres internes
+   (sommaire d'un Markdown converti) visent sous lui grâce à scroll-padding-top. */
+.export-topbar-wrap { position: sticky; top: 0; z-index: 5; background: var(--topbar-bg); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+html:has(.export-topbar-wrap) { scroll-padding-top: 64px; }
+/* Le changement de cran glisse comme dans l'application. Pas sur les tableaux
+   élargis : leur largeur suit aussi le viewport, et une transition permanente
+   les ferait traîner derrière un redimensionnement de fenêtre. */
+@media (prefers-reduced-motion: no-preference) {
+  .export-topbar, .export-body, .export-footer, .export-tools.floating { transition: max-width 180ms var(--ease), right 180ms var(--ease); }
+}
+/* Le cartouche se resserre en défilant (logo 44 vers 30px, titre 16 vers
+   14px, marges 14 vers 8px) ; les commandes, en flux, suivent d'elles-mêmes.
+   Animation liée au défilement, en CSS seul : là où animation-timeline
+   n'existe pas, le cartouche garde simplement sa taille.
+   La hauteur perdue est rendue en margin-bottom : l'empreinte du cartouche
+   dans le flux ne bouge pas, sinon le contenu remonterait sous le doigt
+   pendant le geste, et un document à peine plus haut que l'écran oscillerait
+   entre défilable et non défilable. 26px = 72 - 46, juste quand le logo
+   donne sa hauteur à la barre — d'où la bascule ramenée à 28px (30 avec ses
+   bordures) : en flux, elle borne sinon la barre resserrée à 52px et
+   l'empreinte glisse de 6px (mesuré). La pastille de palette, même gabarit,
+   suit la même animation. Pas en tactile, où elle garde sa cible
+   de 40px ; là, comme pour un titre sur plusieurs lignes, c'est elle ou le
+   titre qui donne sa hauteur à la barre, et l'empreinte glisse de quelques
+   pixels pendant les 80 premiers pixels de défilement — écart assumé. */
+@supports (animation-timeline: scroll()) {
+  .export-topbar-wrap, .export-topbar, .export-logo, .export-title,
+  .export-topbar .theme-switch-label, .export-topbar .pal-swatch {
+    animation-timing-function: linear; animation-fill-mode: both;
+    animation-timeline: scroll(root); animation-range: 0 80px;
+  }
+  .export-topbar-wrap { animation-name: export-bar-shrink; }
+  .export-topbar { animation-name: export-topbar-shrink; }
+  .export-logo { animation-name: export-logo-shrink; }
+  .export-title { animation-name: export-title-shrink; }
+  .export-topbar .theme-switch-label, .export-topbar .pal-swatch { animation-name: export-theme-shrink; }
+  @media (pointer: coarse) { .export-topbar .theme-switch-label, .export-topbar .pal-swatch { animation-name: none; } }
+}
+@keyframes export-bar-shrink { to { margin-bottom: 26px; } }
+@keyframes export-topbar-shrink { to { padding-top: 8px; padding-bottom: 8px; } }
+@keyframes export-logo-shrink { to { width: 30px; height: 30px; } }
+@keyframes export-title-shrink { to { font-size: 14px; } }
+@keyframes export-theme-shrink { to { width: 28px; height: 28px; } }
+@media print { .export-tools { display: none; } .export-topbar-wrap { position: static; } }
 `;
 
 // Script inline OPTIONNEL de l'export (progressive enhancement, zéro-JS révisé —
@@ -602,6 +697,40 @@ const EXPORT_SCRIPT = `
       try { localStorage.setItem(THEME_KEY, sw.checked ? 'light' : 'dark'); } catch (e) {}
     });
   }
+  // Largeur de colonne : même motif. Les radios .col-w marchent sans ce
+  // script ; il ne fait que retenir le cran choisi, sous une clef commune à
+  // tous les exports. Un cran mémorisé qui n'existe plus est ignoré.
+  // Palette : même motif, sous sa propre clef.
+  var PAL_KEY = 'miaou-export-palette';
+  var pals = document.querySelectorAll('input.pal-r');
+  if (pals.length) {
+    try {
+      var savedPal = localStorage.getItem(PAL_KEY);
+      var palEl = savedPal !== null ? document.getElementById('pal-' + savedPal) : null;
+      if (palEl) palEl.checked = true;
+    } catch (e) {}
+    for (var q = 0; q < pals.length; q++) {
+      pals[q].addEventListener('change', function () {
+        if (!this.checked) return;
+        try { localStorage.setItem(PAL_KEY, this.value); } catch (e) {}
+      });
+    }
+  }
+  var COL_KEY = 'miaou-export-col';
+  var cols = document.querySelectorAll('input.col-w');
+  if (cols.length) {
+    try {
+      var savedCol = localStorage.getItem(COL_KEY);
+      var colEl = savedCol !== null ? document.getElementById('col-w-' + savedCol) : null;
+      if (colEl) colEl.checked = true;
+    } catch (e) {}
+    for (var k = 0; k < cols.length; k++) {
+      cols[k].addEventListener('change', function () {
+        if (!this.checked) return;
+        try { localStorage.setItem(COL_KEY, this.value); } catch (e) {}
+      });
+    }
+  }
 })();
 `;
 
@@ -619,6 +748,100 @@ const EXPORT_SCRIPT = `
 const THEME_SWITCH_SUN_SVG = '<svg class="ts-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
 const THEME_SWITCH_MOON_SVG = '<svg class="ts-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
 
+// Largeur de colonne des exports. Base propre à l'export (lecture plus
+// confortable qu'à l'écran, sans devenir vertigineuse sur un grand écran) ;
+// les crans sont ceux de l'application (COL_WIDTH_STEPS, ui.js), lus et jamais
+// recopiés, pour que « élargir » veuille dire la même chose des deux côtés.
+const EXPORT_COL_BASE = 900;
+const COL_WIDTH_DEC_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 12h12"/></svg>';
+const COL_WIDTH_INC_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>';
+
+// Règles qui dépendent du nombre de crans : la largeur de chacun et la paire
+// de boutons à montrer. Pur.
+function exportColWidthCss(steps, base) {
+  const out = ['body { --export-col: ' + Math.round(base * steps[0]) + 'px; }'];
+  steps.forEach(function(f, i) {
+    const on = 'body:has(#col-w-' + i + ':checked)';
+    if (i > 0) out.push(on + ' { --export-col: ' + Math.round(base * f) + 'px; }');
+    out.push(on + ' .col-w-pair-' + i + ' { display: flex; }');
+  });
+  return out.join('\n');
+}
+
+// Règles qui dépendent de la liste des palettes : quelle pastille montrer.
+// Pur.
+function exportPaletteCss(palettes) {
+  return palettes.map(function(p) {
+    return 'body:has(#pal-' + p + ':checked) .pal-swatch-' + p + ' { display: grid; }';
+  }).join('\n');
+}
+
+// Radios de palette, en tête de body comme ceux de largeur. Le slug est
+// interpolé dans un id : il vient de PALETTES, constante de build. Pur.
+function exportPaletteRadiosHtml(palettes, labels, current) {
+  return palettes.map(function(p) {
+    return '<input type="radio" class="pal-r" name="pal" id="pal-' + p + '" value="' + p + '"' +
+      (p === current ? ' checked' : '') +
+      ' aria-label="Palette ' + escHtml(labels[p] || p) + '">\n';
+  }).join('');
+}
+
+// Pastilles : une par palette, chacune visant la suivante (en boucle). Pur.
+function exportPaletteSwatchesHtml(palettes, labels) {
+  return palettes.map(function(p, i) {
+    const next = palettes[(i + 1) % palettes.length];
+    const tip = 'Palette ' + (labels[p] || p) + ' — cliquer pour ' + (labels[next] || next);
+    return '<label class="pal-swatch pal-swatch-' + p + '" for="pal-' + next + '" title="' + escHtml(tip) + '" aria-hidden="true"></label>';
+  }).join('');
+}
+
+// Radios de largeur, en tête de body à côté de #theme-switch (entrées
+// masquées, lues par body:has). Ils portent le nom accessible. Pur.
+function exportColWidthRadiosHtml(count, current) {
+  let out = '';
+  for (let i = 0; i < count; i++) {
+    out += '<input type="radio" class="col-w" name="col-w" id="col-w-' + i + '" value="' + i + '"' +
+      (i === current ? ' checked' : '') +
+      ' aria-label="Largeur de colonne, ' + (i + 1) + ' sur ' + count + '">\n';
+  }
+  return out;
+}
+
+// Contrôle visible « - + » : une paire de boutons par cran, dont le CSS
+// n'affiche que celle du cran coché. Purement visuel pour la souris, d'où
+// aria-hidden : l'accès clavier passe par les radios. Pur.
+function exportColWidthControlHtml(count) {
+  let pairs = '';
+  for (let i = 0; i < count; i++) {
+    const dec = i > 0
+      ? '<label class="col-width-btn" for="col-w-' + (i - 1) + '" title="Resserrer la colonne">' + COL_WIDTH_DEC_SVG + '</label>'
+      : '<span class="col-width-btn is-off">' + COL_WIDTH_DEC_SVG + '</span>';
+    const inc = i < count - 1
+      ? '<label class="col-width-btn" for="col-w-' + (i + 1) + '" title="Élargir la colonne">' + COL_WIDTH_INC_SVG + '</label>'
+      : '<span class="col-width-btn is-off">' + COL_WIDTH_INC_SVG + '</span>';
+    pairs += '<span class="col-w-pair col-w-pair-' + i + '">' + dec + inc + '</span>';
+  }
+  return '<div class="col-width-ctl" aria-hidden="true">' + pairs + '</div>';
+}
+
+// Commandes de lecture : largeur, palette, puis bascule de thème — les deux
+// réglages d'apparence (couleur, luminosité) groupés à droite. Dans la barre du
+// cartouche quand il y en a un ; flottantes en haut à droite sinon. Pur.
+function exportToolsHtml(floating) {
+  return '<div class="export-tools' + (floating ? ' floating' : '') + '">' +
+    exportColWidthControlHtml(COL_WIDTH_STEPS.length) +
+    exportPaletteSwatchesHtml(PALETTES, PALETTE_LABELS) +
+    '<label class="theme-switch-label" for="theme-switch" title="Changer de thème" role="button" aria-label="Changer de thème">' +
+    THEME_SWITCH_SUN_SVG + THEME_SWITCH_MOON_SVG +
+    '</label>' +
+    '</div>' + (floating ? '\n' : '');
+}
+
+// `colStep` : cran de la colonne à l'ouverture, celui de l'application au
+// moment de l'export (comme le thème) ; borné par clampColWidthStep.
+// `palette` : palette d'ouverture, celle de l'application ; une valeur
+// inconnue retombe sur la première de PALETTES, comme applyPalette.
+//
 // `title` null/vide → AUCUN cartouche d'en-tête (Markdown converti sans titre
 // de niveau 1, lot R) : ni logo, ni titre, ni date. Le footer, lui, est
 // systématique.
@@ -663,7 +886,7 @@ function exportNativeTip(html) {
   return String(html).replace(/ data-tip="/g, ' title="');
 }
 
-function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind, wideTables }) {
+function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind, wideTables, colStep, palette }) {
   const hasHeader = !!(title && String(title).trim());
   const docTitle = hasHeader ? title : 'Document';
   const verbs = EXPORT_VERBS[kind] || EXPORT_VERBS.export;
@@ -700,27 +923,28 @@ function buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, script
     '<meta property="og:description" content="' + escHtml(ogDesc) + '">\n' +
     '<meta property="og:image" content="' + escHtml(LOGO_SRC) + '">\n' +
     '<style>' + styleCss + '</style>\n' +
+    '<style>' + exportColWidthCss(COL_WIDTH_STEPS, EXPORT_COL_BASE) + '\n' + exportPaletteCss(PALETTES) + '</style>\n' +
     '</head>\n' +
     '<body' + (wideTables === false ? ' data-wide-tables="off"' : '') + '>\n' +
     // Bascule de thème SANS JavaScript (lot R, révisé) : une case masquée en
-    // tête de body + un <label for> cliquable. Le CSS bascule via
+    // tête de body + un <label for> cliquable (dans .export-tools). Le CSS bascule via
     // `body:has(#theme-switch:checked)`. Fonctionne dans les visionneuses qui
     // n'exécutent pas de script (Quick Look iOS) — c'est tout l'intérêt.
     // Cochée = thème CLAIR, d'où l'état initial dérivé du thème d'export.
     // EXPORT_SCRIPT, quand il tourne, garde case et attribut synchronisés et
     // ajoute la persistance ; sans lui, la bascule marche quand même.
     '<input type="checkbox" id="theme-switch"' + (theme === 'light' ? ' checked' : '') + '>\n' +
-    '<label class="theme-switch-label" for="theme-switch" title="Changer de thème" role="button" aria-label="Changer de thème">' +
-    THEME_SWITCH_SUN_SVG + THEME_SWITCH_MOON_SVG +
-    '</label>\n' +
+    exportColWidthRadiosHtml(COL_WIDTH_STEPS.length, clampColWidthStep(colStep)) +
+    exportPaletteRadiosHtml(PALETTES, PALETTE_LABELS, PALETTES.indexOf(palette) >= 0 ? palette : PALETTES[0]) +
     (hasHeader
       ? '<div class="export-topbar-wrap">' +
         '<div class="export-topbar">' +
         '<img class="export-logo" src="' + LOGO_SRC + '" alt="">' +
         '<p class="export-title">' + escHtml(title) + '</p>' +
+        exportToolsHtml(false) +
         '</div>\n' +
         '</div>\n'
-      : '') +
+      : exportToolsHtml(true)) +
     '<div class="export-body">' + bodyHtml + '</div>\n' +
     // Footer systématique, et SEUL porteur de la date (décision Julien) : le
     // cartouche ne garde que logo + titre. Un seul endroit, quel que soit le
@@ -1119,6 +1343,8 @@ async function convertMarkdownToHtmlFile(mdText, sourceName) {
     kind: 'convert',
     theme, styleCss, bodyHtml, scriptTag,
     wideTables: s.wideTables !== false,
+    colStep: s.colWidth,
+    palette: s.palette,
   });
   downloadFile(mdHtmlFileName(sourceName), html, 'text/html');
   return html;
@@ -1221,7 +1447,7 @@ async function exportConvHtml() {
       ? '<script>' + EXPORT_SCRIPT.replace(/<\//g, '<\\/') + '</' + 'script>\n'
       : '';
     const html = buildExportHtml({ title, dateDisplay, theme, styleCss, bodyHtml, scriptTag, kind: 'export',
-      wideTables: s.wideTables !== false });
+      wideTables: s.wideTables !== false, colStep: s.colWidth, palette: s.palette });
     const sizeBytes = new Blob([html]).size;
     if (sizeBytes > EXPORT_HTML_SIZE_WARN) {
       const mb = (sizeBytes / (1024 * 1024)).toFixed(1);

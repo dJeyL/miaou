@@ -114,8 +114,9 @@ check('footer « Converti par MIAOU »', convertedBy.test(htmlTitled));
 // sans cartouche : un seul endroit, pas de branche conditionnelle.
 check('footer daté même avec cartouche',
       new RegExp('Converti par ' + BRAND + ' le [^<]+<\\/div>').test(htmlTitled));
+// Jeux portés par (palette, case) depuis la pastille de palette.
 check('les deux jeux de tokens sont embarqués',
-      htmlTitled.includes('body{') && htmlTitled.includes('body:has(#theme-switch:checked){'));
+      htmlTitled.includes('body{') && /body:has\(#pal-[a-z]+:checked\):has\(#theme-switch:checked\)\{/.test(htmlTitled));
 await waitForDownload(1);
 check('nom de fichier téléchargé = nom du .md', downloads.includes('guide de démarrage.html'));
 

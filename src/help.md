@@ -711,18 +711,28 @@ Tu peux sortir tes conversations de MIAOU de plusieurs manières :
   commandes fait la même chose.
 
 Les pages HTML produites embarquent **les deux thèmes** (clair et sombre),
-diagrammes compris. Elles
+diagrammes compris, et toutes les palettes de couleurs. Elles
 s'ouvrent sur celui qui était actif au moment de l'export, et un bouton en haut
 à droite permet de basculer à la lecture ; ton choix est retenu et s'applique à
 tous tes exports, y compris ceux que tu produiras plus tard. Cette bascule
 fonctionne **sans JavaScript** : elle marche donc partout, y compris dans les
 visionneuses de pièces jointes qui n'exécutent aucun script
-(l'aperçu de fichier d'iOS, par exemple). Le réglage **« Export HTML
-interactif »** (réglages, section « Apparence ») ne la conditionne pas : activé
-par défaut, il ajoute seulement les boutons copier/télécharger sur les blocs de
-code, et fait retenir ton choix de thème d'une ouverture à l'autre. Décoché, la
-bascule reste disponible, mais le choix n'est plus mémorisé. Les diagrammes,
-eux, gardent dans tous les cas les couleurs qu'ils avaient à l'export.
+(l'aperçu de fichier d'iOS, par exemple). Juste à côté, des boutons **– / +**
+élargissent ou resserrent la colonne de lecture, sur les mêmes crans que dans
+l'application ; la page s'ouvre à la largeur que tu avais au moment de
+l'export. Ils fonctionnent eux aussi sans JavaScript, et disparaissent sur un
+petit écran, où la colonne occupe déjà toute la largeur. L'en-tête qui porte
+ces boutons reste en haut de la page pendant la lecture, et se fait plus
+discret dès qu'on fait défiler. Entre les deux, une pastille ronde de la
+couleur active fait passer à la palette suivante : la page s'ouvre sur la
+palette de l'auteur, mais le lecteur n'y est pas tenu. Le réglage **« Export
+HTML interactif »** (réglages, section « Apparence ») ne conditionne ni l'un ni
+l'autre : activé par défaut, il ajoute seulement les boutons
+copier/télécharger sur les blocs de code, et fait retenir ton choix de thème,
+de palette et de largeur d'une ouverture à l'autre, pour tous tes exports. Décoché, les
+boutons restent disponibles, mais le choix n'est plus mémorisé. Les diagrammes,
+eux, gardent dans tous les cas les couleurs (thème et palette) qu'ils avaient à
+l'export.
 
 Ces exports sont à sens unique : ce sont des fichiers de lecture, il n'existe
 aucune fonction pour réimporter un `.md` ou un `.html` exporté dans MIAOU (ni
@@ -989,7 +999,8 @@ Quelques repères pour te déplacer dans MIAOU :
   « – » et « + » élargissent ou resserrent la zone centrale (le fil et le
   composer ensemble). La largeur d'origine est la plus étroite : le « – » est
   éteint tant que tu n'as pas élargi. Ton choix est conservé d'une session à
-  l'autre et s'applique à tes autres onglets ouverts.
+  l'autre et s'applique à tes autres onglets ouverts. Les pages HTML exportées
+  s'ouvrent à cette largeur et ont leurs propres boutons (sujet `exports`).
 - **Blocs de code très longs** : un bloc plus haut que l'écran ne pousse plus
   la suite de la conversation hors de portée — il s'arrête à environ 80% de la
   hauteur de lecture et défile à l'intérieur de son propre cadre, son en-tête
@@ -1034,7 +1045,8 @@ Quelques repères pour te déplacer dans MIAOU :
   conversation — elle a pu être citée de mémoire, d'après le simple extrait
   d'un résultat de recherche, ou venir de toi, et c'est à vérifier. Quand un paragraphe cite beaucoup de sources, seules les
   premières sont affichées, et « +N » déplie les autres. Copier la réponse ou l'exporter en Markdown donne des liens
-  ordinaires au nom du site ; l'export HTML aussi.
+  ordinaires au nom du site ; l'export HTML garde les pastilles, toutes
+  affichées.
 - **Raisonnement** : pour les modèles qui réfléchissent à voix haute, une icône
   dans l'en-tête du message ouvre un bloc dépliable montrant leur cheminement,
   gardé à part de la réponse.

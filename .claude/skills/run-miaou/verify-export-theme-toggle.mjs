@@ -30,19 +30,23 @@ const probe = await page.evaluate(() => {
   const before = document.documentElement.getAttribute('data-theme');
   const css = serializeThemeTokens();
   const after = document.documentElement.getAttribute('data-theme');
-  return { before, after, css };
+  return { before, after, css, firstPalette: PALETTES[0] };
 });
 check('data-theme de l\'app inchangé après sérialisation', probe.before === probe.after);
 check('bloc body (tokens sombres) présent', probe.css.includes('body{'));
+// Depuis la pastille de palette, chaque jeu est porté par (palette, case) :
+// `body:has(#pal-P:checked)` en sombre, `…:has(#theme-switch:checked)` en
+// clair. On lit celui de la première palette, lue dans l'application.
 check('surcharge claire pilotée par la case (unique source de vérité)',
-      probe.css.includes('body:has(#theme-switch:checked)'));
+      probe.css.includes('body:has(#pal-' + probe.firstPalette + ':checked):has(#theme-switch:checked){'));
 check('AUCUN sélecteur data-theme dans les tokens (il gagnerait sur la case)',
       !probe.css.includes('data-theme'));
 check('pas de @media prefers-color-scheme (doctrine theme-light.css)',
       !probe.css.includes('prefers-color-scheme'));
 // Les deux blocs doivent porter des valeurs DIFFÉRENTES (sinon un seul thème).
-const rootBg = /body\{[^}]*--bg:([^;]+);/.exec(probe.css);
-const lightBg = /body:has\(#theme-switch:checked\)\{[^}]*--bg:([^;]+);/.exec(probe.css);
+const palSel = 'body:has\\(#pal-' + probe.firstPalette + ':checked\\)';
+const rootBg = new RegExp(palSel + '\\{[^}]*--bg:([^;]+);').exec(probe.css);
+const lightBg = new RegExp(palSel + ':has\\(#theme-switch:checked\\)\\{[^}]*--bg:([^;]+);').exec(probe.css);
 check('--bg sombre et clair diffèrent',
       !!rootBg && !!lightBg && rootBg[1].trim() !== lightBg[1].trim());
 
@@ -266,7 +270,13 @@ for (const js of [true, false]) {
   await p.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await p.waitForTimeout(100);
   const y1 = await p.evaluate(() => window.scrollY);
-  await p.click('.theme-switch-label');
+  // Clic SOURIS aux coordonnées, pas locator.click : celui-ci fait d'abord
+  // défiler jusqu'à l'élément, et sur un porteur collé (le cartouche est
+  // sticky) il ramène la page vers sa position d'origine — 368px mesurés,
+  // alors qu'un vrai clic, de même que le seul focus de la case, ne bouge
+  // rien. C'est le geste de l'utilisateur qui est le sujet ici.
+  const lb = await p.evaluate(() => { const r = document.querySelector('.theme-switch-label').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await p.mouse.click(lb.x, lb.y);
   await p.waitForTimeout(150);
   const y2 = await p.evaluate(() => window.scrollY);
   check(tag + ' : prémisse — la page est défilée avant le clic (y=' + y1 + ')', y1 > 500);
