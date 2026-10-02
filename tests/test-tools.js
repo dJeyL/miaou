@@ -2581,3 +2581,187 @@ describe('withSkillReaderIfGated (trousse d\'agent)', function() {
     expect(withSkillReaderIfGated([], TOOLS)).toEqual([]);
   });
 });
+
+describe('Révision MCP 2026-07-28 — encodeMcpHeaderValue', function() {
+  function decode(v) {
+    var m = /^=\?base64\?(.*)\?=$/.exec(v);
+    return m ? utf8Decode(base64ToArrayBuffer(m[1])) : null;
+  }
+  it('ASCII imprimable : verbatim', function() {
+    expect(encodeMcpHeaderValue('bench_ping')).toBe('bench_ping');
+    expect(encodeMcpHeaderValue('a b-c.d/e')).toBe('a b-c.d/e');
+  });
+  it('hors ASCII : enveloppé, et la charge redonne la valeur exacte', function() {
+    var v = encodeMcpHeaderValue('outil_é');
+    expect(v.indexOf('=?base64?')).toBe(0);
+    expect(decode(v)).toBe('outil_é');
+  });
+  it('espace en bordure ou caractère de contrôle : enveloppé', function() {
+    expect(decode(encodeMcpHeaderValue(' x'))).toBe(' x');
+    expect(decode(encodeMcpHeaderValue('x\n'))).toBe('x\n');
+  });
+  it('une valeur qui ressemble déjà à l\'enveloppe est enveloppée à son tour', function() {
+    var v = encodeMcpHeaderValue('=?base64?YQ==?=');
+    expect(decode(v)).toBe('=?base64?YQ==?=');
+  });
+});
+
+describe('Révision MCP 2026-07-28 — mcpRequestShape', function() {
+  it('legacy : aucun en-tête, params rendus tels quels (pas d\'en-tête de version)', function() {
+    var params = { name: 'x', arguments: {} };
+    var shape = mcpRequestShape('legacy', 'tools/call', params);
+    expect(Object.keys(shape.headers).length).toBe(0);
+    expect(shape.params).toBe(params);
+  });
+  it('ère inconnue : traitée en legacy', function() {
+    expect(Object.keys(mcpRequestShape(null, 'tools/list', {}).headers).length).toBe(0);
+  });
+  it('moderne, tools/call : version, méthode et cible en en-têtes', function() {
+    var h = mcpRequestShape('modern', 'tools/call', { name: 'bench_ping', arguments: {} }).headers;
+    expect(h['MCP-Protocol-Version']).toBe('2026-07-28');
+    expect(h['Mcp-Method']).toBe('tools/call');
+    expect(h['Mcp-Name']).toBe('bench_ping');
+  });
+  it('moderne, Mcp-Name passe par l\'encodage d\'en-tête', function() {
+    var h = mcpRequestShape('modern', 'tools/call', { name: 'outil_é' }).headers;
+    expect(h['Mcp-Name']).toBe(encodeMcpHeaderValue('outil_é'));
+  });
+  it('moderne, méthode sans cible : pas de Mcp-Name', function() {
+    var h = mcpRequestShape('modern', 'tools/list', {}).headers;
+    expect(h['Mcp-Method']).toBe('tools/list');
+    expect('Mcp-Name' in h).toBe(false);
+  });
+  it('moderne, server/discover sans params : l\'enveloppe seule', function() {
+    var p = mcpRequestShape('modern', 'server/discover', undefined).params;
+    expect(Object.keys(p)).toEqual(['_meta']);
+    expect(p._meta['io.modelcontextprotocol/protocolVersion']).toBe('2026-07-28');
+    expect(p._meta['io.modelcontextprotocol/clientCapabilities']).toEqual({});
+    expect(p._meta['io.modelcontextprotocol/clientInfo']).toEqual({ name: 'miaou', version: '2' });
+  });
+  it('moderne : params copiés, jamais mutés, et un _meta existant conservé', function() {
+    var params = { name: 'x', arguments: { a: 1 }, _meta: { 'vendor/k': 'v' } };
+    var p = mcpRequestShape('modern', 'tools/call', params).params;
+    expect(p === params).toBe(false);
+    expect(params._meta['io.modelcontextprotocol/protocolVersion']).toBe(undefined);
+    expect(p._meta['vendor/k']).toBe('v');
+    expect(p._meta['io.modelcontextprotocol/protocolVersion']).toBe('2026-07-28');
+    expect(p.arguments).toBe(params.arguments);
+  });
+});
+
+describe('Révision MCP 2026-07-28 — mcpProbeVerdict (une ligne par cas du brief)', function() {
+  function rpc(code, data, status) {
+    var e = new Error('x'); e.applicative = true; e.rpcCode = code;
+    if (data) e.data = data;
+    if (status) e.status = status;
+    return e;
+  }
+  it('200 dont supportedVersions contient 2026-07-28 : moderne', function() {
+    expect(mcpProbeVerdict({ supportedVersions: ['2026-07-28'] }, null)).toBe('modern');
+  });
+  it('200 sans version moderne (go-sdk) : repli', function() {
+    expect(mcpProbeVerdict({ supportedVersions: ['2025-06-18'] }, null)).toBe('legacy');
+  });
+  it('200 illisible ou {} (stub des verify) : repli', function() {
+    expect(mcpProbeVerdict({}, null)).toBe('legacy');
+    expect(mcpProbeVerdict(null, null)).toBe('legacy');
+    expect(mcpProbeVerdict({ supportedVersions: '2026-07-28' }, null)).toBe('legacy');
+    expect(mcpProbeVerdict(undefined, new SyntaxError('JSON'))).toBe('legacy');
+  });
+  it('erreur JSON-RPC quel que soit le statut : repli (1.x : 400 « Missing session ID »)', function() {
+    expect(mcpProbeVerdict(null, rpc(-32600, null, 400))).toBe('legacy');
+    expect(mcpProbeVerdict(null, rpc(-32601, null, 404))).toBe('legacy');
+    expect(mcpProbeVerdict(null, rpc(-32601))).toBe('legacy');
+  });
+  it('non 2xx sans corps JSON-RPC (405, 406, 415) : repli', function() {
+    [405, 406, 415].forEach(function(s) {
+      var e = new Error('HTTP ' + s); e.status = s;
+      expect(mcpProbeVerdict(null, e)).toBe('legacy');
+    });
+  });
+  it('-32022 dont supported contient une version de handshake : repli', function() {
+    expect(mcpProbeVerdict(null, rpc(-32022, { supported: ['2025-06-18'] }, 400))).toBe('legacy');
+  });
+  it('-32022 sans supported exploitable : repli', function() {
+    expect(mcpProbeVerdict(null, rpc(-32022, null, 400))).toBe('legacy');
+  });
+  it('-32022 dont supported est DISJOINT de l\'ère handshake : échec franc', function() {
+    expect(mcpProbeVerdict(null, rpc(-32022, { supported: ['2027-01-01'] }, 400))).toBe('fail');
+    expect(mcpProbeVerdict(null, rpc(-32022, { supported: [] }, 400))).toBe('fail');
+  });
+  it('TypeError de fetch (CORS refusé ou serveur éteint) : repli, écart délibéré avec le SDK', function() {
+    var e = new TypeError('Failed to fetch'); e.network = true;
+    expect(mcpProbeVerdict(null, e)).toBe('legacy');
+  });
+  it('401 / 403 : échec, avec ou sans corps', function() {
+    var e401 = new Error('HTTP 401'); e401.status = 401;
+    expect(mcpProbeVerdict(null, e401)).toBe('fail');
+    expect(mcpProbeVerdict(null, rpc(-32001, null, 403))).toBe('fail');
+  });
+  it('délai dépassé : échec, pas de repli', function() {
+    var e = new Error('Délai dépassé'); e.timeout = true;
+    expect(mcpProbeVerdict(null, e)).toBe('fail');
+  });
+});
+
+describe('Révision MCP 2026-07-28 — lecture d\'une réponse en erreur (deux ères)', function() {
+  function body(code, message, data) {
+    var err = { code: code, message: message };
+    if (data) err.data = data;
+    return { jsonrpc: '2.0', id: 1, error: err };
+  }
+  it('400 avec corps JSON-RPC : même erreur qu\'un 200 (message, applicative, rpcCode, status)', function() {
+    var e = mcpHttpFailure(400, body(-32602, 'Invalid params'), false);
+    expect(e.message).toBe('Invalid params');
+    expect(e.applicative).toBe(true);
+    expect(e.rpcCode).toBe(-32602);
+    expect(e.status).toBe(400);
+    expect(e.staleSession).toBe(undefined);
+  });
+  it('404 avec corps et SANS session (méthode inconnue en moderne) : applicative, pas de session morte', function() {
+    var e = mcpHttpFailure(404, body(-32601, 'Method not found'), false);
+    expect(e.applicative).toBe(true);
+    expect(e.rpcCode).toBe(-32601);
+    expect(e.staleSession).toBe(undefined);
+  });
+  it('data applicatif conservé (REF_UNKNOWN, AUTHORIZATION_REQUIRED)', function() {
+    var e = mcpHttpFailure(400, body(-31999, 'x', { code: 'REF_UNKNOWN' }), false);
+    expect(e.data.code).toBe('REF_UNKNOWN');
+  });
+  it('sans corps : « HTTP <statut> » nu, non applicatif, statut porté', function() {
+    var e = mcpHttpFailure(405, null, false);
+    expect(e.message).toBe('HTTP 405');
+    expect(e.applicative).toBe(undefined);
+    expect(e.status).toBe(405);
+  });
+  it('corps JSON sans error : traité comme sans corps', function() {
+    expect(mcpHttpFailure(500, { jsonrpc: '2.0', result: {} }, false).message).toBe('HTTP 500');
+  });
+  it('404 AVEC session détenue : session morte, AVANT le corps, quel qu\'il soit', function() {
+    var e = mcpHttpFailure(404, body(-32600, 'Some other message'), true);
+    expect(e.staleSession).toBe(true);
+    expect(e.applicative).toBe(undefined);
+    expect(isMcpStaleSessionResponse(404, true)).toBe(true);
+    expect(isMcpStaleSessionResponse(404, false)).toBe(false);
+    expect(isMcpStaleSessionResponse(400, true)).toBe(false);
+  });
+  it('erreur JSON-RPC sur 200 : pas de statut, staleSession sur « session » si session détenue', function() {
+    var e = mcpJsonRpcError({ code: -32600, message: 'Session expired' }, null, true);
+    expect(e.status).toBe(undefined);
+    expect(e.staleSession).toBe(true);
+    expect(mcpJsonRpcError({ code: -32600, message: 'Session expired' }, null, false).staleSession).toBe(undefined);
+  });
+});
+
+describe('Révision MCP 2026-07-28 — mcpInstructionsFrom (InitializeResult ou DiscoverResult)', function() {
+  it('lit le même champ dans les deux résultats', function() {
+    expect(mcpInstructionsFrom({ protocolVersion: '2025-06-18', instructions: 'consigne' })).toBe('consigne');
+    expect(mcpInstructionsFrom({ supportedVersions: ['2026-07-28'], instructions: 'consigne' })).toBe('consigne');
+  });
+  it('absent, vide ou non textuel : null', function() {
+    expect(mcpInstructionsFrom({})).toBe(null);
+    expect(mcpInstructionsFrom({ instructions: '   ' })).toBe(null);
+    expect(mcpInstructionsFrom({ instructions: 3 })).toBe(null);
+    expect(mcpInstructionsFrom(null)).toBe(null);
+  });
+});

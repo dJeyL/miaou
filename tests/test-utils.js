@@ -3930,6 +3930,13 @@ describe('mcpStatusPill (AB-5) — quatre etats, dont celui qui n\'est ni l\'un 
   it('en cours de connexion', function() {
     expect(mcpStatusPill({ state: 'connecting' }).tone).toBe('connecting');
   });
+  it('revision de protocole en infobulle, sur un serveur connecte seulement (lot AM)', function() {
+    expect(mcpStatusPill({ state: 'ok', count: 2, protocolVersion: '2026-07-28' }).tip).toBe('Protocole MCP 2026-07-28');
+    expect(mcpStatusPill({ state: 'ok', count: 2, protocolVersion: '2025-06-18',
+      unauthorizedUpstreams: [{ name: 'jira' }] }).tip).toBe('Protocole MCP 2025-06-18');
+    expect(mcpStatusPill({ state: 'ok', count: 2 }).tip).toBe(undefined);
+    expect(mcpStatusPill({ state: 'error', protocolVersion: '2026-07-28' }).tip).toBe(undefined);
+  });
   it('null quand il n\'y a rien a peindre', function() {
     expect(mcpStatusPill(null)).toBe(null);
     expect(mcpStatusPill(undefined)).toBe(null);

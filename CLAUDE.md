@@ -719,15 +719,23 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `shouldRecheckMcpServer` (défaut sans délai, sain throttlé par serveur via
   `_mcpLastAttempt` et `MCP_RECHECK_MIN_INTERVAL_MS`), plus un glyphe de
   reconnexion par carte qui sert aussi à relire la liste d'outils ; porte aussi les consignes de
-  portée serveur du champ standard `instructions` de l'InitializeResult
-  (`buildMcpInstructionsBlock`, injectées dans le message SYSTÈME depuis la
+  portée serveur du champ standard `instructions` de l'InitializeResult ou du
+  DiscoverResult (`buildMcpInstructionsBlock`, injectées dans le message SYSTÈME depuis la
   campagne cache — décision inversée, le motif d'origine confondait « varier »
   et « varier à chaque tour » ; rattachées au préfixe d'outil réel
   `<slug>__<serveur>` que MIAOU est le seul à connaître) ; dit en tête où vit le code, `mcp.js` (distant) contre
   `tools.js` (composition et routage) ; porte enfin le `_meta` d'un
   `tools/call` (lot AI : `_meta["miaou/web"]` de `fetch_url`, lu par
   `webMetaFromResult`, posé sur l'ack en `webMeta` par les trois
-  `onEnrichLastAck` via la liste unique `ackEnrichmentFields`).
+  `onEnrichLastAck` via la liste unique `ackEnrichmentFields`) ; porte enfin la
+  **révision 2026-07-28** (lot AM) : sonde `server/discover` par `mcpRpc` et
+  verdict pur `mcpProbeVerdict` en liste d'exclusion (repli sur `initialize`
+  sauf délai dépassé, 401/403 et `-32022` disjoint ; repli aussi sur échec
+  réseau, CORS oblige), ère par serveur en mémoire (`_remoteStatus[name].era`),
+  en-têtes et enveloppe `_meta` construits en un point (`mcpRequestShape`,
+  `encodeMcpHeaderValue`), aucun en-tête de version en legacy, corps des
+  réponses non 2xx lu dans les deux ères (`mcpHttpFailure`, session morte
+  tranchée AVANT), révision parlée dans l'infobulle de la pill de carte.
 - **`docs/skills.md`** — skills stage 1 (CRUD, invocation slash, drawer) et
   stage 2 (autotrigger, doctrine de déclenchement, confirmation) ; porte aussi,
   depuis le lot AE, la **seconde famille derrière le `/`** — les commandes MIAOU

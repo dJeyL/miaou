@@ -30,6 +30,26 @@
 // par connectMcpServer pour chaque serveur activé (cf. main.js init).
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 
+// Révision 2026-07-28 (lot AM) : plus de handshake ni de session. Chaque requête
+// porte sa version en en-tête et dans `params._meta`, et le serveur se découvre
+// par `server/discover`. Deux ères coexistent donc : `'modern'` (cette révision)
+// et `'legacy'` (le handshake `initialize` ci-dessus), tranchées à la connexion
+// par `mcpProbeVerdict` et portées par `_remoteStatus[name].era`.
+const MCP_MODERN_PROTOCOL_VERSION = '2026-07-28';
+
+// Versions joignables par `initialize`, recopiées de `HANDSHAKE_PROTOCOL_VERSIONS`
+// du SDK Python. Servent à UNE décision : un refus `-32022` dont `data.supported`
+// n'en contient aucune vient d'un serveur moderne seulement, avec qui se replier
+// sur `initialize` ne mènerait à rien (cf. `mcpProbeVerdict`).
+const MCP_HANDSHAKE_PROTOCOL_VERSIONS = ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25'];
+
+// Code JSON-RPC « version de protocole non prise en charge » (`data.supported`
+// liste celles du serveur).
+const MCP_UNSUPPORTED_VERSION_CODE = -32022;
+
+// Identité annoncée par MIAOU, dans `initialize` comme dans l'enveloppe moderne.
+const MCP_CLIENT_INFO = { name: 'miaou', version: '2' };
+
 // Code d'erreur machine partagé avec le serveur mcp_docs (brief D) : un
 // `ref` inconnu sans `content_b64` fourni. Porté dans `error.data.code` (slot
 // applicatif standard JSON-RPC 2.0, cf. mcpRpcAttempt) — UNE seule constante,
@@ -37,7 +57,7 @@ const MCP_PROTOCOL_VERSION = '2025-06-18';
 const REF_UNKNOWN_ERROR_CODE = 'REF_UNKNOWN';
 
 let _remoteTools = {};   // { servername: [ { name:'servername__x', description, inputSchema }, … ] }
-let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId?, unauthorizedUpstreams?, instructions? } }
+let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId?, era?, protocolVersion?, unauthorizedUpstreams?, instructions? } }
 
 // Dernière tentative de handshake, par serveur : { servername: timestamp }.
 // Registre SÉPARÉ de `_remoteStatus` et non un champ de plus, parce que la
@@ -91,6 +111,151 @@ function remoteToolDefs() {
   return out;
 }
 
+// ── Révision 2026-07-28 : enveloppe, sonde, lecture des erreurs ───
+//
+// Purs, testés en QuickJS. Le chemin async qui les emploie (`mcpRpcAttempt`,
+// `probeMcpEra`, `connectMcpServer`) ne l'est pas, cf. docs/mcp.md point 3.
+
+// Méthodes dont la cible part aussi en en-tête `Mcp-Name`, et le paramètre qui
+// la porte (table `NAME_BEARING_METHODS` du SDK). MIAOU n'émet aujourd'hui que
+// `tools/call`.
+const MCP_NAME_BEARING_METHODS = { 'tools/call': 'name', 'prompts/get': 'name', 'resources/read': 'uri' };
+
+// Valeur d'en-tête qui survit à HTTP : verbatim si ASCII imprimable sans espace
+// en bordure, sinon enveloppée en `=?base64?<utf-8 en base64>?=` (port de
+// `encode_header_value` du SDK). Sans ça, `fetch` LÈVE sur un caractère hors
+// ISO-8859-1 : un nom d'outil accentué ferait échouer l'appel avant le réseau.
+// Une valeur qui ressemble déjà à l'enveloppe est enveloppée à son tour, sans
+// quoi le serveur la décoderait.
+function encodeMcpHeaderValue(value) {
+  const s = String(value == null ? '' : value);
+  if (/^[\x20-\x7E]*$/.test(s) && s === s.trim() && !/^=\?base64\?.*\?=$/.test(s)) return s;
+  return '=?base64?' + arrayBufferToBase64(utf8Encode(s)) + '?=';
+}
+
+// En-têtes propres à l'ère et `params` à envoyer, pour UNE requête. Point de
+// construction unique, appelé par `mcpRpcAttempt` seul : tout appel, y compris
+// l'appel direct de tools.js (description d'un fichier de bibliothèque), en
+// hérite sans le savoir.
+//
+// Legacy : rien à ajouter, `params` rendu tel quel. Pas d'en-tête de version
+// non plus, bien que 2025-06-18 l'exige (décision du lot AM) : un serveur
+// dont le CORS a fait échouer la sonde refuserait le même en-tête ici, et le
+// repli casserait exactement là où il sert.
+//
+// Moderne : la version, la méthode et la cible en en-têtes, et l'enveloppe
+// `_meta` réservée dans `params`. `params` est COPIÉ, jamais muté : l'appelant
+// garde ses arguments (le hook d'inflation les réutilise pour un rejeu), et un
+// `_meta` qu'il aurait posé est conservé, nos trois clés réservées en plus.
+function mcpRequestShape(era, method, params) {
+  if (era !== 'modern') return { headers: {}, params: params };
+  const p = Object.assign({}, params || {});
+  p._meta = Object.assign({}, p._meta || {}, {
+    'io.modelcontextprotocol/protocolVersion': MCP_MODERN_PROTOCOL_VERSION,
+    'io.modelcontextprotocol/clientCapabilities': {},
+    'io.modelcontextprotocol/clientInfo': Object.assign({}, MCP_CLIENT_INFO),
+  });
+  const headers = { 'MCP-Protocol-Version': MCP_MODERN_PROTOCOL_VERSION, 'Mcp-Method': method };
+  const key = MCP_NAME_BEARING_METHODS[method];
+  if (key && typeof p[key] === 'string') headers['Mcp-Name'] = encodeMcpHeaderValue(p[key]);
+  return { headers: headers, params: p };
+}
+
+// Verdict de la sonde `server/discover` : 'modern', 'legacy' (se replier sur
+// `initialize`) ou 'fail' (échec franc, l'erreur est propagée). Calé sur
+// `client/_probe.py` du SDK, donc en LISTE D'EXCLUSION : tout ce qui n'est pas
+// une preuve positive de serveur moderne se replie, sauf trois cas.
+//
+// - Réponse sans erreur : moderne seulement si `supportedVersions` contient
+//   notre révision. `{}`, une réponse illisible ou une liste d'anciennes
+//   versions (le go-sdk annonce ainsi un legacy) se replient.
+// - Délai dépassé (`err.timeout`) : échec. Un serveur qui ne répond pas
+//   ne répondra pas mieux à `initialize`, et le repli doublerait l'attente.
+// - 401/403 : échec. L'authentification ne dépend pas de l'ère, se replier
+//   doublerait la requête pour le même refus.
+// - `-32022` dont `data.supported` ne contient aucune version de handshake :
+//   échec, vrai serveur moderne qui ne parle pas notre révision.
+// - Tout le reste se replie : erreur JSON-RPC quel que soit le statut, statut
+//   non 2xx sans corps, ET échec réseau (`err.network`). Ce dernier est un
+//   écart délibéré avec le SDK : dans un navigateur, un CORS qui refuse les
+//   nouveaux en-têtes lève le même `TypeError` qu'un serveur éteint. Un serveur
+//   réellement éteint échoue alors deux fois, vite.
+//
+// `err` est lu par ses champs (`timeout`, `status`, `rpcCode`, `data`), posés
+// par `mcpRpcAttempt` / `mcpJsonRpcError`, jamais par son message.
+function mcpProbeVerdict(result, err) {
+  if (!err) {
+    const versions = (result && Array.isArray(result.supportedVersions)) ? result.supportedVersions : [];
+    return versions.indexOf(MCP_MODERN_PROTOCOL_VERSION) >= 0 ? 'modern' : 'legacy';
+  }
+  if (err.timeout) return 'fail';
+  if (err.status === 401 || err.status === 403) return 'fail';
+  if (err.rpcCode === MCP_UNSUPPORTED_VERSION_CODE) {
+    const supported = (err.data && Array.isArray(err.data.supported)) ? err.data.supported : null;
+    if (supported && !supported.some(v => MCP_HANDSHAKE_PROTOCOL_VERSIONS.indexOf(v) >= 0)) return 'fail';
+  }
+  return 'legacy';
+}
+
+// Un 404 alors qu'on détenait une session = session morte (serveur redémarré),
+// pas un vrai 404 d'URL. Tranché sur le statut SEUL, avant toute lecture du
+// corps : c'est ce qui garde le ré-handshake de `mcpRpc` indépendant de ce que
+// le serveur écrit dans sa réponse. Inatteignable en moderne, faute de session.
+function isMcpStaleSessionResponse(status, hadSession) {
+  return status === 404 && !!hadSession;
+}
+
+// Erreur levée pour un objet `error` JSON-RPC, qu'il arrive sur un 200 ou dans
+// le corps d'une réponse non 2xx : la même dans les deux cas.
+//
+// `applicative` dit que le serveur a RÉPONDU : quoi que dise l'erreur, il est
+// joignable, et `noteMcpCallFailure` ne doit pas le déclarer injoignable pour
+// un appel qu'il refuse. `data` porte l'objet applicatif complet (contrats
+// REF_UNKNOWN et AUTHORIZATION_REQUIRED, lus sur `err.data.code`, jamais sur
+// `err.code`) ; `rpcCode` l'entier protocolaire, lu par `mcpProbeVerdict`.
+// `status` n'est posé que pour une réponse non 2xx.
+function mcpJsonRpcError(rpcError, status, hadSession) {
+  const e = rpcError || {};
+  const err = new Error(e.message || 'Erreur JSON-RPC.');
+  err.applicative = true;
+  if (typeof e.code === 'number') err.rpcCode = e.code;
+  if (e.data) err.data = e.data;
+  if (status) err.status = status;
+  if (hadSession && /session/i.test(err.message)) err.staleSession = true;   // signalée par erreur JSON-RPC
+  return err;
+}
+
+// Erreur levée pour une réponse non 2xx. `msg` est son corps lu en JSON, ou
+// null. Avant cette lecture, le corps était ignoré : un 400 ou un 404 portant
+// une erreur JSON-RPC devenait un « HTTP 400 » nu, au message perdu et sans
+// `applicative`, donc un serveur qui venait de répondre était déclaré
+// injoignable. Le chemin moderne répond ainsi à TOUTE erreur de dispatch.
+//
+// La session morte garde la priorité, quel que soit le corps (cf.
+// `isMcpStaleSessionResponse`).
+function mcpHttpFailure(status, msg, hadSession) {
+  if (isMcpStaleSessionResponse(status, hadSession)) {
+    const stale = new Error('HTTP ' + status);
+    stale.status = status;
+    stale.staleSession = true;
+    return stale;
+  }
+  if (msg && msg.error) return mcpJsonRpcError(msg.error, status, hadSession);
+  const err = new Error('HTTP ' + status);
+  err.status = status;
+  return err;
+}
+
+// Consignes de portée serveur : `instructions` de l'InitializeResult en legacy,
+// du DiscoverResult en moderne (même contenu, mesuré sur le proxy). Champ
+// standard OPTIONNEL : absent ou vide est le cas majoritaire, rendu null sans
+// bruit.
+function mcpInstructionsFrom(result) {
+  return (result && typeof result.instructions === 'string' && result.instructions.trim())
+    ? result.instructions
+    : null;
+}
+
 // ── Client JSON-RPC 2.0 sur transport streamable-http ───────────
 let _mcpRpcId = 0;
 
@@ -99,6 +264,17 @@ let _mcpRpcId = 0;
 // un Mcp-Session-Id, tague l'erreur `staleSession = true` (le serveur a redémarré
 // et ne reconnaît plus la session → déclenche le ré-handshake dans mcpRpc). Un 404
 // SANS session détenue est un vrai 404 (mauvais endpoint), non tagué.
+//
+// L'ère de la requête est celle du serveur (`_remoteStatus[name].era`), sauf
+// `opts.era` qui la force : c'est ainsi que la sonde part en moderne avant que
+// l'ère soit connue. Inconnue, elle vaut legacy, le comportement d'avant le lot
+// AM. En moderne, ni `Mcp-Session-Id` envoyé ni capturé : cette révision n'a
+// pas de session.
+//
+// Les erreurs portent des champs que lit `mcpProbeVerdict` : `timeout` (délai
+// dépassé), `network` (`fetch` a levé : serveur éteint OU préflight CORS
+// refusé, indiscernables dans un navigateur), `status` (réponse non 2xx) et
+// `rpcCode` (erreur JSON-RPC).
 async function mcpRpcAttempt(server, method, params, opts) {
   const o = opts || {};
   const ctrl = new AbortController();
@@ -109,47 +285,62 @@ async function mcpRpcAttempt(server, method, params, opts) {
   // test, carte d'avant la migration lue directement) reste correctement bornée.
   const tmo = (mcpTimeoutSeconds(server) || MCP_DEFAULT_TIMEOUT_S) * 1000;
   const timer = setTimeout(() => ctrl.abort(), tmo);
+  const st = _remoteStatus[server.name];
+  const era = o.era || (st && st.era) || 'legacy';
+  const shape = mcpRequestShape(era, method, params);
   const id = o.notify ? undefined : (++_mcpRpcId);
   const body = { jsonrpc: '2.0', method };
   if (!o.notify) body.id = id;
-  if (params !== undefined) body.params = params;
-  const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' };
+  if (shape.params !== undefined) body.params = shape.params;
+  const headers = Object.assign({ 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' }, shape.headers);
   if (server.authorization_token) headers['Authorization'] = 'Bearer ' + server.authorization_token;
-  const st = _remoteStatus[server.name];
-  const hadSession = !!(st && st.sessionId);
+  const hadSession = era !== 'modern' && !!(st && st.sessionId);
   if (hadSession) headers['Mcp-Session-Id'] = st.sessionId;
   try {
-    const res = await fetch(server.url, { method: 'POST', headers, body: JSON.stringify(body), signal: ctrl.signal });
-    const newSid = res.headers && res.headers.get && res.headers.get('Mcp-Session-Id');
-    if (newSid && _remoteStatus[server.name]) _remoteStatus[server.name].sessionId = newSid;
+    let res;
+    try {
+      res = await fetch(server.url, { method: 'POST', headers, body: JSON.stringify(body), signal: ctrl.signal });
+    } catch (e) {
+      if (e && e.name !== 'AbortError') e.network = true;
+      throw e;
+    }
+    if (era !== 'modern') {
+      const newSid = res.headers && res.headers.get && res.headers.get('Mcp-Session-Id');
+      if (newSid && _remoteStatus[server.name]) _remoteStatus[server.name].sessionId = newSid;
+    }
     if (o.notify) return null;
     if (!res.ok) {
-      const err = new Error('HTTP ' + res.status);
-      if (res.status === 404 && hadSession) err.staleSession = true;   // session invalidée, pas un vrai 404 d'URL
-      throw err;
+      // Ordre voulu : la session morte se tranche sur le statut, AVANT de lire
+      // le corps (cf. isMcpStaleSessionResponse).
+      if (isMcpStaleSessionResponse(res.status, hadSession)) throw mcpHttpFailure(res.status, null, hadSession);
+      throw mcpHttpFailure(res.status, await readMcpErrorBody(res), hadSession);
     }
     const ctype = (res.headers && res.headers.get && res.headers.get('Content-Type')) || '';
     const msg = ctype.indexOf('text/event-stream') >= 0 ? await readSseJsonRpc(res, id) : await res.json();
     if (!msg) throw new Error('Réponse vide.');
-    if (msg.error) {
-      const err = new Error((msg.error && msg.error.message) || 'Erreur JSON-RPC.');
-      // Le serveur a REPONDU : quoi que dise cette erreur, il est joignable.
-      // Le drapeau sert a `noteMcpCallFailure` (plus bas) pour ne pas declarer
-      // injoignable un serveur qui refuse simplement l'appel.
-      err.applicative = true;
-      if (hadSession && /session/i.test(err.message)) err.staleSession = true;   // signalée par erreur JSON-RPC
-      // Code machine applicatif (brief D, contrat REF_UNKNOWN) : slot standard
-      // JSON-RPC 2.0 pour les données d'erreur applicatives, `code` restant
-      // réservé à l'entier protocolaire. err.data.code, jamais err.code.
-      if (msg.error && msg.error.data) err.data = msg.error.data;
-      throw err;
-    }
+    if (msg.error) throw mcpJsonRpcError(msg.error, null, hadSession);
     return msg.result;
   } catch (e) {
-    if (e && e.name === 'AbortError') throw new Error('Délai dépassé (' + tmo + ' ms).');
+    if (e && e.name === 'AbortError') {
+      const err = new Error('Délai dépassé (' + tmo + ' ms).');
+      err.timeout = true;
+      throw err;
+    }
     throw e;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// Corps d'une réponse non 2xx, lu en JSON si le serveur l'annonce, sinon null.
+// Ne lève jamais : un corps illisible laisse l'appelant au « HTTP <statut> » nu.
+async function readMcpErrorBody(res) {
+  try {
+    const ctype = (res.headers && res.headers.get && res.headers.get('Content-Type')) || '';
+    if (ctype.indexOf('json') < 0) return null;
+    return await res.json();
+  } catch (_) {
+    return null;
   }
 }
 
@@ -160,7 +351,7 @@ async function mcpRpcAttempt(server, method, params, opts) {
 async function mcpReinitialize(server) {
   if (_remoteStatus[server.name]) _remoteStatus[server.name].sessionId = null;   // ne plus renvoyer l'id mort
   await mcpRpcAttempt(server, 'initialize', {
-    protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'miaou', version: '2' },
+    protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: Object.assign({}, MCP_CLIENT_INFO),
   }, {});
   try { await mcpRpcAttempt(server, 'notifications/initialized', undefined, { notify: true }); } catch (_) {}
 }
@@ -213,39 +404,71 @@ async function readSseJsonRpc(res, wantId) {
   return found;
 }
 
-// Handshake d'activation : initialize → notification initialized →
-// tools/list ; préfixe, filtre (allowlist/denylist), met en cache. DÉGRADE GRACIEUSEMENT : tout
-// échec marque le serveur en erreur et n'expose AUCUN de ses outils, sans jamais
-// lever vers l'appelant — un mauvais backend ne gèle jamais MIAOU.
+// Sonde d'ère : `server/discover` envoyé en moderne, verdict par
+// `mcpProbeVerdict`. Rend `{ era, discover }` (le DiscoverResult en moderne,
+// null en legacy) ou lève l'erreur de la sonde sur un échec franc.
+//
+// Passe par `mcpRpc` comme toute méthode : les verify qui stubent `mcpRpc` par
+// nom de méthode rendent `{}` à celle-ci, ce qui vaut repli, et couvrent donc
+// le chemin legacy sans retouche.
+async function probeMcpEra(server) {
+  let result = null, failure = null;
+  try {
+    result = await mcpRpc(server, 'server/discover', undefined, { era: 'modern' });
+  } catch (e) {
+    failure = e;
+  }
+  const era = mcpProbeVerdict(result, failure);
+  if (era === 'fail') throw failure;
+  return { era: era, discover: era === 'modern' ? result : null };
+}
+
+// Activation : sonde d'ère, puis en legacy initialize → notification
+// initialized, puis tools/list ; préfixe, filtre (allowlist/denylist), met en
+// cache. DÉGRADE GRACIEUSEMENT : tout échec marque le serveur en erreur et
+// n'expose AUCUN de ses outils, sans jamais lever vers l'appelant — un mauvais
+// backend ne gèle jamais MIAOU.
+//
+// L'ère vit dans `_remoteStatus`, en mémoire seulement, avec la même durée de
+// vie que `sessionId` (décision du lot AM) : chaque connexion refait la
+// sonde, et un serveur mis à jour change d'ère à sa prochaine reconnexion. Un
+// serveur qui change d'ère SOUS nous n'est pas rattrapé automatiquement :
+// l'erreur s'affiche, et la reconnexion (glyphe, retour de focus) re-sonde.
 async function connectMcpServer(server) {
   const s = server;
   // Horodaté à l'ENTRÉE, pas à la sortie : deux retours de focus rapprochés
   // pendant un handshake lent doivent voir la tentative en cours, sinon le
   // throttle ne protège de rien précisément quand le serveur est lent.
   _mcpLastAttempt[s.name] = Date.now();
-  _remoteStatus[s.name] = { state: 'connecting', count: 0, sessionId: null };
+  _remoteStatus[s.name] = { state: 'connecting', count: 0, sessionId: null, era: null };
   delete _remoteTools[s.name];
   try {
-    const init = await mcpRpc(s, 'initialize', {
-      protocolVersion: MCP_PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: 'miaou', version: '2' },
-    });
-    // Champ STANDARD MCP (InitializeResult.instructions), destiné aux
-    // instructions du modèle : une consigne de portée SERVEUR, que rien d'autre
-    // dans le protocole ne peut porter (name/description/inputSchema sont
-    // par-outil). Jusqu'ici ce résultat était intégralement jeté — seul
-    // l'en-tête Mcp-Session-Id de la même réponse était lu.
+    const probe = await probeMcpEra(s);
+    if (_remoteStatus[s.name]) _remoteStatus[s.name].era = probe.era;
+    let negotiated = null;
+    let source = probe.discover;
+    if (probe.era === 'legacy') {
+      source = await mcpRpc(s, 'initialize', {
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: Object.assign({}, MCP_CLIENT_INFO),
+      });
+      negotiated = (source && typeof source.protocolVersion === 'string') ? source.protocolVersion : MCP_PROTOCOL_VERSION;
+      try { await mcpRpc(s, 'notifications/initialized', undefined, { notify: true }); } catch (_) {}
+    } else {
+      negotiated = MCP_MODERN_PROTOCOL_VERSION;
+    }
+    // Champ STANDARD MCP, destiné aux instructions du modèle : une consigne de
+    // portée SERVEUR, que rien d'autre dans le protocole ne peut porter
+    // (name/description/inputSchema sont par-outil). Lu dans l'InitializeResult
+    // en legacy, dans le DiscoverResult en moderne.
     //
     // OPTIONNEL par contrat, et absent chez la majorité des serveurs : lecture
     // défensive, aucun log, aucune branche d'erreur. Même posture que
     // `unauthorizedUpstreams` juste dessous, et même durée de vie — porté par
     // `_remoteStatus`, donc reconstruit à chaque connexion et effacé avec la
     // carte à la déconnexion.
-    const instructions = (init && typeof init.instructions === 'string' && init.instructions.trim())
-      ? init.instructions
-      : null;
-    try { await mcpRpc(s, 'notifications/initialized', undefined, { notify: true }); } catch (_) {}
+    const instructions = mcpInstructionsFrom(source);
     const listed = await mcpRpc(s, 'tools/list', {});
     const tools = (listed && Array.isArray(listed.tools)) ? listed.tools : [];
     const filtered = filterMcpTools(tools, s.toolAllowlist, s.toolDenylist);
@@ -268,6 +491,8 @@ async function connectMcpServer(server) {
       state: 'ok', count: _remoteTools[s.name].length, error: null,
       unauthorizedUpstreams: unauthorizedUpstreamsFromList(listed),
       instructions: instructions,
+      era: probe.era,
+      protocolVersion: negotiated,
     });
     return true;
   } catch (e) {

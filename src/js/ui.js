@@ -8585,6 +8585,7 @@ function buildMcpCard(server, isNew) {
   if (pill) {
     if (pill.tone !== 'connecting') viewStatus.classList.add(pill.tone);
     viewStatus.textContent = pill.text;
+    if (pill.tip) setTip(viewStatus, pill.tip);   // après le texte : setTip lit le porteur
   }
   viewRow.appendChild(viewStatus);
 

@@ -5485,7 +5485,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-02 23:13 UTC */
+/* miaou — built: 2026-10-02 23:41 UTC */
 
 /* ── utils.js ── */
 
@@ -5795,13 +5795,16 @@ function mcpStatusPill(status) {
   }
   const count = status.count || 0;
   let text = '● Connecté — ' + count + ' outil' + (count > 1 ? 's' : '');
+  const tip = status.protocolVersion ? 'Protocole MCP ' + status.protocolVersion : '';
   const pending = Array.isArray(status.unauthorizedUpstreams) ? status.unauthorizedUpstreams : [];
-  if (!pending.length) return { tone: 'ok', text: text };
+  if (!pending.length) return tip ? { tone: 'ok', text: text, tip: tip } : { tone: 'ok', text: text };
 
-  return {
+  const out = {
     tone: 'pending',
     text: text + ', ' + pending.length + ' service' + (pending.length > 1 ? 's' : '') + ' à autoriser',
   };
+  if (tip) out.tip = tip;
+  return out;
 }
 
 const MCP_INSTRUCTIONS_SECTION_RE = /^##[ \t]+(.+?)[ \t]*$/;
@@ -10956,7 +10959,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1790982807}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1790984517}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -15450,6 +15453,14 @@ async function ensureSystemSkills() {
 
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 
+const MCP_MODERN_PROTOCOL_VERSION = '2026-07-28';
+
+const MCP_HANDSHAKE_PROTOCOL_VERSIONS = ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25'];
+
+const MCP_UNSUPPORTED_VERSION_CODE = -32022;
+
+const MCP_CLIENT_INFO = { name: 'miaou', version: '2' };
+
 const REF_UNKNOWN_ERROR_CODE = 'REF_UNKNOWN';
 
 let _remoteTools = {};
@@ -15481,6 +15492,76 @@ function remoteToolDefs() {
   return out;
 }
 
+const MCP_NAME_BEARING_METHODS = { 'tools/call': 'name', 'prompts/get': 'name', 'resources/read': 'uri' };
+
+function encodeMcpHeaderValue(value) {
+  const s = String(value == null ? '' : value);
+  if (/^[\x20-\x7E]*$/.test(s) && s === s.trim() && !/^=\?base64\?.*\?=$/.test(s)) return s;
+  return '=?base64?' + arrayBufferToBase64(utf8Encode(s)) + '?=';
+}
+
+function mcpRequestShape(era, method, params) {
+  if (era !== 'modern') return { headers: {}, params: params };
+  const p = Object.assign({}, params || {});
+  p._meta = Object.assign({}, p._meta || {}, {
+    'io.modelcontextprotocol/protocolVersion': MCP_MODERN_PROTOCOL_VERSION,
+    'io.modelcontextprotocol/clientCapabilities': {},
+    'io.modelcontextprotocol/clientInfo': Object.assign({}, MCP_CLIENT_INFO),
+  });
+  const headers = { 'MCP-Protocol-Version': MCP_MODERN_PROTOCOL_VERSION, 'Mcp-Method': method };
+  const key = MCP_NAME_BEARING_METHODS[method];
+  if (key && typeof p[key] === 'string') headers['Mcp-Name'] = encodeMcpHeaderValue(p[key]);
+  return { headers: headers, params: p };
+}
+
+function mcpProbeVerdict(result, err) {
+  if (!err) {
+    const versions = (result && Array.isArray(result.supportedVersions)) ? result.supportedVersions : [];
+    return versions.indexOf(MCP_MODERN_PROTOCOL_VERSION) >= 0 ? 'modern' : 'legacy';
+  }
+  if (err.timeout) return 'fail';
+  if (err.status === 401 || err.status === 403) return 'fail';
+  if (err.rpcCode === MCP_UNSUPPORTED_VERSION_CODE) {
+    const supported = (err.data && Array.isArray(err.data.supported)) ? err.data.supported : null;
+    if (supported && !supported.some(v => MCP_HANDSHAKE_PROTOCOL_VERSIONS.indexOf(v) >= 0)) return 'fail';
+  }
+  return 'legacy';
+}
+
+function isMcpStaleSessionResponse(status, hadSession) {
+  return status === 404 && !!hadSession;
+}
+
+function mcpJsonRpcError(rpcError, status, hadSession) {
+  const e = rpcError || {};
+  const err = new Error(e.message || 'Erreur JSON-RPC.');
+  err.applicative = true;
+  if (typeof e.code === 'number') err.rpcCode = e.code;
+  if (e.data) err.data = e.data;
+  if (status) err.status = status;
+  if (hadSession && /session/i.test(err.message)) err.staleSession = true;
+  return err;
+}
+
+function mcpHttpFailure(status, msg, hadSession) {
+  if (isMcpStaleSessionResponse(status, hadSession)) {
+    const stale = new Error('HTTP ' + status);
+    stale.status = status;
+    stale.staleSession = true;
+    return stale;
+  }
+  if (msg && msg.error) return mcpJsonRpcError(msg.error, status, hadSession);
+  const err = new Error('HTTP ' + status);
+  err.status = status;
+  return err;
+}
+
+function mcpInstructionsFrom(result) {
+  return (result && typeof result.instructions === 'string' && result.instructions.trim())
+    ? result.instructions
+    : null;
+}
+
 let _mcpRpcId = 0;
 
 async function mcpRpcAttempt(server, method, params, opts) {
@@ -15489,50 +15570,66 @@ async function mcpRpcAttempt(server, method, params, opts) {
 
   const tmo = (mcpTimeoutSeconds(server) || MCP_DEFAULT_TIMEOUT_S) * 1000;
   const timer = setTimeout(() => ctrl.abort(), tmo);
+  const st = _remoteStatus[server.name];
+  const era = o.era || (st && st.era) || 'legacy';
+  const shape = mcpRequestShape(era, method, params);
   const id = o.notify ? undefined : (++_mcpRpcId);
   const body = { jsonrpc: '2.0', method };
   if (!o.notify) body.id = id;
-  if (params !== undefined) body.params = params;
-  const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' };
+  if (shape.params !== undefined) body.params = shape.params;
+  const headers = Object.assign({ 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' }, shape.headers);
   if (server.authorization_token) headers['Authorization'] = 'Bearer ' + server.authorization_token;
-  const st = _remoteStatus[server.name];
-  const hadSession = !!(st && st.sessionId);
+  const hadSession = era !== 'modern' && !!(st && st.sessionId);
   if (hadSession) headers['Mcp-Session-Id'] = st.sessionId;
   try {
-    const res = await fetch(server.url, { method: 'POST', headers, body: JSON.stringify(body), signal: ctrl.signal });
-    const newSid = res.headers && res.headers.get && res.headers.get('Mcp-Session-Id');
-    if (newSid && _remoteStatus[server.name]) _remoteStatus[server.name].sessionId = newSid;
+    let res;
+    try {
+      res = await fetch(server.url, { method: 'POST', headers, body: JSON.stringify(body), signal: ctrl.signal });
+    } catch (e) {
+      if (e && e.name !== 'AbortError') e.network = true;
+      throw e;
+    }
+    if (era !== 'modern') {
+      const newSid = res.headers && res.headers.get && res.headers.get('Mcp-Session-Id');
+      if (newSid && _remoteStatus[server.name]) _remoteStatus[server.name].sessionId = newSid;
+    }
     if (o.notify) return null;
     if (!res.ok) {
-      const err = new Error('HTTP ' + res.status);
-      if (res.status === 404 && hadSession) err.staleSession = true;
-      throw err;
+
+      if (isMcpStaleSessionResponse(res.status, hadSession)) throw mcpHttpFailure(res.status, null, hadSession);
+      throw mcpHttpFailure(res.status, await readMcpErrorBody(res), hadSession);
     }
     const ctype = (res.headers && res.headers.get && res.headers.get('Content-Type')) || '';
     const msg = ctype.indexOf('text/event-stream') >= 0 ? await readSseJsonRpc(res, id) : await res.json();
     if (!msg) throw new Error('Réponse vide.');
-    if (msg.error) {
-      const err = new Error((msg.error && msg.error.message) || 'Erreur JSON-RPC.');
-
-      err.applicative = true;
-      if (hadSession && /session/i.test(err.message)) err.staleSession = true;
-
-      if (msg.error && msg.error.data) err.data = msg.error.data;
-      throw err;
-    }
+    if (msg.error) throw mcpJsonRpcError(msg.error, null, hadSession);
     return msg.result;
   } catch (e) {
-    if (e && e.name === 'AbortError') throw new Error('Délai dépassé (' + tmo + ' ms).');
+    if (e && e.name === 'AbortError') {
+      const err = new Error('Délai dépassé (' + tmo + ' ms).');
+      err.timeout = true;
+      throw err;
+    }
     throw e;
   } finally {
     clearTimeout(timer);
   }
 }
 
+async function readMcpErrorBody(res) {
+  try {
+    const ctype = (res.headers && res.headers.get && res.headers.get('Content-Type')) || '';
+    if (ctype.indexOf('json') < 0) return null;
+    return await res.json();
+  } catch (_) {
+    return null;
+  }
+}
+
 async function mcpReinitialize(server) {
   if (_remoteStatus[server.name]) _remoteStatus[server.name].sessionId = null;
   await mcpRpcAttempt(server, 'initialize', {
-    protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'miaou', version: '2' },
+    protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: Object.assign({}, MCP_CLIENT_INFO),
   }, {});
   try { await mcpRpcAttempt(server, 'notifications/initialized', undefined, { notify: true }); } catch (_) {}
 }
@@ -15574,23 +15671,42 @@ async function readSseJsonRpc(res, wantId) {
   return found;
 }
 
+async function probeMcpEra(server) {
+  let result = null, failure = null;
+  try {
+    result = await mcpRpc(server, 'server/discover', undefined, { era: 'modern' });
+  } catch (e) {
+    failure = e;
+  }
+  const era = mcpProbeVerdict(result, failure);
+  if (era === 'fail') throw failure;
+  return { era: era, discover: era === 'modern' ? result : null };
+}
+
 async function connectMcpServer(server) {
   const s = server;
 
   _mcpLastAttempt[s.name] = Date.now();
-  _remoteStatus[s.name] = { state: 'connecting', count: 0, sessionId: null };
+  _remoteStatus[s.name] = { state: 'connecting', count: 0, sessionId: null, era: null };
   delete _remoteTools[s.name];
   try {
-    const init = await mcpRpc(s, 'initialize', {
-      protocolVersion: MCP_PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: 'miaou', version: '2' },
-    });
+    const probe = await probeMcpEra(s);
+    if (_remoteStatus[s.name]) _remoteStatus[s.name].era = probe.era;
+    let negotiated = null;
+    let source = probe.discover;
+    if (probe.era === 'legacy') {
+      source = await mcpRpc(s, 'initialize', {
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: Object.assign({}, MCP_CLIENT_INFO),
+      });
+      negotiated = (source && typeof source.protocolVersion === 'string') ? source.protocolVersion : MCP_PROTOCOL_VERSION;
+      try { await mcpRpc(s, 'notifications/initialized', undefined, { notify: true }); } catch (_) {}
+    } else {
+      negotiated = MCP_MODERN_PROTOCOL_VERSION;
+    }
 
-    const instructions = (init && typeof init.instructions === 'string' && init.instructions.trim())
-      ? init.instructions
-      : null;
-    try { await mcpRpc(s, 'notifications/initialized', undefined, { notify: true }); } catch (_) {}
+    const instructions = mcpInstructionsFrom(source);
     const listed = await mcpRpc(s, 'tools/list', {});
     const tools = (listed && Array.isArray(listed.tools)) ? listed.tools : [];
     const filtered = filterMcpTools(tools, s.toolAllowlist, s.toolDenylist);
@@ -15604,6 +15720,8 @@ async function connectMcpServer(server) {
       state: 'ok', count: _remoteTools[s.name].length, error: null,
       unauthorizedUpstreams: unauthorizedUpstreamsFromList(listed),
       instructions: instructions,
+      era: probe.era,
+      protocolVersion: negotiated,
     });
     return true;
   } catch (e) {
@@ -25248,6 +25366,7 @@ function buildMcpCard(server, isNew) {
   if (pill) {
     if (pill.tone !== 'connecting') viewStatus.classList.add(pill.tone);
     viewStatus.textContent = pill.text;
+    if (pill.tip) setTip(viewStatus, pill.tip);
   }
   viewRow.appendChild(viewStatus);
 

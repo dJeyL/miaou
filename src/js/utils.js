@@ -662,6 +662,11 @@ function resolveAuthorizationPending(statuses) {
 //
 // Rend `null` quand il n'y a rien à afficher (carte neuve, serveur désactivé) —
 // l'appelant n'a alors pas de pill à peindre.
+//
+// `tip`, présent sur un serveur connecté seulement : la révision de protocole
+// parlée (lot AM). Diagnostic, d'où l'infobulle plutôt que le
+// libellé : savoir qu'un serveur est resté sur le handshake explique qu'il
+// n'offre pas ce que seule la révision 2026-07-28 porte.
 // Pure, testable en QuickJS.
 function mcpStatusPill(status) {
   if (!status) return null;
@@ -674,18 +679,21 @@ function mcpStatusPill(status) {
   }
   const count = status.count || 0;
   let text = '● Connecté — ' + count + ' outil' + (count > 1 ? 's' : '');
+  const tip = status.protocolVersion ? 'Protocole MCP ' + status.protocolVersion : '';
   const pending = Array.isArray(status.unauthorizedUpstreams) ? status.unauthorizedUpstreams : [];
-  if (!pending.length) return { tone: 'ok', text: text };
+  if (!pending.length) return tip ? { tone: 'ok', text: text, tip: tip } : { tone: 'ok', text: text };
   // « service » et non « serveur » : ce compte-ci porte sur les UPSTREAMS d'une
   // carte, quand celui de la pastille de topbar porte sur les SERVEURS
   // configurés. Le même mot aux deux endroits désignerait deux niveaux
   // différents à quelques pixels l'un de l'autre. « service » est le mot que
   // `help.md` emploie déjà pour ce qu'un serveur compagnon donne accès à — pas
   // un terme inventé pour l'occasion.
-  return {
+  const out = {
     tone: 'pending',
     text: text + ', ' + pending.length + ' service' + (pending.length > 1 ? 's' : '') + ' à autoriser',
   };
+  if (tip) out.tip = tip;
+  return out;
 }
 
 // ── Consignes de portée serveur publiées par un serveur MCP ─────────────────

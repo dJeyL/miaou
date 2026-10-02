@@ -7,7 +7,8 @@ invariants ci-dessous sont déjà payés — ne pas les ré-introduire de traver
 **Où vit ce code.** Le côté **distant** est dans `src/js/mcp.js` (chargé avant
 `tools.js` dans `JS_ORDER`) : protocole et état de session (`_remoteTools`/
 `_remoteStatus`), client JSON-RPC (`mcpRpcAttempt`/`mcpRpc`/`readSseJsonRpc`),
-handshake (`connectMcpServer`/`disconnectMcpServer`), marqueurs de refus
+sonde d'ère et handshake (`probeMcpEra`/`connectMcpServer`/`disconnectMcpServer`,
+point 20), marqueurs de refus
 d'autorisation et `callRemoteTool`. Ce qui **compose** interne et distant reste
 dans `tools.js` — `exposedTools` (elle lit `TOOLS`), le dispatcher `callTool`/
 `callInternalTool`, le hook d'inflation `callDocsInflatedRemoteTool` et les
@@ -56,6 +57,10 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
    sa prochaine normalisation (`normalizeMcpServer`) ; d'ici là il est inerte.
    Côté `config.json`, la clef `mcp_server.transport` lève désormais le WARN de
    clef inconnue au build.
+   Sur ce transport, deux révisions de protocole coexistent depuis le lot AM :
+   le handshake `initialize` à session (ère `legacy`) et la révision 2026-07-28
+   sans session (ère `modern`). Même endpoint, même POST, même lecture JSON ou
+   SSE ; ce qui change par requête est décrit au point 20.
 5. **Timeout via `AbortController`.** Chaque appel `mcpRpc` arme un
    `setTimeout` → `abort()` ; sur abort, résultat `{ isError: true }` au
    message clair. Sans ça le champ `timeout_s` serait décoratif. **Tout le
@@ -66,9 +71,13 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
    sur le NOM du champ, jamais sur un seuil de valeur, et dans
    `normalizeMcpServer` plutôt qu'en passe de démarrage pour couvrir aussi
    l'import d'un `.zip` exporté avant. `Mcp-Session-Id`
-   capturé sur l'`initialize` et renvoyé sur les appels suivants.
-6. **Dégradation gracieuse.** `connectMcpServer` (initialize → notification
-   initialized → tools/list → préfixe + filtre + cache) **ne lève jamais** vers
+   capturé sur l'`initialize` et renvoyé sur les appels suivants, **en legacy
+   seulement** : en moderne il n'est ni envoyé ni capturé (point 20). Le délai
+   dépassé lève une erreur marquée `timeout`, que la sonde d'ère lit pour NE PAS
+   se replier (lot AM).
+6. **Dégradation gracieuse.** `connectMcpServer` (sonde `server/discover` →
+   en legacy initialize → notification initialized → tools/list → préfixe +
+   filtre + cache) **ne lève jamais** vers
    l'appelant : tout échec marque le serveur en erreur et **n'expose aucun** de
    ses outils ; le reste du registre (interne + autres serveurs) tient. Un mauvais
    backend ne gèle pas MIAOU. Connexion au démarrage via `reconnectMcpServers`
@@ -149,6 +158,12 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
    de re-sonde préventive, jamais plus d'une tentative (pas de boucle sur un serveur
    mort). `initialize`/notifications passent par `mcpRpcAttempt` directement → pas de
    récursion.
+   **Ordre préservé par le lot AM** : depuis que le corps d'une réponse non 2xx
+   est lu (point 20), le 404 avec session détenue se tranche sur le statut SEUL,
+   AVANT cette lecture (`isMcpStaleSessionResponse`, pur) — le ré-handshake ne
+   dépend donc pas de ce que le serveur écrit dans sa réponse. **Legacy
+   seulement** : la révision 2026-07-28 n'a pas de session, `staleSession` y est
+   inatteignable et `mcpReinitialize` n'a rien à faire.
 10. **Auth : posture ASSUME (non-prod).** `authorization_token` en clair dans
     localStorage. Décision consciente : tout ce que JS lit, un XSS le lit ; un
     chiffrement client a besoin d'une clef client → ne protège rien. Le correctif
@@ -610,7 +625,8 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       l'application (cf. point 18 pour l'élargissement aux serveurs en erreur et
       le second signal).
 
-17. **Consignes de portée serveur (`instructions` de l'InitializeResult).** Les
+17. **Consignes de portée serveur (`instructions` de l'InitializeResult, ou du
+    DiscoverResult en moderne).** Les
     seuls champs qu'un client relaie au modèle par outil sont `name`,
     `description`, `inputSchema`. Une consigne valant pour un serveur **entier**
     (« lis telle documentation avant d'utiliser ces outils ») n'avait donc
@@ -626,7 +642,10 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       lu. Le champ est **optionnel et absent chez la majorité des serveurs** :
       lecture défensive, aucun log, aucune branche d'erreur, exactement la
       posture du point 16. Posé sur `_remoteStatus[name].instructions`, dont il
-      partage durée de vie et origine.
+      partage durée de vie et origine. **Deux sources selon l'ère** (lot AM) :
+      `init.instructions` en legacy, `discover.instructions` en moderne — même
+      contenu, mesuré sur le proxy — lues par le même pur `mcpInstructionsFrom`.
+      Tout l'aval (`mcpInstructionSources`, bloc système) est inchangé.
     - **Injection dans le message SYSTÈME** (révision de la campagne cache ;
       voir ci-dessous pourquoi la décision initiale est inversée).
       `buildMcpInstructionsBlock` (utils.js, pure) est appelée depuis
@@ -791,6 +810,85 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       `args`). Il ne sert qu'au libellé et à l'infobulle des pastilles de source
       (`webSourceRegistry`, cf. `docs/tools.md`), jamais à la provenance. Pas de
       dédoublonnage des favicons par domaine : stockage par ack, borné.
+
+20. **Révision 2026-07-28 : sonde d'ère et repli sur `initialize` (lot AM).**
+    La révision 2026-07-28 supprime le handshake et la session : chaque requête
+    porte sa version, et le serveur se découvre par `server/discover`. Les
+    serveurs anciens (SDK 1.x, et tout upstream tiers) ne la parlent pas. MIAOU
+    parle donc les deux, et tranche **par serveur, à chaque connexion**.
+    - **Ère en mémoire seulement** : champ `era` (`'modern'` |
+      `'legacy'`) de `_remoteStatus[name]`, même durée de vie que `sessionId`,
+      avec `protocolVersion` (la révision effectivement parlée : 2026-07-28, ou
+      celle que rend l'`initialize`). Persister économiserait une requête mais
+      figerait un verdict : un serveur mis à jour resterait legacy.
+    - **Sonde** : `probeMcpEra` envoie `server/discover` en moderne
+      (`opts.era` force l'ère avant qu'elle soit connue), **via `mcpRpc`** comme
+      toute méthode. Les verify qui stubent `mcpRpc` par nom de méthode rendent
+      `{}` à celle-ci, ce qui vaut repli : ils couvrent le chemin legacy sans
+      retouche. Verdict par le pur `mcpProbeVerdict`, calé sur
+      `client/_probe.py` du SDK en **liste d'exclusion** — tout ce qui n'est pas
+      une preuve positive (`supportedVersions` contenant 2026-07-28) se replie,
+      sauf trois échecs francs : délai dépassé (un serveur muet ne répondra
+      pas mieux à `initialize`), 401/403 (l'authentification ne dépend pas de
+      l'ère), et `-32022` dont `data.supported` ne contient aucune version de
+      handshake (`MCP_HANDSHAKE_PROTOCOL_VERSIONS`). **Écart délibéré avec le
+      SDK** : un échec réseau (`TypeError` de `fetch`, marqué `network`) se
+      replie aussi, parce que dans un navigateur un CORS qui refuse les nouveaux
+      en-têtes est indiscernable d'un serveur éteint. Mesuré sur un 1.x à CORS
+      restreint : le préflight échoue. Un serveur réellement éteint échoue alors
+      deux fois, vite ; un 1.x à CORS restreint affiche le refus en rouge dans
+      la console à chaque connexion — bruit, pas défaut.
+    - **Ce que porte une requête moderne** : construit en UN point,
+      `mcpRequestShape` (pur), appelé par `mcpRpcAttempt` seul — l'appel direct
+      de tools.js (description de fichier de bibliothèque) en hérite sans
+      retouche. En-têtes `MCP-Protocol-Version`, `Mcp-Method`, et `Mcp-Name`
+      pour une méthode à cible (`MCP_NAME_BEARING_METHODS` ; MIAOU n'émet que
+      `tools/call`), valeur passée par `encodeMcpHeaderValue` (port de
+      `encode_header_value` : enveloppe `=?base64?…?=` hors ASCII imprimable,
+      sans quoi `fetch` lève sur un nom accentué). Enveloppe `params._meta`
+      (`io.modelcontextprotocol/protocolVersion`, `…/clientCapabilities` vide —
+      AL y ajoutera `extensions` —, `…/clientInfo`), `params` COPIÉ et jamais
+      muté, un `_meta` existant conservé. Ni `Mcp-Session-Id`, ni
+      `initialize`, ni `notifications/initialized`. `Mcp-Param-*` n'est pas
+      émis : un upstream tiers qui annoterait `x-mcp-header` serait refusé (hors
+      périmètre).
+    - **Legacy inchangé, sans en-tête de version**, bien que 2025-06-18
+      l'exige : un serveur dont le CORS a fait échouer la sonde refuserait le
+      même en-tête ici, et le repli casserait là où il sert.
+    - **Corps des réponses non 2xx, dans les deux ères.** `mcpRpcAttempt` levait
+      `HTTP <statut>` sans lire le corps : message perdu, `applicative` faux, et
+      `noteMcpCallFailure` déclarait **injoignable** un serveur qui venait de
+      répondre. Défaut latent en legacy, bloquant en moderne, où toute erreur de
+      dispatch arrive en 400/404 avec un corps JSON-RPC — **mesuré : y compris
+      `AUTHORIZATION_REQUIRED`, qui arrive en 400** (en 200 en legacy). Le
+      corps est désormais lu (`readMcpErrorBody`, JSON annoncé seulement, ne lève
+      jamais) et l'erreur construite comme sur un 200 par `mcpHttpFailure` /
+      `mcpJsonRpcError` (purs) : `message`, `data` (contrats du point 12 et du
+      point 15 intacts), `applicative`, plus `rpcCode` et `status` que lit la
+      sonde. Session morte d'abord, cf. point 9. REF_UNKNOWN, lui, arrive en 200
+      dans les deux ères.
+    - **Changement d'ère en cours de vie** : rien d'automatique. Une
+      requête moderne vers un serveur redescendu en 1.x reçoit 400 « Missing
+      session ID », affiché comme erreur ; la reconnexion (glyphe, retour de
+      focus, point 18) refait la sonde. Un rejeu calqué sur `staleSession`
+      manquerait de signal propre : ce 400 ne dit pas « je suis legacy ».
+    - **Visibilité** : la révision parlée est dans l'infobulle de la pill
+      de carte (`mcpStatusPill` rend `tip`, serveur connecté seulement), pour le
+      diagnostic. Pas de `help.md` : aucune capacité nouvelle pour
+      l'utilisateur.
+    - **Ignoré pour l'instant** : `capabilities` du DiscoverResult (AL lira
+      `extensions`), `_meta["io.modelcontextprotocol/serverInfo"]` (la clé
+      apparaît aussi dans le `_meta` de `tools/list` et `tools/call`, que
+      `unauthorizedUpstreamsFromList` et `webMetaFromResult` ignorent puisqu'ils
+      ne lisent que leur propre clé), `ttlMs`/`cacheScope`, et
+      `resultType: "input_required"` (MIAOU ne déclarant ni elicitation ni
+      sampling, le serveur refuse en `-32021`, lu comme erreur applicative).
+    - **Tests** : les purs en QuickJS (test-tools.js, une ligne de verdict par
+      cas) ; le chemin async ne l'est pas (point 3). Vérifié sur le fil contre
+      le proxy migré (branche moderne, AUTHORIZATION_REQUIRED entre deux proxys)
+      et contre un serveur SDK 1.28.1 (repli sur 400, port fermé, `staleSession`
+      par redémarrage). Le repli sur `TypeError` de CORS ne se voit que dans un
+      navigateur.
 
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 
