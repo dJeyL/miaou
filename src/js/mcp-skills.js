@@ -509,7 +509,7 @@ function rewriteMcpUpstreamToolPrefixes(body, card, upstream) {
 // rien exécuter). Toute skill y est soumise, même celles qui n'exécutent rien.
 //
 // Persistée (localStorage `miaou-mcp-skill-approvals`, storage.js) sous la
-// forme `{ <carte>: { <name>: { uri, manifest, description, approvedAt } } }`,
+// forme `{ <carte>: { <name>: { uri, manifest, description, title, approvedAt } } }`,
 // et LIÉE AU MANIFESTE : même ensemble d'URI avec mêmes empreintes et tailles =
 // approuvée, tout écart = à réapprouver. Une approbation ne tombe que sur un
 // geste (Désapprouver), la suppression de la carte, ou un manifeste changé —
@@ -536,6 +536,17 @@ function mcpSkillManifestMatches(approved, current) {
   return true;
 }
 
+// Titre lisible d'une skill : `metadata.title` de son frontmatter, s'il est
+// fourni. Clé NON standard (`metadata` est une table libre dans la spec Agent
+// Skills) : elle ne sert qu'à l'affichage, jamais au modèle ni à l'identité.
+// Rend '' en son absence, l'appelant retombant alors sur la description.
+function mcpSkillTitle(entry) {
+  const fm = entry && entry.frontmatter;
+  const md = fm && fm.metadata;
+  const t = md && typeof md === 'object' && !Array.isArray(md) ? md.title : null;
+  return typeof t === 'string' ? t.trim() : '';
+}
+
 // Approbation persistée d'une skill (entrée normalisée, non dynamique) : rend
 // une NOUVELLE table, la source n'est pas mutée.
 function approveMcpSkill(all, card, entry, now) {
@@ -546,6 +557,7 @@ function approveMcpSkill(all, card, entry, now) {
     uri: entry.uri,
     manifest: entry.resources.map(r => ({ uri: r.uri, digest: r.digest, size: r.size })),
     description: entry.description || '',
+    title: mcpSkillTitle(entry),
     approvedAt: now || 0,
   };
   return next;
@@ -619,7 +631,7 @@ function mcpSkillRows(catalogue, approvals, session, localSlugs) {
     const state = mcpSkillApprovalState(e, approval, sess[e.name] || null);
     presented[e.name] = true;
     rows.push({
-      name: e.name, uri: e.uri, description: e.description || '', state: state,
+      name: e.name, uri: e.uri, description: e.description || '', title: mcpSkillTitle(e), state: state,
       dynamic: !!e.dynamic, problem: e.problem || null, collision: locals.indexOf(e.name) >= 0,
     });
   }
@@ -627,7 +639,8 @@ function mcpSkillRows(catalogue, approvals, session, localSlugs) {
     if (presented[name]) continue;
     const a = appr[name] || {};
     rows.push({
-      name: name, uri: a.uri || '', description: a.description || '', state: 'absent',
+      name: name, uri: a.uri || '', description: a.description || '',
+      title: typeof a.title === 'string' ? a.title : '', state: 'absent',
       dynamic: false, problem: null, collision: locals.indexOf(name) >= 0,
     });
   }

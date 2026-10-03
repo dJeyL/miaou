@@ -1043,6 +1043,8 @@
 .mcp-skill-viewer-state[data-state="pending"],
 .mcp-skill-viewer-state[data-state="changed"],
 .mcp-skill-viewer-state[data-state="session-pending"] { color: var(--pending); border-color: var(--pending); }
+.mcp-skill-viewer-label { font-size: 13px; line-height: 1.45; color: var(--text); font-weight: 500; }
+.mcp-skill-viewer-label:empty { display: none; }
 .mcp-skill-viewer-desc { font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
 .mcp-skill-viewer-desc:empty { display: none; }
 .mcp-skill-viewer-meta { display: flex; flex-direction: column; gap: 2px; }

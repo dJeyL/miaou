@@ -540,7 +540,12 @@ d'injection. Cf. §2, et `docs/compaction.md` pour le geste qu'elles déclenchen
       approbations (`renameMcpSkillApprovals`).
     - **Fiche et lecteur.** Une rangée par skill sous la carte
       (`appendMcpSkillRows`, ui.js) : Lire, Approuver, Désapprouver ; les
-      annexes n'y figurent pas, le manifeste les liant à leur skill. « Lire »
+      annexes n'y figurent pas, le manifeste les liant à leur skill. La rangée
+      affiche le titre lisible `metadata.title` s'il est fourni (`mcpSkillTitle`,
+      clé non standard, affichage seulement), la description passant alors en
+      infobulle — elle reste ce qu'on approuve ; le titre est mémorisé avec
+      l'approbation pour qu'une skill absente le garde, et le lecteur montre
+      les deux. « Lire »
       ouvre un drawer empilé (`openMcpSkillViewer`) qui relit une entrée FRAÎCHE
       et vérifie chaque fichier comme le chargement ; un fichier non conforme
       est signalé et pas affiché. En-tête : nom, badge d'état, description,

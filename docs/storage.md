@@ -536,7 +536,7 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, mcp.js) est en
   mémoire seule, reconstruit au démarrage.
 - `miaou-mcp-skill-approvals` : approbations des skills servies par les serveurs
-  MCP, `{ <carte>: { <name>: { uri, manifest, description, approvedAt } } }`
+  MCP, `{ <carte>: { <name>: { uri, manifest, description, title, approvedAt } } }`
   (cf. `docs/skills.md`, point 10). Clé **dédiée** plutôt qu'un champ de la
   carte : le formulaire réécrit la carte entière (`normalizeMcpServer` ne garde
   qu'une liste fermée de champs) et deviendrait un second écrivain. Écrite par

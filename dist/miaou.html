@@ -3467,6 +3467,8 @@ body.conv-readonly .conv-retitle-btn { pointer-events: none; }
 .mcp-skill-viewer-state[data-state="pending"],
 .mcp-skill-viewer-state[data-state="changed"],
 .mcp-skill-viewer-state[data-state="session-pending"] { color: var(--pending); border-color: var(--pending); }
+.mcp-skill-viewer-label { font-size: 13px; line-height: 1.45; color: var(--text); font-weight: 500; }
+.mcp-skill-viewer-label:empty { display: none; }
 .mcp-skill-viewer-desc { font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
 .mcp-skill-viewer-desc:empty { display: none; }
 .mcp-skill-viewer-meta { display: flex; flex-direction: column; gap: 2px; }
@@ -5555,7 +5557,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-03 20:32 UTC */
+/* miaou — built: 2026-10-03 20:58 UTC */
 
 /* ── utils.js ── */
 
@@ -11035,7 +11037,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1791059575}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1791061091}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -15918,6 +15920,13 @@ function mcpSkillManifestMatches(approved, current) {
   return true;
 }
 
+function mcpSkillTitle(entry) {
+  const fm = entry && entry.frontmatter;
+  const md = fm && fm.metadata;
+  const t = md && typeof md === 'object' && !Array.isArray(md) ? md.title : null;
+  return typeof t === 'string' ? t.trim() : '';
+}
+
 function approveMcpSkill(all, card, entry, now) {
   const next = Object.assign({}, all || {});
   if (!card || !entry || entry.dynamic || !Array.isArray(entry.resources)) return next;
@@ -15926,6 +15935,7 @@ function approveMcpSkill(all, card, entry, now) {
     uri: entry.uri,
     manifest: entry.resources.map(r => ({ uri: r.uri, digest: r.digest, size: r.size })),
     description: entry.description || '',
+    title: mcpSkillTitle(entry),
     approvedAt: now || 0,
   };
   return next;
@@ -15977,7 +15987,7 @@ function mcpSkillRows(catalogue, approvals, session, localSlugs) {
     const state = mcpSkillApprovalState(e, approval, sess[e.name] || null);
     presented[e.name] = true;
     rows.push({
-      name: e.name, uri: e.uri, description: e.description || '', state: state,
+      name: e.name, uri: e.uri, description: e.description || '', title: mcpSkillTitle(e), state: state,
       dynamic: !!e.dynamic, problem: e.problem || null, collision: locals.indexOf(e.name) >= 0,
     });
   }
@@ -15985,7 +15995,8 @@ function mcpSkillRows(catalogue, approvals, session, localSlugs) {
     if (presented[name]) continue;
     const a = appr[name] || {};
     rows.push({
-      name: name, uri: a.uri || '', description: a.description || '', state: 'absent',
+      name: name, uri: a.uri || '', description: a.description || '',
+      title: typeof a.title === 'string' ? a.title : '', state: 'absent',
       dynamic: false, problem: null, collision: locals.indexOf(name) >= 0,
     });
   }
@@ -26476,9 +26487,11 @@ function appendMcpSkillRows(parent, card, liveStatus) {
     }
     head.appendChild(actions);
     row.appendChild(head);
+
     const desc = document.createElement('div');
     desc.className = 'mcp-skill-desc';
-    desc.textContent = r.problem ? ('Non chargeable\u00a0: ' + r.problem) : r.description;
+    desc.textContent = r.problem ? ('Non chargeable\u00a0: ' + r.problem) : (r.title || r.description);
+    if (!r.problem && r.title && r.description) setTip(desc, r.description);
     if (desc.textContent) row.appendChild(desc);
     if (r.dynamic) {
       const note = document.createElement('div');
@@ -26550,7 +26563,9 @@ async function renderMcpSkillViewer(view) {
   head.appendChild(titleRow);
   const descEl = document.createElement('div');
   descEl.className = 'mcp-skill-viewer-desc';
-  head.appendChild(descEl);
+  const viewerTitleEl = document.createElement('div');
+  viewerTitleEl.className = 'mcp-skill-viewer-label';
+  head.append(viewerTitleEl, descEl);
   const meta = document.createElement('div');
   meta.className = 'mcp-skill-viewer-meta';
   head.appendChild(meta);
@@ -26580,6 +26595,8 @@ async function renderMcpSkillViewer(view) {
     mcpSkillSessionApprovalsFor(view.card)[view.name] || null);
   stateEl.textContent = MCP_SKILL_STATE_LABELS[state] || state;
   stateEl.dataset.state = state;
+
+  viewerTitleEl.textContent = mcpSkillTitle(fresh.entry);
   descEl.textContent = fresh.entry.description || '';
   if (fresh.entry.dynamic) {
     _mcpSkillField(meta, 'Contenu', 'variable\u00a0: ce qui est lu ici peut différer de ce que le modèle lira');

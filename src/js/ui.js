@@ -8782,9 +8782,13 @@ function appendMcpSkillRows(parent, card, liveStatus) {
     }
     head.appendChild(actions);
     row.appendChild(head);
+    // Le titre (`metadata.title`), s'il est fourni, remplace la description à
+    // l'affichage ; la description reste en infobulle, car c'est elle qu'on
+    // approuve : le modèle la lit et elle gouverne l'autotrigger.
     const desc = document.createElement('div');
     desc.className = 'mcp-skill-desc';
-    desc.textContent = r.problem ? ('Non chargeable\u00a0: ' + r.problem) : r.description;
+    desc.textContent = r.problem ? ('Non chargeable\u00a0: ' + r.problem) : (r.title || r.description);
+    if (!r.problem && r.title && r.description) setTip(desc, r.description);
     if (desc.textContent) row.appendChild(desc);
     if (r.dynamic) {
       const note = document.createElement('div');
@@ -8874,7 +8878,9 @@ async function renderMcpSkillViewer(view) {
   head.appendChild(titleRow);
   const descEl = document.createElement('div');
   descEl.className = 'mcp-skill-viewer-desc';
-  head.appendChild(descEl);
+  const viewerTitleEl = document.createElement('div');
+  viewerTitleEl.className = 'mcp-skill-viewer-label';
+  head.append(viewerTitleEl, descEl);
   const meta = document.createElement('div');
   meta.className = 'mcp-skill-viewer-meta';
   head.appendChild(meta);
@@ -8904,6 +8910,9 @@ async function renderMcpSkillViewer(view) {
     mcpSkillSessionApprovalsFor(view.card)[view.name] || null);
   stateEl.textContent = MCP_SKILL_STATE_LABELS[state] || state;
   stateEl.dataset.state = state;
+  // Écran d'inspection avant approbation : le titre ET la description, qu'on
+  // approuve et que le modèle lira.
+  viewerTitleEl.textContent = mcpSkillTitle(fresh.entry);
   descEl.textContent = fresh.entry.description || '';
   if (fresh.entry.dynamic) {
     _mcpSkillField(meta, 'Contenu', 'variable\u00a0: ce qui est lu ici peut différer de ce que le modèle lira');

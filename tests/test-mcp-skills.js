@@ -500,6 +500,23 @@ describe('mcpSkillApprovalState', function() {
   });
 });
 
+describe('mcpSkillTitle (metadata.title)', function() {
+  function withMeta(md) {
+    return { frontmatter: Object.assign({}, BENCH_NORM.frontmatter, { metadata: md }) };
+  }
+  it('lu dans metadata.title, trimé', function() {
+    expect(mcpSkillTitle(withMeta({ title: '  Banc d\'essai  ' }))).toBe('Banc d\'essai');
+  });
+  it('absent, vide ou mal typé : chaîne vide', function() {
+    expect(mcpSkillTitle(BENCH_NORM)).toBe('');
+    expect(mcpSkillTitle(withMeta({ title: '   ' }))).toBe('');
+    expect(mcpSkillTitle(withMeta({ title: 3 }))).toBe('');
+    expect(mcpSkillTitle(withMeta(['title']))).toBe('');
+    expect(mcpSkillTitle({ name: 'z', problem: 'p' })).toBe('');
+    expect(mcpSkillTitle(null)).toBe('');
+  });
+});
+
 describe('mcpSkillRows', function() {
   var appr = approveMcpSkill({}, 'proxy', BENCH_NORM, 1).proxy;
   it('une rangée par skill présentée, puis les approbations absentes', function() {
@@ -507,6 +524,16 @@ describe('mcpSkillRows', function() {
     var rows = mcpSkillRows([BENCH_NORM, DYN_NORM], Object.assign({ old: other }, appr), {}, []);
     expect(rows.map(function(r) { return r.name + ':' + r.state; })).toEqual(['bench:approved', 'gen:session-pending', 'old:absent']);
     expect(rows[2].description).toBe('ancienne');
+  });
+  it('titre exposé, présentée comme absente (repris de l\'approbation)', function() {
+    var titled = normalizeMcpSkillEntry(Object.assign({}, BENCH_ENTRY, {
+      frontmatter: Object.assign({}, BENCH_ENTRY.frontmatter, { metadata: { title: 'Banc' } }) })).entry;
+    expect(mcpSkillRows([titled], {}, {}, [])[0].title).toBe('Banc');
+    expect(mcpSkillRows([BENCH_NORM], {}, {}, [])[0].title).toBe('');
+    var stored = approveMcpSkill({}, 'proxy', titled, 1).proxy;
+    expect(stored.bench.title).toBe('Banc');
+    expect(mcpSkillRows([], stored, {}, [])[0].title).toBe('Banc');
+    expect(mcpSkillRows([], { old: { uri: 'skill://old/old/SKILL.md', description: 'd' } }, {}, [])[0].title).toBe('');
   });
   it('catalogue illisible : les approbations restent visibles, absentes', function() {
     expect(mcpSkillRows(null, appr, {}, []).map(function(r) { return r.state; })).toEqual(['absent']);
