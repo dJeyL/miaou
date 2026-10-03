@@ -145,7 +145,10 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   domaine « ouvrir un document » du lot V, cf. `docs/documents.md` pour la ligne
   de partage avec `utils` ; `mcp.js` porte le côté DISTANT de l'agrégation MCP —
   client JSON-RPC, handshake, `callRemoteTool` — là où ce qui COMPOSE interne et
-  distant reste dans `tools.js`, cf. `docs/mcp.md` ; `export.js` porte les
+  distant reste dans `tools.js`, cf. `docs/mcp.md` ; `mcp-skills.js` porte les
+  purs des skills SERVIES par un serveur MCP — intégrité (SHA-256, frontmatter
+  strict), à distinguer de `skills.js`, qui porte les skills locales, cf.
+  `docs/skills.md` ; `export.js` porte les
   exports standalone et la conversion `.md` — pièges 21 et 22 —, cf.
   `docs/exports.md` ; `acks.js` porte le rendu des traces d'outils et
   l'inspecteur d'appel, cf. `docs/tools.md` ; `multitab.js` porte la couche
@@ -543,7 +546,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   ajoutés à la main), `miaou-model-props` (cache
   des propriétés déclarées, hors export),
   `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`,
-  `miaou-unread` (non-lus des badges, hors export)) et
+  `miaou-unread` (non-lus des badges, hors export), `miaou-mcp-skill-approvals`
+  (approbations des skills MCP, clé dédiée plutôt qu'un champ de carte,
+  exportée, jamais élaguée contre `skills/list`)) et
   IndexedDB (`skills`, `resources`, `conversations`, `summaries` — ces deux
   derniers migrés depuis localStorage au lot U —, et `usage_stats`, base v5,
   cf. `docs/usage-stats.md`), champs de méta `snippet`
@@ -627,10 +632,13 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   hors de la liste qui défile, ↑ ↓ Entrée, Échap en deux temps) et de la palette.
 - **`docs/tools.md`** — registre d'outils (`tools.js`), lecture de skill
   imposée avant un outil (`requiresSkill` sur `agent__spawn`, `docs__*` et
-  `js__eval` : prédicat pur `skillReadSince`, lecture du même lot acceptée,
+  `js__eval` : prédicat pur `skillReadSince` sur une identité — slug local ou
+  `{ server, uri }` d'une skill MCP, qui ne se croisent jamais —, lecture du même lot acceptée,
   garde `refuseUnlessSkillRead` dans le handler et pas au dispatch, test sur tout
   le registre, `skills__read` ajouté d'office à la trousse d'un agent par
-  `withSkillReaderIfGated`), mécanisme d'acks
+  `withSkillReaderIfGated`, outils distants compris ; garde DISTANTE dans la
+  branche serveur de `callTool`, `mcpRemoteSkillGateRefusal`, ouverte quand
+  personne ne peut corriger depuis MIAOU), mécanisme d'acks
   (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,
   `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de
   présentation détachée du résultat par `splitToolResultNote`, ressources
@@ -737,7 +745,15 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   en-têtes et enveloppe `_meta` construits en un point (`mcpRequestShape`,
   `encodeMcpHeaderValue`), aucun en-tête de version en legacy, corps des
   réponses non 2xx lu dans les deux ères (`mcpHttpFailure`, session morte
-  tranchée AVANT), révision parlée dans l'infobulle de la pill de carte.
+  tranchée AVANT), révision parlée dans l'infobulle de la pill de carte ; porte
+  enfin les **skills servies** par l'extension `io.modelcontextprotocol/skills`
+  (point 21) : déclaration lue par présence de clé, catalogue `skills/list`
+  (métadonnées seulement, `null` sur échec sans jamais faire échouer la
+  connexion), `requiresSkill` gardé sur `_remoteTools`, repli de lecture masqué
+  à sa marque et seulement si l'extension est déclarée, lecture réseau
+  `fetchMcpSkillEntry` / `readVerifiedMcpSkillFile` (entrée fraîche, rien
+  d'approuvé ici), et la réécriture des préfixes d'outils entre accents graves
+  dans les sections d'un agrégateur (`rewriteMcpUpstreamToolPrefixes`).
 - **`docs/skills.md`** — skills stage 1 (CRUD, invocation slash, drawer) et
   stage 2 (autotrigger, doctrine de déclenchement, confirmation) ; porte aussi,
   depuis le lot AE, la **seconde famille derrière le `/`** — les commandes MIAOU
@@ -755,7 +771,16 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   panneau d'autocomplétion** — hauteur max MESURÉE à l'ouverture
   (`fitSkillAutocompleteHeight`, style inline, jamais les pixels fixes du CSS :
   ancré en absolu, il ne connaît pas en CSS la place libre au-dessus de lui) et
-  densité de LISTE et non de contenu.
+  densité de LISTE et non de contenu ; porte enfin les **skills servies par un
+  serveur MCP** (point 10, `mcp-skills.js`) : intégrité (SHA-256 en JS pur,
+  frontmatter strict distinct de `parseSkillFrontmatter`, scalaires
+  normalisés), approbation par skill dans la fiche liée au manifeste (session
+  seulement pour une skill `dynamic`), lecteur avant approbation, toasts de
+  démarrage et de refus, lecture par `miaou__skills__read` (`server`, `uri`)
+  avec étiquette d'origine et annexes sous liste blanche (ack
+  `skill_file_read` distinct), slug qui lit toujours la locale, et leur
+  rappel dans le circuit des skills locales (mention du drawer Skills, entrées
+  `source: 'mcp'` de `skills__list`).
 - **`docs/tests.md`** — ce qui est couvert par `tests/runner.py` (QuickJS) et
   ce qui doit être vérifié à la main (`docs/manual-tests.md`) ; porte aussi les
   fixtures des verify Playwright et leur serveur factice commun
@@ -797,7 +822,9 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   événement `storage` (`storageEventDecision`) pour les types adossés à
   localStorage, dont le message peut précéder la visibilité de l'écriture ;
   plus `storage-state` (lot AG), pose au front et levée à chaque suppression,
-  et `usage-updated`, relecture du drawer des statistiques s'il est affiché.
+  et `usage-updated`, relecture du drawer des statistiques s'il est affiché ;
+  et la clé `mcp-skill-approvals` de `settings-updated` (relue aussi sur
+  l'événement `storage`).
 - **`docs/interjections.md`** — interjections mid-génération (lot Q) : file
   locale de messages tapés pendant une génération, clefée PAR CONVERSATION
   (X-1e) et drainée à la frontière de tour (réaiguillage mid-boucle) ou en fin

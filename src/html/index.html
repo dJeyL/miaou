@@ -894,6 +894,23 @@ if (window.requestAnimationFrame) {
     <div class="drawer-body inspect-body" id="inspect-body"></div>
   </div>
 
+  <!-- Lecture d'une skill servie par un serveur MCP, avant de l'approuver :
+       ouverte depuis la fiche du serveur, par-dessus le drawer MCP. Lecture
+       seule et vérifiée ; rien n'est chargé dans une conversation. Corps rempli
+       par renderMcpSkillViewer (ui.js), mêmes volets que l'inspecteur. -->
+  <div class="backdrop" id="mcp-skill-backdrop" onclick="closeMcpSkillViewer()"></div>
+  <div class="drawer drawer-wide" id="mcp-skill-drawer">
+    <div class="drawer-head">
+      <div class="drawer-tabs">
+        <span class="drawer-title" id="mcp-skill-title">Skill MCP</span>
+      </div>
+      <button class="icon-btn" onclick="closeMcpSkillViewer()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body inspect-body" id="mcp-skill-body"></div>
+  </div>
+
   <div class="backdrop" id="ctx-backdrop" onclick="closeContextInspector()"></div>
   <div class="drawer drawer-mid" id="ctx-drawer">
     <div class="drawer-head">

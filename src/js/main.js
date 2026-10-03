@@ -2392,7 +2392,13 @@ async function onSaveMcpCard(cardEl, originalName) {
     toolDenylist: parseToolFilterList(get('.mcp-deny')),
   };
   // Renommage : l'identité est le `name`, on retire l'ancienne entrée + cache.
-  if (originalName && originalName !== name) { deleteMcpServer(originalName); disconnectMcpServer(originalName); }
+  // Les approbations de skills suivent la carte (même serveur, renommé).
+  if (originalName && originalName !== name) {
+    deleteMcpServer(originalName);
+    disconnectMcpServer(originalName);
+    updateMcpSkillApprovals(all => renameMcpSkillApprovals(all, originalName, name));
+    renameMcpSkillSessionApprovals(originalName, name);
+  }
   upsertMcpServer(server);
   disconnectMcpServer(name);
   renderMcpServers();
@@ -2403,8 +2409,74 @@ async function onSaveMcpCard(cardEl, originalName) {
 }
 
 async function onDeleteMcpCard(cardEl, originalName) {
-  if (originalName) { deleteMcpServer(originalName); disconnectMcpServer(originalName); }
+  if (originalName) {
+    deleteMcpServer(originalName);
+    disconnectMcpServer(originalName);
+    updateMcpSkillApprovals(all => removeMcpSkillApprovals(all, originalName));
+    removeMcpSkillSessionApprovals(originalName);
+  }
   renderMcpServers();
+}
+
+// ── Skills servies par les serveurs MCP : gestes de la fiche ─────────────────
+// Approuver lie l'approbation au manifeste de l'entrée PRÉSENTÉE (catalogue de
+// la connexion, ou entrée fraîche que la lecture vient d'afficher) : c'est ce
+// que l'utilisateur a vu. Un contenu changé depuis échouera à la vérification
+// du chargement, et la skill repassera à approuver. Une skill dynamique ne
+// s'approuve que pour la session de cet onglet.
+function onApproveMcpSkill(card, name, freshEntry) {
+  const st = getMcpStatus(card);
+  const entry = freshEntry || (st && Array.isArray(st.skillCatalogue)
+    ? st.skillCatalogue.find(e => e.name === name && !e.problem) : null);
+  if (!entry) return;
+  if (entry.dynamic) setMcpSkillSessionApproval(card, name, entry.uri);
+  else updateMcpSkillApprovals(all => approveMcpSkill(all, card, entry, Date.now()));
+  dismissToast(mcpSkillRefusalToastKey(card, name));
+  syncMcpSkillApprovalToast(false);
+  renderMcpServersIfOpen();
+}
+
+function onDisapproveMcpSkill(card, name) {
+  setMcpSkillSessionApproval(card, name, null);
+  updateMcpSkillApprovals(all => disapproveMcpSkill(all, card, name));
+  renderMcpServersIfOpen();
+}
+
+const MCP_SKILL_APPROVAL_TOAST_KEY = 'mcp-skill-approval';
+
+// Lecture d'une skill MCP refusée au modèle (non approuvée, modifiée, ou
+// contenu non conforme) : un toast mène l'utilisateur à la fiche, où le geste
+// qui débloque se trouve. Clé par (carte, skill) : deux refus de la même skill
+// ne s'empilent pas. Appelé depuis tools.js sous garde `typeof`.
+function notifyMcpSkillRefused(card, name, state) {
+  const why = state === 'changed' ? 'a changé depuis son approbation' : 'n\u2019est pas approuvée';
+  showToast({
+    key: mcpSkillRefusalToastKey(card, name), level: 'warn', theme: 'services', persistent: true,
+    text: 'La skill MCP «\u00a0' + name + '\u00a0» (' + card + ') ' + why + '\u00a0: le modèle n\u2019a pas pu la lire.',
+    action: { label: 'Ouvrir les serveurs MCP', run: () => openMcpServers() },
+  });
+  renderMcpServersIfOpen();
+}
+
+function mcpSkillRefusalToastKey(card, name) { return 'mcp-skill-refused:' + card + ':' + name; }
+
+// Toast « des skills sont à approuver ». Montré au démarrage seulement
+// (`mayShow`), une fois la première vague de connexions réglée ; un geste
+// d'approbation ne fait que le RETIRER quand il n'y a plus rien à approuver,
+// jamais le reposer — un rappel qui revient à chaque clic serait du bruit.
+// Persistant : l'action demande d'aller dans une fiche, ce qu'un toast qui
+// s'efface laisse rarement le temps de décider.
+function syncMcpSkillApprovalToast(mayShow) {
+  const waiting = mcpSkillsAwaitingApproval(mcpStatusSnapshot(), loadMcpSkillApprovals());
+  if (!waiting.length) { dismissToast(MCP_SKILL_APPROVAL_TOAST_KEY); return; }
+  if (!mayShow) return;
+  const text = waiting.length === 1
+    ? 'Une skill MCP est à approuver avant usage\u00a0: ' + waiting[0].name + ' (' + waiting[0].card + ').'
+    : waiting.length + ' skills MCP sont à approuver avant usage.';
+  showToast({
+    key: MCP_SKILL_APPROVAL_TOAST_KEY, level: 'warn', theme: 'services', text: text, persistent: true,
+    action: { label: 'Ouvrir les serveurs MCP', run: () => openMcpServers() },
+  });
 }
 
 // ── Serveurs API : persistance + activation (orchestration depuis le drawer) ─
@@ -2650,11 +2722,11 @@ async function onToggleSkill(slug) {
 }
 
 // ── Export / import complet des données (feature E) ──────────────────────────
-// Assurance-vie : snapshot des 9 clés localStorage + IDB (skills, resources),
+// Assurance-vie : snapshot des clés localStorage d'`EXPORT_KEYS` + IDB (skills, resources),
 // remplacement intégral à l'import (pas de fusion, décision actée). Format et
 // posture (clefs API en clair) documentés dans docs/storage.md.
 
-// Lit les 7 clés localStorage désérialisées (miaou-active-api-server et
+// Lit les clés d'`EXPORT_KEYS` désérialisées (miaou-active-api-server et
 // miaou-active-space sont des strings brutes, seules exceptions du schéma)
 // pour buildExportPayload (storage.js).
 function snapshotLocalStorageForExport() {
@@ -5762,6 +5834,7 @@ async function init() {
   const mcpReady = reconnectMcpServers().then(() => {
     _lastContextManifest = null;
     syncContextCounter();
+    syncMcpSkillApprovalToast(true);
   });
   Promise.all([
     Promise.resolve(modelsReady).catch(() => {}),

@@ -677,7 +677,14 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       premier renommage. `splitMcpInstructionSections` (pure) sépare donc
       préambule et sections `## <nom>` ; le préambule reçu est **ignoré** (il ne
       porte que cette convention), les corps de section passent **verbatim** —
-      c'est du texte d'auteur, MIAOU n'en réécrit que le cadre.
+      c'est du texte d'auteur, MIAOU n'en réécrit que le cadre. **Une seule
+      retouche du corps** : tout jeton ENTRE ACCENTS GRAVES qui commence par
+      `<serveur>__` reçoit le préfixe de carte (`rewriteMcpUpstreamToolPrefixes`,
+      mcp-skills.js, appliquée par `mcpInstructionSectionsForServer`, donc aux
+      deux surfaces). Sans elle, le bloc des skills que le proxy génère (« avant
+      tout appel d'un outil `bench__…` ») contredisait à chaque tour le titre de
+      section `<slug>__bench`. Bornée aux accents graves : la prose (« les outils
+      bench ») et les URI ne bougent pas. Le préambule, lui, reste jeté.
     - **Le rattachement compte autant que l'injection.** Plusieurs serveurs
       peuvent publier ; un bloc dont on ne sait plus à quels outils il s'applique
       est **pire qu'absent** — le modèle appliquerait à tous une règle qui n'en
@@ -842,12 +849,13 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       `mcpRequestShape` (pur), appelé par `mcpRpcAttempt` seul — l'appel direct
       de tools.js (description de fichier de bibliothèque) en hérite sans
       retouche. En-têtes `MCP-Protocol-Version`, `Mcp-Method`, et `Mcp-Name`
-      pour une méthode à cible (`MCP_NAME_BEARING_METHODS` ; MIAOU n'émet que
-      `tools/call`), valeur passée par `encodeMcpHeaderValue` (port de
+      pour une méthode à cible (`MCP_NAME_BEARING_METHODS` ; MIAOU émet
+      `tools/call` et `resources/read` — point 21 —, et le proxy refuse en 400
+      `-32020` un `Mcp-Name` absent ou différent de l'URI, mesuré), valeur passée par `encodeMcpHeaderValue` (port de
       `encode_header_value` : enveloppe `=?base64?…?=` hors ASCII imprimable,
       sans quoi `fetch` lève sur un nom accentué). Enveloppe `params._meta`
       (`io.modelcontextprotocol/protocolVersion`, `…/clientCapabilities` vide —
-      AL y ajoutera `extensions` —, `…/clientInfo`), `params` COPIÉ et jamais
+      l'extension Skills n'exige aucune capacité client —, `…/clientInfo`), `params` COPIÉ et jamais
       muté, un `_meta` existant conservé. Ni `Mcp-Session-Id`, ni
       `initialize`, ni `notifications/initialized`. `Mcp-Param-*` n'est pas
       émis : un upstream tiers qui annoterait `x-mcp-header` serait refusé (hors
@@ -876,8 +884,9 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       de carte (`mcpStatusPill` rend `tip`, serveur connecté seulement), pour le
       diagnostic. Pas de `help.md` : aucune capacité nouvelle pour
       l'utilisateur.
-    - **Ignoré pour l'instant** : `capabilities` du DiscoverResult (AL lira
-      `extensions`), `_meta["io.modelcontextprotocol/serverInfo"]` (la clé
+    - **Ignoré pour l'instant** : `capabilities` du DiscoverResult hors
+      `extensions` (lue pour les skills, point 21),
+      `_meta["io.modelcontextprotocol/serverInfo"]` (la clé
       apparaît aussi dans le `_meta` de `tools/list` et `tools/call`, que
       `unauthorizedUpstreamsFromList` et `webMetaFromResult` ignorent puisqu'ils
       ne lisent que leur propre clé), `ttlMs`/`cacheScope`, et
@@ -889,6 +898,53 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       et contre un serveur SDK 1.28.1 (repli sur 400, port fermé, `staleSession`
       par redémarrage). Le repli sur `TypeError` de CORS ne se voit que dans un
       navigateur.
+
+21. **Skills servies par le serveur (extension `io.modelcontextprotocol/skills`).**
+    Un serveur peut servir des skills (format Agent Skills, une ressource MCP par
+    fichier, `skill://…`) et en exiger une avant l'appel de ses outils. Le
+    transport est l'extension standard (spec : `specification/stable/skills.mdx`
+    du dépôt `modelcontextprotocol/ext-skills`) ; l'**obligation** est un ajout
+    privé de miaou-mcp-servers (`_meta["miaou/requiresSkill"]` par outil, contrat
+    dans son `docs/miaou-contract.md`). Les purs vivent dans `mcp-skills.js`
+    (intégrité, catalogue, approbations, lecture), le réseau ici, la lecture et
+    la garde dans `tools.js` (cf. `docs/tools.md`, `docs/skills.md`).
+    - **Déclaration** : présence de la CLÉ dans
+      `capabilities.extensions` du DiscoverResult (`mcpDeclaresSkillsExtension`) —
+      la valeur publiée est un objet vide, mesuré. Ère moderne seulement : un
+      `initialize` legacy ne publie jamais `extensions`, même s'il annonce
+      `resources`. État `_remoteStatus[name].skillsDeclared`.
+    - **Catalogue** : `skills/list` à la connexion (`listMcpSkills`, curseur
+      suivi au plus `MCP_SKILLS_LIST_MAX_PAGES` fois), entrées validées et
+      normalisées par `normalizeMcpSkillEntry` (URI, dernier segment = `name`,
+      manifeste complet, bornes de la spec 512 fichiers / 16 Mio), rangées dans
+      `_remoteStatus[name].skillCatalogue`. **Métadonnées seulement** : aucun
+      contenu n'est lu à la connexion (la spec l'interdit). Une entrée invalide
+      reste au catalogue avec son `problem`, pour que la fiche dise pourquoi.
+      Un échec de `skills/list` rend `null` et ne fait **jamais** échouer la
+      connexion : les outils sont servis, la garde reste ouverte.
+    - **`_meta` des outils** : `requiresSkill` (URI relative au serveur) est
+      gardé sur l'entrée de `_remoteTools` ; le reste est toujours jeté. L'outil
+      de **repli** de lecture (marque `_meta["miaou/skillsFallback"]`, jamais son
+      nom) est retiré de `_remoteTools` à la connexion (`shouldHideMcpTool`),
+      donc aussi du drawer des outils — **seulement** si l'extension est
+      déclarée : sans elle (legacy), il est le seul chemin de lecture et reste.
+      Mesuré sur le proxy avec bench : 709 caractères de définitions en moins.
+    - **Lecture réseau** : `fetchMcpSkillEntry` (`skills/get`, entrée FRAÎCHE,
+      jamais gardée entre deux lectures — c'est l'approbation, liée au
+      manifeste, qui tient lieu d'« entrée détenue » de la spec) et
+      `readVerifiedMcpSkillFile` (`resources/read`, liste blanche du manifeste,
+      taille puis SHA-256, frontmatter du SKILL.md). Ni l'une ni l'autre
+      n'approuve rien : la lecture par le modèle exige l'approbation, le lecteur
+      de la fiche (geste de l'utilisateur) non. Forme mesurée : `skills/get`
+      enveloppe l'entrée sous `skill`, `skills/list` la donne nue
+      (`mcpSkillEntryFromResult` accepte les deux).
+    - **Identité** : (libellé de carte, URI), jamais l'URI seule ni le `name`,
+      ni `serverInfo.name`. `mcpSkillCatalogues()` rend les catalogues clefés
+      par carte, pour la résolution d'une lecture et la garde.
+    - **Upstreams stdio et http du proxy** : le proxy les aborde en legacy et
+      ne relaie pas leurs skills ; rien à faire côté MIAOU.
+    - **Vérifié** : `verify-mcp-skills.mjs` (modèle stubé, proxy réel avec
+      bench), rouge contre le code d'avant.
 
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 

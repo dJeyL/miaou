@@ -144,6 +144,7 @@ function storageEventDecision(key, oldValue, newValue) {
   if (key === API_SERVERS_KEY) return { action: 'apply-settings', keys: ['api-servers'] };
   if (key === ACTIVE_API_SERVER_KEY) return { action: 'apply-settings', keys: ['active-api-server'] };
   if (key === MCP_SERVERS_KEY) return { action: 'apply-settings', keys: ['mcp-servers'] };
+  if (key === MCP_SKILL_APPROVALS_KEY) return { action: 'apply-settings', keys: ['mcp-skill-approvals'] };
   if (key === SPACES_KEY) return { action: 'space-list' };
   if (key === UNREAD_CONVS_KEY) return { action: 'unread-list' };
   return null;

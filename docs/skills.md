@@ -496,3 +496,111 @@ d'injection. Cf. §2, et `docs/compaction.md` pour le geste qu'elles déclenchen
      `requiresSkill` et refusent tant que la skill n'a pas été lue — cf.
      `docs/tools.md`, « Lecture de skill imposée avant un outil ».
      `files-promote` ne l'est pas, `mermaid` ne peut pas l'être (aucun outil).
+
+10. **Skills servies par un serveur MCP (extension `io.modelcontextprotocol/skills`).**
+    Une skill MCP n'est jamais stockée par MIAOU : elle est lue à la demande chez
+    son serveur (`resources/read`), vérifiée, puis rendue au modèle. Ses purs
+    vivent dans `mcp-skills.js`, distinct de `skills.js` (skills locales).
+    - **Intégrité.** Tout fichier lu se vérifie contre son entrée de manifeste
+      (`verifyMcpSkillFile`) : taille d'abord, tranchée sans hacher, puis
+      empreinte `sha256:<64 hex minuscules>` sur les octets BRUTS — un contenu
+      `text` ré-encodé en UTF-8, un `blob` décodé du base64
+      (`mcpResourceContentBytes`). Une empreinte d'une autre forme est un échec,
+      pas un cas toléré. SHA-256 en JS pur et synchrone (`sha256Hex`), pour les
+      raisons qui écartent `crypto.subtle` de `fnv1aBytes` ; testé sur les
+      vecteurs FIPS et sur l'exemple de la spec, dont les empreintes sont
+      partagées avec les tests de miaou-mcp-servers.
+    - **Frontmatter.** Après la lecture d'un `SKILL.md`, son frontmatter est
+      comparé champ par champ au `frontmatter` de l'entrée
+      (`verifyMcpSkillFrontmatter`). Le parseur, `parseMcpSkillFrontmatter`, est
+      STRICT et distinct de `parseSkillFrontmatter`, qui sert l'import des skills
+      locales et doit rester tolérant : il lit des scalaires sur une ligne et
+      `metadata` sur un niveau, et refuse tout le reste en nommant le champ. Un
+      champ illisible ne peut pas être comparé, donc vaut échec. La comparaison
+      se fait en scalaires normalisés (`mcpFrontmatterScalarMatches`) : le
+      serveur a typé son YAML (`1.0` nombre, `true` booléen), le parseur rend du
+      texte, et une valeur entre guillemets n'égale qu'une chaîne.
+    - **Approbation.** Une skill MCP n'est JAMAIS chargée sans approbation de
+      l'utilisateur, donnée skill par skill dans la fiche du serveur. Refuser la
+      lecture couvre l'interdit d'exécution implicite de la spec (une skill non
+      chargée ne fait rien exécuter) : aucune porte sur `js__eval`, aucune
+      déclaration « exécute du code » attendue du serveur, et toute skill y est
+      soumise, même celles qui n'exécutent rien. Persistée dans
+      `miaou-mcp-skill-approvals` (cf. `docs/storage.md`) sous (carte, `name`),
+      et **liée au manifeste** (`mcpSkillManifestMatches` : mêmes URI, empreintes
+      et tailles). États par `mcpSkillApprovalState` : approuvée, à approuver,
+      modifiée depuis l'approbation, invalide, et pour une skill `dynamic`
+      (aucune empreinte, donc rien à quoi lier une approbation persistée) une
+      approbation de **session**, en mémoire, propre à l'onglet, libellée
+      « contenu variable ». Une approbation ne tombe que sur Désapprouver, la
+      suppression de la carte, un manifeste changé, ou un contenu qui échoue à
+      la vérification — jamais par élagage contre `skills/list` : une skill
+      absente (upstream tombé) garde la sienne, montrée grisée « non présentée
+      actuellement » (`mcpSkillRows`). Le renommage d'une carte migre ses
+      approbations (`renameMcpSkillApprovals`).
+    - **Fiche et lecteur.** Une rangée par skill sous la carte
+      (`appendMcpSkillRows`, ui.js) : Lire, Approuver, Désapprouver ; les
+      annexes n'y figurent pas, le manifeste les liant à leur skill. « Lire »
+      ouvre un drawer empilé (`openMcpSkillViewer`) qui relit une entrée FRAÎCHE
+      et vérifie chaque fichier comme le chargement ; un fichier non conforme
+      est signalé et pas affiché. En-tête : nom, badge d'état, description,
+      champs Serveur / Adresse / Vérification. Le SKILL.md est RENDU comme une
+      skill système, sans son frontmatter (repris par l'en-tête,
+      `stripSkillFrontmatterForDisplay`) ; chaque annexe se lit à la demande
+      sous sa ligne, précédée du même champ Vérification et close par un filet,
+      rendue si c'est du Markdown, en bloc de code sinon. Le
+      contenu venant du serveur, le rendu passe par `renderMd`, donc DOMPurify
+      (piège 21), comme les consignes serveur du drawer des outils ; tout le
+      reste est posé par `textContent`. Approuver depuis le lecteur lie
+      l'approbation à l'entrée qui vient d'être lue.
+    - **Visibles depuis le circuit des skills locales.** Le drawer Skills porte
+      une mention (`appendMcpSkillsElsewhereNote`), affichée seulement si un
+      serveur connecté sert des skills ou qu'une approbation existe, avec un
+      lien qui FERME ce drawer puis ouvre les serveurs MCP (le drawer MCP le
+      précède dans le DOM : ouvert par-dessus, il passerait dessous).
+      `miaou__skills__list` ajoute en queue les skills MCP valides des serveurs
+      connectés (`mcpSkillListEntries`) : sans slug, avec `server`, `uri` et
+      `source: 'mcp'`, quel que soit leur état d'approbation — un modèle qui y
+      cherchait une skill nommée par une consigne serveur ne la trouvait pas, et
+      concluait qu'elle n'existait pas.
+    - **Toasts.** Au démarrage, une fois la première vague de connexions réglée
+      (`syncMcpSkillApprovalToast`) : un toast persistant si une skill
+      PRÉSENTE, valide, non dynamique est à (ré)approuver
+      (`mcpSkillsAwaitingApproval`), avec une action qui ouvre les serveurs MCP.
+      Un geste d'approbation le retire quand plus rien n'attend, ne le repose
+      jamais. Au refus d'une lecture (`notifyMcpSkillRefused`) : un toast de
+      même action, clef par (carte, skill).
+    - **Lecture par le modèle.** `miaou__skills__read` avec `server` et `uri`
+      (cf. `docs/tools.md`). Deux espaces de noms distincts : un `slug` lit
+      TOUJOURS la skill locale, même si un serveur sert une skill du même nom —
+      la spec interdit qu'une skill MCP en masque une locale ; la fiche signale
+      l'homonymie. `server` accepte le libellé de carte ou un préfixe d'outil
+      `<carte>__<upstream>`, et se déduit de l'URI quand une seule carte la sert
+      (`resolveMcpSkillServer`). Ordre de `readMcpSkillForModel` (tools.js) :
+      entrée fraîche, approbation, puis seulement le contenu — une skill non
+      approuvée n'est jamais récupérée. Contenu vérifié, rendu précédé d'une
+      étiquette d'origine et suivi, après un SKILL.md, des annexes en URI
+      absolues (`formatMcpSkillForModel`). Refus d'une skill non approuvée
+      (`mcpSkillNotApprovedText`) : ne pas réessayer ni chercher le contenu
+      ailleurs, et dire à l'utilisateur que c'est la SKILL qu'il approuve, pas
+      le serveur, avec l'endroit exact du bouton (mesuré : « l'approuver dans la
+      fiche du serveur » faisait demander d'approuver le serveur). Il n'INTERDIT
+      PAS les outils qu'elle encadre, il constate que MIAOU les refuse : une
+      interdiction, redondante avec la garde, faisait refuser au modèle un appel
+      que l'utilisateur demandait expressément. Vérification en échec :
+      approbation retirée, rien chargé.
+    - **Annexes.** Lisibles par le même paramètre `uri`, seulement si le
+      SKILL.md de leur skill a été chargé depuis la dernière frontière
+      (`skillReadSince`, la fenêtre d'action de la spec) et si elles figurent au
+      manifeste frais. Ack `skill_file_read`, kind DISTINCT de `skill_read` :
+      une annexe ne satisfait aucune exigence, par construction et non par un
+      drapeau que chaque lecteur devrait connaître.
+    - **Annonce au modèle.** Aucune dans `<miaou_skills_context>` : les skills
+      MCP ne sont annoncées que par le bloc que le serveur génère dans ses
+      `instructions` (préfixes d'outils réécrits, cf. `docs/mcp.md` point 17),
+      par les refus de la garde, et dans le RÉSULTAT de `miaou__skills__list`
+      (tool result, rien dans le contexte fixe). Un slug local introuvable qui nomme une skill
+      MCP rend les arguments exacts de la lecture distante.
+    - **Hors périmètre** : skills multi-fichiers LOCALES (lot W, qui
+      s'alignera sur la forme `server`/`uri`), `resources/directory/read`,
+      skills imbriquées.

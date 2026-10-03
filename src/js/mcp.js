@@ -57,7 +57,7 @@ const MCP_CLIENT_INFO = { name: 'miaou', version: '2' };
 const REF_UNKNOWN_ERROR_CODE = 'REF_UNKNOWN';
 
 let _remoteTools = {};   // { servername: [ { name:'servername__x', description, inputSchema }, … ] }
-let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId?, era?, protocolVersion?, unauthorizedUpstreams?, instructions? } }
+let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId?, era?, protocolVersion?, unauthorizedUpstreams?, instructions?, skillsDeclared?, skillCatalogue? } }
 
 // Dernière tentative de handshake, par serveur : { servername: timestamp }.
 // Registre SÉPARÉ de `_remoteStatus` et non un champ de plus, parce que la
@@ -102,6 +102,26 @@ function mcpInstructionSources() {
   return out;
 }
 
+// Catalogues de skills des serveurs CONNECTÉS qui déclarent l'extension :
+// `{ <carte>: catalogue|null }` (null = `skills/list` illisible). Clé = libellé
+// de carte, l'identité de serveur que la spec impose (jamais `serverInfo.name`).
+function mcpSkillCatalogues() {
+  const out = {};
+  for (const name of Object.keys(_remoteStatus)) {
+    const st = _remoteStatus[name];
+    if (st && st.state === 'ok' && st.skillsDeclared) out[name] = Array.isArray(st.skillCatalogue) ? st.skillCatalogue : null;
+  }
+  return out;
+}
+
+// Skill MCP exigée par un outil distant exposé (nom complet `<carte>__…`), ou
+// null : l'URI lue dans le `_meta` de `tools/list` à la connexion.
+function remoteToolRequiresSkill(fullName) {
+  const card = String(fullName || '').split('__')[0];
+  const def = (_remoteTools[card] || []).find(t => t.name === fullName);
+  return (def && def.requiresSkill) || null;
+}
+
 // Outils distants exposables : déjà préfixés `servername__` et filtrés (allowlist/denylist).
 function remoteToolDefs() {
   const out = [];
@@ -117,8 +137,9 @@ function remoteToolDefs() {
 // `probeMcpEra`, `connectMcpServer`) ne l'est pas, cf. docs/mcp.md point 3.
 
 // Méthodes dont la cible part aussi en en-tête `Mcp-Name`, et le paramètre qui
-// la porte (table `NAME_BEARING_METHODS` du SDK). MIAOU n'émet aujourd'hui que
-// `tools/call`.
+// la porte (table `NAME_BEARING_METHODS` du SDK). MIAOU émet `tools/call` et,
+// pour lire une skill servie par le serveur, `resources/read` (mesuré : le
+// proxy refuse en 400 un `Mcp-Name` absent ou différent de l'URI).
 const MCP_NAME_BEARING_METHODS = { 'tools/call': 'name', 'prompts/get': 'name', 'resources/read': 'uri' };
 
 // Valeur d'en-tête qui survit à HTTP : verbatim si ASCII imprimable sans espace
@@ -469,14 +490,33 @@ async function connectMcpServer(server) {
     // `_remoteStatus`, donc reconstruit à chaque connexion et effacé avec la
     // carte à la déconnexion.
     const instructions = mcpInstructionsFrom(source);
+    // Extension Skills : déclarée dans le DiscoverResult seulement (jamais en
+    // legacy). Elle décide du masquage du repli de lecture et de l'appel à
+    // `skills/list`.
+    const skillsDeclared = probe.era === 'modern' && mcpDeclaresSkillsExtension(probe.discover);
     const listed = await mcpRpc(s, 'tools/list', {});
     const tools = (listed && Array.isArray(listed.tools)) ? listed.tools : [];
-    const filtered = filterMcpTools(tools, s.toolAllowlist, s.toolDenylist);
-    _remoteTools[s.name] = filtered.map(t => ({
-      name: s.name + '__' + t.name,
-      description: t.description || '',
-      inputSchema: t.inputSchema || { type: 'object', properties: {} },
-    }));
+    // Le repli est retiré ICI, une fois, et pas à la composition des
+    // définitions : il disparaît aussi du drawer des outils — ce que le modèle
+    // ne voit pas, l'écran ne le montre pas comme disponible.
+    const visible = tools.filter(t => !shouldHideMcpTool(t, skillsDeclared));
+    const filtered = filterMcpTools(visible, s.toolAllowlist, s.toolDenylist);
+    _remoteTools[s.name] = filtered.map(t => {
+      const def = {
+        name: s.name + '__' + t.name,
+        description: t.description || '',
+        inputSchema: t.inputSchema || { type: 'object', properties: {} },
+      };
+      // Seule clé du `_meta` d'outil retenue : la skill exigée avant l'appel,
+      // lue par la garde distante de `callTool` et la trousse d'un agent.
+      const requiresSkill = mcpToolRequiresSkill(t);
+      if (requiresSkill) def.requiresSkill = requiresSkill;
+      return def;
+    });
+    // Catalogue : métadonnées seulement, aucun contenu. `null` quand la liste
+    // n'a pas pu être lue — la garde reste alors ouverte, faute de pouvoir
+    // dire au modèle quoi lire. Jamais une cause d'échec de la connexion.
+    const skillCatalogue = skillsDeclared ? await listMcpSkills(s) : [];
     // Surface FACULTATIVE (lot AB-5) : `listed._meta` arrive dans le même objet
     // que `listed.tools`, donc sans requête ni changement de transport. Son
     // extraction est défensive par contrat — cette fonction dégrade
@@ -493,6 +533,8 @@ async function connectMcpServer(server) {
       instructions: instructions,
       era: probe.era,
       protocolVersion: negotiated,
+      skillsDeclared: skillsDeclared,
+      skillCatalogue: skillCatalogue,
     });
     return true;
   } catch (e) {
@@ -500,6 +542,87 @@ async function connectMcpServer(server) {
     _remoteStatus[s.name] = { state: 'error', count: 0, error: (e && e.message) || 'échec', sessionId: null };
     return false;
   }
+}
+
+// Catalogue de skills d'un serveur qui déclare l'extension : `skills/list`,
+// curseur suivi au plus `MCP_SKILLS_LIST_MAX_PAGES` fois, entrées normalisées
+// par `mcpSkillCatalogueFrom`. Rend `null` sur tout échec, sans lever : la
+// connexion dégrade gracieusement, et une surface facultative ne doit pas y
+// déclencher la branche d'erreur, qui masquerait TOUS les outils du serveur.
+async function listMcpSkills(server) {
+  try {
+    const items = [];
+    let cursor = null;
+    for (let page = 0; page < MCP_SKILLS_LIST_MAX_PAGES; page++) {
+      const res = await mcpRpc(server, 'skills/list', cursor ? { cursor: cursor } : {});
+      if (res && Array.isArray(res.skills)) for (const it of res.skills) items.push(it);
+      cursor = (res && typeof res.nextCursor === 'string' && res.nextCursor) ? res.nextCursor : null;
+      if (!cursor) break;
+    }
+    return mcpSkillCatalogueFrom(items);
+  } catch (_) {
+    return null;
+  }
+}
+
+// Entrée FRAÎCHE d'une skill (`skills/get`), normalisée : jamais gardée en
+// mémoire entre deux lectures. La spec fait tenir l'« entrée détenue » pendant
+// la fenêtre d'action ; ici, c'est l'approbation, liée au manifeste, qui la
+// tient — une entrée fraîche différente de l'approuvée est refusée en amont.
+// Rien à invalider, et un rechargement de page ne casse pas la lecture d'une
+// annexe. Rend `{ entry }` ou `{ problem }`, sans lever.
+async function fetchMcpSkillEntry(server, skillUri) {
+  try {
+    const res = await mcpRpc(server, 'skills/get', { uri: skillUri });
+    const n = normalizeMcpSkillEntry(mcpSkillEntryFromResult(res));
+    return n.entry ? { entry: n.entry } : { problem: 'entrée invalide : ' + n.problem };
+  } catch (e) {
+    return { problem: 'entrée illisible (' + ((e && e.message) || 'échec') + ')' };
+  }
+}
+
+// Lit UN fichier d'une skill dont l'entrée fraîche est `entry`, et le vérifie :
+// fichier listé au manifeste (liste blanche), taille puis empreinte, et, pour
+// le SKILL.md, frontmatter comparé à l'entrée. Une skill dynamique n'a ni
+// manifeste ni empreinte : seuls le répertoire et la borne de taille de la
+// spec s'appliquent. Rend `{ text, bytes, isSkillMd }` (`text` null pour un
+// binaire) ou `{ problem }` ; aucun contenu n'est rendu sur un échec.
+//
+// N'APPROUVE RIEN : l'appelant décide s'il a le droit de lire (lecture par le
+// modèle, approbation exigée) ou s'il inspecte (geste de l'utilisateur dans la
+// fiche, lecture sans chargement).
+async function readVerifiedMcpSkillFile(server, entry, fileUri) {
+  const isSkillMd = fileUri === entry.uri;
+  let listed = null;
+  if (!entry.dynamic) {
+    listed = entry.resources.find(r => r.uri === fileUri) || null;
+    if (!listed) return { problem: 'fichier absent du manifeste de la skill' };
+  } else if (!isSkillMd && fileUri.indexOf(entry.dir) !== 0) {
+    return { problem: 'fichier hors du répertoire de la skill' };
+  }
+  let content = null;
+  try {
+    const res = await mcpRpc(server, 'resources/read', { uri: fileUri });
+    const contents = (res && Array.isArray(res.contents)) ? res.contents : [];
+    content = contents.find(c => c && c.uri === fileUri) || contents[0] || null;
+  } catch (e) {
+    return { problem: 'lecture impossible (' + ((e && e.message) || 'échec') + ')' };
+  }
+  const bytes = mcpResourceContentBytes(content);
+  if (!bytes) return { problem: 'contenu illisible' };
+  if (listed) {
+    const v = verifyMcpSkillFile(bytes, listed);
+    if (v) return { problem: formatMcpSkillFileProblem(v) };
+  } else if (bytes.length > MCP_SKILL_MAX_TOTAL_BYTES) {
+    return { problem: 'plus de 16 Mio' };
+  }
+  const text = mcpSkillFileText(content, bytes);
+  if (isSkillMd) {
+    if (text == null) return { problem: 'SKILL.md illisible comme texte' };
+    const fm = verifyMcpSkillFrontmatter(text, entry.frontmatter);
+    if (fm) return { problem: 'frontmatter : ' + (fm.field ? fm.field + ', ' : '') + fm.reason };
+  }
+  return { text: text, bytes: bytes, isSkillMd: isSkillMd };
 }
 
 function disconnectMcpServer(name) {

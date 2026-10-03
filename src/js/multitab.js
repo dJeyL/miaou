@@ -358,7 +358,7 @@ function applySyncDecision(d) {
 
 // Ré-application des réglages modifiés dans un autre onglet. `keys` = clés de
 // settings modifiées, ou sentinelles de sous-domaine ('api-servers',
-// 'active-api-server', 'mcp-servers'). On ré-applique de façon ciblée pour ne
+// 'active-api-server', 'mcp-servers', 'mcp-skill-approvals'). On ré-applique de façon ciblée pour ne
 // pas perturber inutilement l'UI (ne jamais vider un draft ni interrompre
 // une génération — on ne touche qu'aux surfaces de réglage/serveur).
 function applySyncedSettings(keys) {
@@ -386,6 +386,10 @@ function applySyncedSettings(keys) {
   // Serveurs MCP : re-render cartes (les outils distants se rebranchent à la
   // prochaine reconnexion manuelle ; pas de reconnexion auto imposée ici).
   if (set.has('mcp-servers') && typeof renderMcpServers === 'function') renderMcpServers();
+  // Approbations de skills MCP : les rangées de la fiche relisent la table à
+  // chaque rendu, et la lecture d'une skill la relit à chaque appel — seul
+  // l'affichage est à rafraîchir.
+  if (set.has('mcp-skill-approvals') && typeof renderMcpServers === 'function') renderMcpServers();
   // Réglages généraux : ré-appliquer thème + surlignage + sélecteurs, sans
   // toucher au draft ni au thread. On relit l'état persisté à la source.
   const s = loadSettings();

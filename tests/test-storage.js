@@ -866,15 +866,13 @@ describe('formatSpaceDescription — description du Space, mise en forme', funct
 // ── Export / import complet des données (feature E) ─────────────────────────
 
 describe('EXPORT_KEYS', function() {
-  it('liste les 7 clés localStorage du schéma', function() {
-    expect(EXPORT_KEYS.length).toBe(7);
-    expect(EXPORT_KEYS.indexOf('miaou-settings') >= 0).toBeTruthy();
-    expect(EXPORT_KEYS.indexOf('miaou-memories') >= 0).toBeTruthy();
-    expect(EXPORT_KEYS.indexOf('miaou-api-servers') >= 0).toBeTruthy();
-    expect(EXPORT_KEYS.indexOf('miaou-active-api-server') >= 0).toBeTruthy();
-    expect(EXPORT_KEYS.indexOf('miaou-mcp-servers') >= 0).toBeTruthy();
-    expect(EXPORT_KEYS.indexOf('miaou-spaces') >= 0).toBeTruthy();
-    expect(EXPORT_KEYS.indexOf('miaou-active-space') >= 0).toBeTruthy();
+  // L'ensemble des NOMS, jamais un compte : un compte nu ne dit pas laquelle
+  // manque, et repérime à chaque clé ajoutée.
+  it('liste les clés localStorage exportées', function() {
+    expect(EXPORT_KEYS.slice().sort()).toEqual([
+      'miaou-active-api-server', 'miaou-active-space', 'miaou-api-servers', 'miaou-mcp-servers',
+      'miaou-mcp-skill-approvals', 'miaou-memories', 'miaou-settings', 'miaou-spaces',
+    ]);
   });
   // U-4 : sorties d'EXPORT_KEYS, elles n'existent plus en localStorage depuis la
   // migration U-2. Les y laisser n'échouait sur rien — l'export produisait un
@@ -923,6 +921,7 @@ describe('buildExportPayload', function() {
     expect(payload.localStorage['miaou-api-servers']).toEqual([]);
     expect(payload.localStorage['miaou-active-api-server']).toBe('');
     expect(payload.localStorage['miaou-mcp-servers']).toEqual([]);
+    expect(payload.localStorage['miaou-mcp-skill-approvals']).toEqual({});
     expect(payload.localStorage['miaou-spaces']).toEqual([]);
     expect(payload.localStorage['miaou-active-space']).toBe('');
   });

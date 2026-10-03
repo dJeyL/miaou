@@ -130,6 +130,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `saveApiServersRaw` (storage.js) | localStorage | `settings-updated` | `{ keys: ['api-servers'] }` |
 | `setActiveApiServerId` (storage.js) | localStorage | `settings-updated` | `{ keys: ['active-api-server'] }` |
 | `saveMcpServers` (storage.js) | localStorage | `settings-updated` | `{ keys: ['mcp-servers'] }` |
+| `saveMcpSkillApprovals` (storage.js) | localStorage | `settings-updated` | `{ keys: ['mcp-skill-approvals'] }` |
 | `persistConversation` (storage.js) | IDB `tx.oncomplete` | `conv-updated` | `{ convId, spaceId }` |
 | `removeConversationRecord` (storage.js) | IDB `tx.oncomplete` | `conv-deleted` | `{ convId, spaceId }` (si existait) |
 | `persistConversationField` (storage.js) | IDB `tx.oncomplete` | `conv-updated` | `{ convId, spaceId }` — écriture de métadonnée (pin, titre, modèle, spaceId…) |
@@ -204,7 +205,7 @@ inoffensif, les pairs rechargent de toute façon.
 | `render-list` | `renderConvList()` (scopé Space actif, piège 18). |
 | `conv-gone` | conv affichée supprimée ailleurs → `resetToEmpty()` (émetteur a déjà persisté ; pas de re-suppression). Différé si `sending`. |
 | `space-list` | `syncSpaceUI()` + `renderConvList()`. Le Space actif local ne change pas. |
-| `apply-settings` | `applySyncedSettings(keys)` : re-render serveurs/sélecteur/thème/surlignage selon les clés, **sans toucher au draft ni au thread**. Sur `active-api-server` (bascule de serveur) : lève l'override de modèle de la conv affichée (`currentConvModel=''`, **en mémoire seul** — l'émetteur a déjà persisté/broadcasté via son `setConvModel('')`) et `prefetchModels()` (refetch cache modèles du nouveau serveur), sinon `activeModel()` resterait collé sur l'ancien modèle (piège 15). |
+| `apply-settings` | `applySyncedSettings(keys)` : re-render serveurs/sélecteur/thème/surlignage selon les clés (`mcp-skill-approvals` : re-render des fiches MCP seulement — la lecture d'une skill relit la table à chaque appel ; les approbations de session des skills `dynamic` ne sont jamais diffusées), **sans toucher au draft ni au thread**. Sur `active-api-server` (bascule de serveur) : lève l'override de modèle de la conv affichée (`currentConvModel=''`, **en mémoire seul** — l'émetteur a déjà persisté/broadcasté via son `setConvModel('')`) et `prefetchModels()` (refetch cache modèles du nouveau serveur), sinon `activeModel()` resterait collé sur l'ancien modèle (piège 15). |
 | `invalidate-resources` | `invalidateResourceCache(ids)` ; si conv affichée concernée et `!sending` → `loadConversationResources` + `renderThread`. Si `spaceId` non nul → `refreshVisibleSpaceLibrary(spaceId, ids)` : re-render de la bibliothèque, scroll à l'arrivant seulement si un des `ids` n'a pas encore de carte (sinon position de lecture restaurée — renommage, description aboutie ; cf. `docs/spaces.md`), sous les gardes du helper (Space actif, onglet « Fichiers » visible). Une **suppression** diffusée ne porte pas de `spaceId` (`deleteResource` n'a que l'id) : elle ne repeint donc rien chez le pair, limite assumée — l'onglet qui supprime re-rend le sien. |
 | `reload-skills` | `loadSkillsCache()` ; `renderSkills()` si drawer ouvert (`isSkillsDrawerOpen`), sinon `syncSkillHintUI`. |
 | `full-reload` | `location.reload()`. |
@@ -481,7 +482,8 @@ relu une seconde plus tard, localStorage était juste. 11 à 30 rafales sur 40 e
 **Correctif** : l'événement `storage`, émis dans les autres onglets quand la
 valeur y est visible, est traduit par le pur `storageEventDecision` (sync.js)
 en la même décision que le message du canal (`apply-settings` avec les SEULES
-clés qui ont changé, `space-list`, ou `unread-list` pour `miaou-unread`) et
+clés qui ont changé — dont `mcp-skill-approvals` pour la clé du même nom —,
+`space-list`, ou `unread-list` pour `miaou-unread`) et
 passé au même `applySyncDecision`. Le
 message du canal reste : il suffit presque toujours et porte des types
 qu'aucun événement `storage` ne voit ; la relecture tardive ne fait que

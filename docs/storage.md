@@ -535,6 +535,20 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   utilisateur. **Aucun état de session/outils distants
   n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, mcp.js) est en
   mémoire seule, reconstruit au démarrage.
+- `miaou-mcp-skill-approvals` : approbations des skills servies par les serveurs
+  MCP, `{ <carte>: { <name>: { uri, manifest, description, approvedAt } } }`
+  (cf. `docs/skills.md`, point 10). Clé **dédiée** plutôt qu'un champ de la
+  carte : le formulaire réécrit la carte entière (`normalizeMcpServer` ne garde
+  qu'une liste fermée de champs) et deviendrait un second écrivain. Écrite par
+  les gestes de la fiche, la suppression (purge) et le renommage (migration)
+  d'une carte, et le retrait d'une approbation dont le contenu n'a pas passé la
+  vérification — toujours par `updateMcpSkillApprovals`, qui relit la table
+  fraîche avant d'écrire. **Jamais élaguée** contre `skills/list` : une skill
+  absente (upstream tombé) garde son approbation. Exportée (une approbation
+  est liée aux empreintes : la restaurer n'approuve que le contenu déjà vu),
+  diffusée par `settings-updated` (clé `mcp-skill-approvals`) et relue sur
+  l'événement `storage`. Les approbations de SESSION des skills `dynamic` ne
+  sont pas ici : en mémoire, propres à l'onglet (`mcp-skills.js`).
 - `miaou-api-servers` : tableau de backends API (chat completions) `[{ id, name,
   url, key, model, disabled, vision, contextWindows, promptOrder, modelVisibility,
   handcraftedModels }]`. Remplace les champs plats `url`/`key`/`model` de
@@ -908,6 +922,7 @@ est remplacé par `member` :
     "miaou-api-servers": [ "…" ],
     "miaou-active-api-server": "srv_…",
     "miaou-mcp-servers": [ "…" ],
+    "miaou-mcp-skill-approvals": { "…": "…" },
     "miaou-spaces": [ "…" ],
     "miaou-active-space": "sp_…"
   },
@@ -983,7 +998,7 @@ est remplacé par `member` :
 
 - `EXPORT_FORMAT_VERSION` (= **3**) : version écrite, et borne haute acceptée en
   lecture. Un seul chiffre pour les deux, jamais un littéral dupliqué.
-- `EXPORT_KEYS` : les **7** clés localStorage du schéma (référencée uniquement
+- `EXPORT_KEYS` : les clés localStorage exportées du schéma (référencée uniquement
   en corps de fonction depuis les autres fichiers, même contrainte que
   `MAX_SUMMARIES` — cf. CLAUDE.md). `miaou-conversations` et `miaou-summaries`
   en ont été **retirées** au lot U-4.
@@ -1072,8 +1087,8 @@ Côté conversations (storage.js) :
 
 ### Orchestration (main.js)
 
-- `exportAllData()` : snapshot des 7 clés (`miaou-active-api-server` et
-  `miaou-active-space` lues en string brute, les 5 autres en `JSON.parse`),
+- `exportAllData()` : snapshot des clés d'`EXPORT_KEYS` (`miaou-active-api-server` et
+  `miaou-active-space` lues en string brute, les autres en `JSON.parse`),
   lecture IDB (`getAllSkillRecords` + `getAllResources` +
   `readAllConversationsFromDB` + `readAllSummariesFromDB`), séparation
   métadonnées/octets par `buildResourceMemberIndex`, `ensureFflate()` puis

@@ -825,9 +825,13 @@ const SKILL_GATE_REASONS = {
 //     corrige skill en main dans les deux cas), et qu'un appel à l'aveugle qui
 //     réussit ne coûte rien.
 // Une lecture en échec (slug inconnu, skill désactivée) ne compte pas.
+//
+// `identity` : le slug d'une skill LOCALE (chaîne), ou `{ server, uri }` pour
+// une skill servie par un serveur MCP — carte et URI de son SKILL.md. Les deux
+// espaces de noms ne se croisent jamais (`ackSatisfiesSkillRead`).
 // Pure, testable en QuickJS.
-function skillReadSince(slug, thread, pendingAcks) {
-  const isRead = (m) => !!m && m.kind === 'skill_read' && m.slug === slug && !m.error;
+function skillReadSince(identity, thread, pendingAcks) {
+  const isRead = (m) => ackSatisfiesSkillRead(m, identity);
   const t = thread || [];
   for (let i = lastCompactionIndex(t) + 1; i < t.length; i++) {
     if (isAckRole(t[i] && t[i].role) && isRead(t[i])) return true;
@@ -854,15 +858,86 @@ function refuseUnlessSkillRead(toolName, c) {
   return refusal ? toolFail(toolName, refusal) : null;
 }
 
+// Lecture d'une skill servie par un serveur MCP, pour le modèle. Ordre voulu :
+// entrée FRAÎCHE, approbation, puis seulement la lecture du contenu — une skill
+// non approuvée n'est jamais récupérée. Vérifiée (taille, empreinte,
+// frontmatter) avant d'entrer en contexte ; tout échec de vérification retire
+// l'approbation, la skill est à réapprouver. Une annexe n'est lisible que si
+// le SKILL.md de sa skill a été chargé depuis la dernière frontière, et si elle
+// figure au manifeste frais (liste blanche de la spec).
+//
+// L'interface (toast, fiche) n'est atteinte que par des fonctions d'autres
+// fichiers, sous garde `typeof` : tools.js est évalué seul par le runner.
+async function readMcpSkillForModel(target, c) {
+  const card = target.card;
+  const name = target.entry.name;
+  const server = getMcpServer(card);
+  if (!server || server.enabled === false) return toolFail('skills__read', 'Serveur MCP inconnu ou désactivé : ' + card);
+  const skillIdentity = { server: card, uri: target.entry.uri };
+  if (!target.isSkillMd && !skillReadSince(skillIdentity, toolConvThread(c && c.convId), _pendingToolAcks)) {
+    return toolFail('skills__read', 'Refusé : lis d\'abord la skill elle-même avec ' +
+      mcpSkillReadArgsText(card, target.entry.uri) + ', puis ce fichier. Rien n\'a été lu.');
+  }
+  const fresh = await fetchMcpSkillEntry(server, target.entry.uri);
+  if (fresh.problem) return toolFail('skills__read', 'Skill MCP « ' + name + ' » du serveur « ' + card + ' » illisible : ' + fresh.problem + '. Rien n\'a été lu.');
+  const approvals = loadMcpSkillApprovals()[card] || {};
+  const state = mcpSkillApprovalState(fresh.entry,
+    Object.prototype.hasOwnProperty.call(approvals, name) ? approvals[name] : null,
+    mcpSkillSessionApprovalsFor(card)[name] || null);
+  if (!mcpSkillStateAllowsLoad(state)) {
+    if (typeof notifyMcpSkillRefused === 'function') notifyMcpSkillRefused(card, name, state);
+    return toolFail('skills__read', mcpSkillNotApprovedText(card, name, state));
+  }
+  const read = await readVerifiedMcpSkillFile(server, fresh.entry, target.uri);
+  if (read.problem) {
+    // Le contenu ne correspond pas à l'entrée approuvée : l'approbation tombe.
+    setMcpSkillSessionApproval(card, name, null);
+    if (!fresh.entry.dynamic) updateMcpSkillApprovals(all => disapproveMcpSkill(all, card, name));
+    if (typeof notifyMcpSkillRefused === 'function') notifyMcpSkillRefused(card, name, 'changed');
+    return toolFail('skills__read', mcpSkillVerifyFailedText(card, name, read.problem));
+  }
+  if (read.text == null) return toolFail('skills__read', 'Fichier binaire, non lisible par cet outil : ' + target.uri);
+  _pendingToolAcks.push(target.isSkillMd
+    ? { kind: 'skill_read', server: card, uri: target.uri, title: name }
+    : { kind: 'skill_file_read', server: card, uri: target.uri, skillUri: fresh.entry.uri, title: name });
+  return formatMcpSkillForModel({ card: card, uri: target.uri, entry: fresh.entry, text: read.text, isSkillMd: target.isSkillMd });
+}
+
+// Définition de `skills__read` quand au moins un serveur connecté sert des
+// skills (composée par `exposedTools`). `slug` n'est plus requis : une skill
+// MCP se lit par `server` et `uri`. Rend null sans tel serveur — le registre
+// garde alors sa forme statique, à l'octet.
+function skillsReadToolDef() {
+  if (!Object.keys(mcpSkillCatalogues()).length) return null;
+  return {
+    description:
+      "Lit le contenu complet d'une skill. Skill locale : par son slug (obtenu via miaou__skills__list). " +
+      "Skill MCP, servie par un serveur d'outils : par server et uri, jamais par son nom seul ; " +
+      "même chemin pour un fichier annexe d'une skill MCP déjà lue. " +
+      "Renvoie les instructions de la skill, à suivre pour la suite de la réponse.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'Slug d\'une skill locale' },
+        server: { type: 'string', description: 'Skill MCP : nom du serveur (début des noms de ses outils)' },
+        uri: { type: 'string', description: 'Skill MCP : URI skill:// complète du SKILL.md ou d\'un fichier annexe' },
+      },
+    },
+  };
+}
+
 // Trousse d'un agent : un outil gardé lui est inutilisable sans l'outil de
 // lecture, que le parent n'a aucune raison de penser à déléguer. Il est donc
 // ajouté d'office dès qu'un outil délégué porte `requiresSkill`. `names` sont les
-// noms exposés (`miaou__…`, ou distants) ; `tools` le registre. Pure.
-function withSkillReaderIfGated(names, tools) {
+// noms exposés (`miaou__…`, ou distants) ; `tools` le registre ; `remoteDefs`
+// les définitions distantes (`remoteToolDefs()`), dont `requiresSkill` est
+// l'URI de la skill MCP exigée — la même lecture la satisfait. Pure.
+function withSkillReaderIfGated(names, tools, remoteDefs) {
   const list = names || [];
+  const remote = Array.isArray(remoteDefs) ? remoteDefs : [];
   const entry = (n) => {
     const k = resolveInternalToolName(n, tools);
-    return k == null ? null : tools.find(t => t.name === k);
+    return k == null ? (remote.find(t => t.name === n) || null) : tools.find(t => t.name === k);
   };
   if (!list.some(n => { const t = entry(n); return !!(t && t.requiresSkill); })) return list;
   if (list.some(n => { const t = entry(n); return !!(t && t.name === 'skills__read'); })) return list;
@@ -1732,7 +1807,10 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false },
     handler: () => {
       // listEnabledSkills (skills.js) lit le cache mémoire — synchrone.
-      const list = listEnabledSkills().map(s => ({ slug: s.slug, name: s.name, description: s.description, system: s.system === true }));
+      // Skills servies par les serveurs MCP connectés en queue, marquées
+      // `source: 'mcp'` et sans slug (cf. mcpSkillListEntries).
+      const list = listEnabledSkills().map(s => ({ slug: s.slug, name: s.name, description: s.description, system: s.system === true }))
+        .concat(mcpSkillListEntries(mcpSkillCatalogues()));
       _pendingToolAcks.push({ kind: 'skill_list', count: list.length });
       return JSON.stringify(list);
     },
@@ -1745,6 +1823,10 @@ const TOOLS = [
     // l'injection figée de la slash-commande : c'est un tool_result normal, dont
     // le contenu doit être disponible au modèle dès ce tour.
     name: 'skills__read',
+    // Description et schéma ci-dessous : forme SANS serveur de skills MCP. Dès
+    // qu'un serveur connecté déclare l'extension, `skillsReadToolDef` les
+    // remplace (composé par `exposedTools`, comme `agent__spawn`) : `server`
+    // et `uri` ne sont payés à chaque tour que par qui en a l'usage.
     description:
       "Lit le contenu complet d'une skill par son slug (obtenu via miaou__skills__list). " +
       "Renvoie les instructions de la skill, à suivre pour la suite de la réponse. " +
@@ -1757,11 +1839,14 @@ const TOOLS = [
       required: ['slug'],
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: (args) => {
-      const slug = String(args.slug || '').trim();
+    handler: (args, c) => {
+      const target = resolveSkillReadTarget(args, mcpSkillCatalogues());
+      if (target.error) return toolFail('skills__read', target.error);
+      if (target.kind === 'mcp') return readMcpSkillForModel(target, c);
+      const slug = target.slug;
       if (!slug) return toolFail('skills__read', 'Slug manquant.');
       const meta = getSkillMeta(slug);                 // cache mémoire (synchrone)
-      if (!meta) return toolFail('skills__read', 'Skill introuvable : ' + slug);
+      if (!meta) return toolFail('skills__read', mcpSkillHintForSlug(slug, mcpSkillCatalogues()) || ('Skill introuvable : ' + slug));
       if (meta.enabled === false) return toolFail('skills__read', 'Skill désactivée : ' + slug);
       // Activée : fetch IDB async. L'ack est poussé une fois le contenu obtenu.
       return getSkillContent(slug).then(content => {
@@ -2794,7 +2879,7 @@ const TOOLS = [
       if (!v.ok) return toolFail('agent__spawn', v.error);
       // Un outil délégué qui exige une skill emmène l'outil de lecture avec lui
       // (withSkillReaderIfGated) : le retour l'annonce, l'agent l'a vraiment.
-      const agentTools = withSkillReaderIfGated(v.tools, TOOLS);
+      const agentTools = withSkillReaderIfGated(v.tools, TOOLS, remoteToolDefs());
       // Fichiers délégués (X-1b) : résolus ICI, dans le référentiel du PARENT
       // (`c`), parce que c'est le seul instant et le seul ctx où les handles du
       // parent résolvent quelque chose. Ce qui est figé est l'ID DE RECORD, pas
@@ -3099,7 +3184,8 @@ const ASK_CONFIRMATION_DEF = {
 // (le drawer n'en a pas — il décrit l'outil, il ne l'appelle pas).
 function exposedTools(ctx) {
   const internal = TOOLS.map(t => {
-    const dyn = t.name === 'agent__spawn' ? agentSpawnToolDef(ctx) : null;
+    const dyn = t.name === 'agent__spawn' ? agentSpawnToolDef(ctx)
+      : t.name === 'skills__read' ? skillsReadToolDef() : null;
     return {
       name: 'miaou__' + t.name,
       description: dyn ? dyn.description : t.description,
@@ -3240,9 +3326,38 @@ function callTool(name, args, ctx) {
     return { content: [{ type: 'text', text: 'Serveur MCP inconnu ou désactivé : ' + parsed.serverPrefix }], isError: true };
   }
   const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
+  // Garde des skills MCP exigées (`requiresSkill` du `_meta` de l'outil). Ici,
+  // entre la résolution du serveur et l'appel, et non dans un handler : un outil
+  // distant n'en a pas, et rien d'autre ne se tranche avant lui.
+  const fullName = server.name + '__' + parsed.toolName;
+  const refusal = mcpRemoteSkillGateRefusal(server.name, remoteToolRequiresSkill(fullName),
+    mcpSkillCatalogues(), toolConvThread(toolCtx(ctx).convId), _pendingToolAcks);
+  if (refusal) {
+    const ack = { kind: 'tool_failed', name: fullName, message: refusal, error: true };
+    if (intent != null) ack.intent = intent;
+    _pendingToolAcks.push(ack);
+    return { content: [{ type: 'text', text: refusal }], isError: true };
+  }
   const serverArgs = args ? Object.assign({}, args) : {};
   delete serverArgs.miaou_intent;
   return callDocsInflatedRemoteTool(server, parsed.toolName, serverArgs, intent, ctx);
+}
+
+// Refus d'un outil distant dont la skill MCP exigée n'a pas été lue, ou null.
+// GARDE OUVERTE (null) dans les cas que personne ne peut corriger depuis
+// MIAOU : serveur qui ne déclare pas l'extension, catalogue illisible, skill
+// absente du catalogue ou invalide. Une skill présente mais non approuvée, elle,
+// BLOQUE son outil : un geste de l'utilisateur la débloque, et la lecture
+// refusée le lui dit. `catalogues` : `mcpSkillCatalogues()`. Pure.
+function mcpRemoteSkillGateRefusal(card, requiresSkill, catalogues, thread, pendingAcks) {
+  if (!requiresSkill) return null;
+  const cats = catalogues || {};
+  if (!Object.prototype.hasOwnProperty.call(cats, card) || !Array.isArray(cats[card])) return null;
+  const cov = mcpSkillForUri(cats[card], requiresSkill);
+  if (!cov || !cov.isSkillMd) return null;
+  if (skillReadSince({ server: card, uri: requiresSkill }, thread, pendingAcks)) return null;
+  return 'Refusé : lis d\'abord la skill MCP « ' + cov.entry.name + ' » avec ' +
+    mcpSkillReadArgsText(card, requiresSkill) + ', puis relance cet appel. Rien n\'a été fait.';
 }
 
 // ── Hook d'inflation dispatcher (brief A — moitié client du lot D) ───────

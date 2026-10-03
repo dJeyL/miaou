@@ -1005,6 +1005,59 @@
    actions de la carte s'alignent au lieu de flotter chacune sous son texte. */
 .mcp-upstream-row .mcp-authorize-btn { margin-left: auto; }
 
+/* Skills servies par le serveur : une rangée par skill, sous les upstreams.
+   Une approbation dont la skill n'est pas présentée actuellement est grisée
+   (« absent »), une skill à (ré)approuver porte la couleur d'attente. */
+.mcp-skills { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.mcp-skills-title { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
+.mcp-skill-row { display: flex; flex-direction: column; gap: 3px; padding-left: 2px; font-size: 12px; }
+.mcp-skill-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mcp-skill-name { color: var(--text); font-weight: 600; }
+.mcp-skill-state { color: var(--text-3); font-size: 11.5px; }
+.mcp-skill-row[data-state="approved"] .mcp-skill-state,
+.mcp-skill-row[data-state="session-approved"] .mcp-skill-state { color: var(--ok); }
+.mcp-skill-row[data-state="pending"] .mcp-skill-state,
+.mcp-skill-row[data-state="changed"] .mcp-skill-state,
+.mcp-skill-row[data-state="session-pending"] .mcp-skill-state { color: var(--pending); }
+.mcp-skill-row[data-state="invalid"] .mcp-skill-state { color: var(--err); }
+.mcp-skill-row[data-state="absent"] { opacity: .6; }
+.mcp-skill-actions { display: flex; gap: 6px; margin-left: auto; }
+.mcp-skill-desc { color: var(--text-2); font-size: 11.5px; line-height: 1.45; }
+.mcp-skill-note { color: var(--text-3); font-size: 11px; line-height: 1.45; }
+
+/* Lecture d'une skill MCP (drawer empilé sur la fiche) : réutilise les volets
+   de l'inspecteur d'appel (`.inspect-body`, `.inspect-section`, `.inspect-note`). */
+.inspect-note.is-error { color: var(--err); border-left-color: var(--err); }
+/* En-tête du lecteur : nom et badge d'état, description, champs alignés
+   (mêmes clés que l'inspecteur), puis l'action. */
+.mcp-skill-viewer-head { display: flex; flex-direction: column; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.mcp-skill-viewer-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mcp-skill-viewer-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.mcp-skill-viewer-state {
+  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text-3);
+}
+.mcp-skill-viewer-state:empty { display: none; }
+.mcp-skill-viewer-state[data-state="approved"],
+.mcp-skill-viewer-state[data-state="session-approved"] { color: var(--ok); border-color: var(--ok); }
+.mcp-skill-viewer-state[data-state="pending"],
+.mcp-skill-viewer-state[data-state="changed"],
+.mcp-skill-viewer-state[data-state="session-pending"] { color: var(--pending); border-color: var(--pending); }
+.mcp-skill-viewer-desc { font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+.mcp-skill-viewer-desc:empty { display: none; }
+.mcp-skill-viewer-meta { display: flex; flex-direction: column; gap: 2px; }
+.mcp-skill-viewer-meta .inspect-val.is-prose { font-family: inherit; font-size: 12px; color: var(--text-2); }
+.mcp-skill-viewer-meta .inspect-val.is-error { color: var(--err); }
+.mcp-skill-viewer-head .mcp-skill-approve { align-self: flex-start; }
+/* Corps rendu : la typographie des skills système, sans leur filet de tête
+   (la section porte déjà son titre). */
+.skill-system-content.mcp-skill-rendered { margin-top: 0; padding-top: 0; border-top: none; font-size: 12.5px; }
+.mcp-skill-annex-body { display: flex; flex-direction: column; gap: 6px; }
+.mcp-skill-annex { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.mcp-skill-annex-uri { color: var(--text-2); word-break: break-all; }
+.mcp-skill-annex .drawer-btn { margin-left: auto; }
+.mcp-skill-annex-end { width: 100%; margin: 4px 0 8px; border: none; border-top: 1px solid var(--border); }
+
 /* ── Serveurs API : particularités ──────────────────────────────────────────── */
 .api-status { font-size: 11.5px; color: var(--text-3); }
 .api-status.active { color: var(--accent); }
@@ -1488,3 +1541,16 @@ textarea.skill-content {
   background-size: 12px 12px;
   background-position: 0 0, 6px 6px;
 }
+
+/* Drawer Skills : mention des skills servies par les serveurs MCP, qui n'y
+   figurent pas. Le lien porte un soulignement au repos (signal sans survol). */
+.skills-mcp-note {
+  margin-bottom: 10px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: var(--r);
+  font-size: 11.5px; line-height: 1.5; color: var(--text-2);
+}
+.skills-mcp-link {
+  background: none; border: none; padding: 0; font: inherit; cursor: pointer;
+  color: var(--accent); text-decoration: underline; text-underline-offset: 2px;
+}
+.skills-mcp-link:hover { text-decoration-thickness: 2px; }

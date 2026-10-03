@@ -131,7 +131,9 @@ vingt-huit.
 
 **Skills (sous-namespace `miaou__skills__`, cf. `docs/skills.md`) :**
 - `skills__list()` — méta (`slug`, `name`, `description`) des skills **activés
-  uniquement**, depuis le cache mémoire (synchrone). Pousse un ack `skill_list`
+  uniquement**, depuis le cache mémoire (synchrone), suivies des skills servies
+  par les serveurs MCP connectés (`mcpSkillListEntries` : sans slug, avec
+  `server`, `uri`, `source: 'mcp'`). Pousse un ack `skill_list`
   (informatif, sans undo, icône `ICON_LIST` réutilisée de `conversation_list`).
 - `skills__read(slug)` — corps Markdown complet d'une skill activée. Contrôles
   introuvable/désactivé sur le cache mémoire = **erreur synchrone** (testable
@@ -141,7 +143,14 @@ vingt-huit.
   par duck-typing `.then`, sinon cet outil interne async serait pris pour un appel
   distant. Pousse un ack `skill_read` (informatif, sans undo) — nom de la skill stocké
   dans `title` (pas `name` : `onEnrichLastAck` écrase `name` avec le nom canonique
-  de l'outil pour la réinjection cross-turn).
+  de l'outil pour la réinjection cross-turn). **Lit aussi une skill servie par un
+  serveur MCP**, par `server` et `uri` (cf. `docs/skills.md`, point 10) : ces
+  deux paramètres n'existent au schéma que si un serveur connecté sert des
+  skills (`skillsReadToolDef`, composé par `exposedTools` comme `agent__spawn`),
+  et une `uri` présente désigne toujours une skill MCP. Ack `skill_read` portant
+  `server` et `uri` (jamais de `slug`), ou `skill_file_read` pour un fichier
+  annexe. Un slug sans skill locale mais qui nomme une skill MCP rend les
+  arguments exacts de la lecture distante plutôt qu'un « introuvable » sec.
 - `skills__write(slug, name?, description?, content?, enabled?, overwrite?)` —
   crée ou modifie une skill. Slug existant sans `overwrite:true` → erreur claire,
   **aucune écriture** (garde-fou anti-écrasement accidentel). En modification,
@@ -793,11 +802,16 @@ ouvrir la sienne (mesuré le 2026-09-30). La lecture est donc **imposée** : l'o
 porte `requiresSkill: '<slug>'` dans `TOOLS`, et son handler refuse tant que la
 lecture n'est pas constatée.
 
-- **Constat** — `skillReadSince(slug, thread, pendingAcks)` (pur) : un ack
-  `skill_read` du slug, non en échec, dans le fil APRÈS la dernière frontière de
+- **Constat** — `skillReadSince(identity, thread, pendingAcks)` (pur) : un ack
+  `skill_read` de l'identité, non en échec, dans le fil APRÈS la dernière frontière de
   compaction (une lecture d'avant n'est plus dans le contexte émis), ou plus tôt
   dans le MÊME lot d'appels (`_pendingToolAcks`). Le fil est celui de la
-  génération appelante quand elle tourne (`toolConvThread`).
+  génération appelante quand elle tourne (`toolConvThread`). L'identité est
+  le slug d'une skill LOCALE, ou `{ server, uri }` pour une skill servie par un
+  serveur MCP ; `ackSatisfiesSkillRead` (pur, mcp-skills.js) tranche, et les
+  deux espaces de noms ne se croisent jamais — un ack de skill MCP ne porte pas
+  de `slug`, et la lecture d'une skill locale homonyme ne satisfait pas une
+  exigence distante.
 - **Même lot accepté, pour toutes les skills gardées.** L'appel de ce lot-là a été écrit
   sans la skill, mais un refus ne coûte pas moins qu'un appel écrit à l'aveugle
   qui échoue — le modèle se corrige skill en main dans les deux cas —, et un
@@ -821,12 +835,26 @@ lecture n'est pas constatée.
 - **Trousse d'agent** — un outil gardé est inutilisable sans `skills__read`, que
   le parent n'a aucune raison de penser à déléguer : `withSkillReaderIfGated`
   (pur) l'ajoute d'office à la liste validée d'`agent__spawn`, et le retour du
-  lancement l'annonce parmi les outils délégués.
+  lancement l'annonce parmi les outils délégués. Les outils DISTANTS délégués
+  comptent aussi (troisième argument, `remoteToolDefs()`).
+- **Outils distants** — un outil MCP dont le `tools/list` déclare
+  `_meta["miaou/requiresSkill"]` (URI du SKILL.md exigé, cf. `docs/mcp.md`
+  point 21) est gardé dans la **branche distante de `callTool`**, entre la
+  résolution du serveur et `callDocsInflatedRemoteTool` : un outil distant n'a
+  pas de handler, et le motif qui place la garde native dans le sien (la
+  profondeur d'`agent__spawn`) n'existe pas ici. `mcpRemoteSkillGateRefusal`
+  (pur) rend le refus : ack `tool_failed` au nom complet, intent conservé,
+  « rien n'a été fait », et les arguments exacts de lecture (`server`, `uri`).
+  **Garde ouverte** quand personne ne peut corriger depuis MIAOU : serveur sans
+  l'extension, catalogue illisible, skill absente ou invalide. Une skill
+  présente mais **non approuvée** bloque, elle, son outil : un geste de
+  l'utilisateur la débloque (cf. `docs/skills.md`).
 - **Hors périmètre** : `mermaid` (aucun outil, le diagramme sort en texte) ;
   `files-promote` (possible, pas fait — une lecture émise dans le même lot
   qu'`ask_confirmation` est ignorée par le halting, ce qui coûterait un
   aller-retour après le « Oui ») ; les `docs__*` d'un serveur MCP, que la
-  doctrine ne vise pas.
+  doctrine ne vise pas (un serveur qui veut l'exiger le déclare lui-même, cf.
+  « Outils distants »).
 
 Aucun texte adressé au modèle n'a bougé dans le contexte fixe : le refus n'existe
 qu'en tool result, les doctrines sont inchangées.

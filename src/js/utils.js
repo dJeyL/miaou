@@ -51,6 +51,9 @@ const ACK_COPY_FIELDS = [
                                           // parent (le record garde le convId du parent, l'ack porte celui
                                           // de l'agent) ; cf. resolveRecallImages
   'slug', 'created',                      // skills (created : write = création vs modification)
+  'uri', 'skillUri',                      // skill MCP lue (skill_read, skill_file_read) : URI du fichier lu, et
+                                          // celle du SKILL.md de sa skill pour une annexe ; avec `server`, l'identité
+                                          // que skillReadSince compare (jamais l'URI seule)
   'topic', 'query',                      // aide (about_read, about_search)
   'handle',                               // handle SCALAIRE — docs__list / docs__read (le document décrit/lu).
                                           // N'est PLUS porté par js_eval depuis le lot L-2 (multi-entrées), mais
@@ -771,6 +774,13 @@ function splitMcpInstructionSections(text) {
 //   - serveur unitaire → `<slug>` (les outils sont `<slug>__<outil>`).
 // C'est un PRÉFIXE, jamais un nom d'outil complet : la consigne porte sur tout
 // ce qui commence par là.
+//
+// Le CORPS d'une section d'agrégateur reçoit une seule retouche : les noms
+// d'outils `<serveur>__…` cités entre accents graves gagnent le préfixe de
+// carte (`rewriteMcpUpstreamToolPrefixes`, mcp-skills.js). Sans elle, le modèle
+// lit à chaque tour « avant tout appel d'un outil `bench__…` » sous un titre qui
+// lui dit `<carte>__bench` — et c'est précisément le bloc des skills du proxy
+// qui porte ces noms. Le reste du texte passe verbatim.
 // Pure, testable en QuickJS.
 function mcpInstructionSectionsForServer(slug, instructions) {
   const name = typeof slug === 'string' ? slug.trim() : '';
@@ -778,23 +788,26 @@ function mcpInstructionSectionsForServer(slug, instructions) {
   if (!name || !text) return [];
   const split = splitMcpInstructionSections(text);
   if (split.sections.length) {
-    return split.sections.map(s => ({ prefix: name + '__' + s.name, body: s.body }));
+    return split.sections.map(s => ({
+      prefix: name + '__' + s.name,
+      body: rewriteMcpUpstreamToolPrefixes(s.body, name, s.name),
+    }));
   }
   // Serveur unitaire : le texte entier est la consigne, le préfixe est le slug.
   if (!split.preamble) return [];
   return [{ prefix: name, body: split.preamble }];
 }
 
-// Bloc `<miaou_mcp_instructions>` injecté dans le contexte ÉPHÉMÈRE du tour
-// (contextBlockParts, main.js) — JAMAIS dans le message système.
+// Bloc `<miaou_mcp_instructions>` injecté dans le MESSAGE SYSTÈME
+// (`out.mcpInstructions`, main.js), avec les autres blocs qui ne changent qu'à
+// un geste explicite.
 //
-// Le system message est STATIQUE par contrat (piège 16, préfixe KV cache) et
-// ces consignes ne le sont pas : elles apparaissent et disparaissent au
-// branchement/débranchement d'un serveur, à un ré-handshake, au renommage d'une
-// carte. Les mettre dans le prompt racine invaliderait le préfixe à chaque
-// changement d'état MCP — exactement l'invalidation RÉCURRENTE que le piège
-// vise. Leur place est celle de `<miaou_skills_context>` : recalculé à chaque
-// tour, reflétant l'état courant sans cas particulier.
+// Ces consignes ne bougent qu'au branchement ou au débranchement d'un serveur,
+// à une reconnexion, au renommage d'une carte : jamais d'un tour à l'autre.
+// Laissées dans le préfixe éphémère, elles glissaient derrière chaque nouveau
+// message et n'étaient jamais servies par le cache ; dans le système, elles
+// coûtent une invalidation ponctuelle au geste, que le piège 16 accepte (il vise
+// les invalidations RÉCURRENTES).
 //
 // `servers` : `[{ slug, instructions }]`, dans l'ordre de configuration.
 // Rend '' quand aucun serveur ne publie rien — le cas majoritaire, et pas un

@@ -351,23 +351,40 @@ const ACK_KINDS = {
   },
   // Lecture d'une skill par le modèle (miaou__skills__read) : informatif, pas d'undo
   // (lecture, pas une mutation d'état — même posture que conversation_read).
+  // Une skill servie par un serveur MCP porte `server` (et pas de `slug`) : son
+  // origine est affichée, pour qu'elle ne passe jamais pour une skill locale.
   skill_read: {
     destination: 'user',
     undo: null,
     icon: ICON_BOOK,
-    label: m => 'Skill consultée : ' + (m.title || m.slug || '?'),
+    label: m => (m.server ? 'Skill MCP consultée : ' : 'Skill consultée : ') + skillReadAckSubject(m),
     renderLabel: (m, el) => {
-      if (m.intent) {
-        renderIntentTwoLevel(el, m.intent, null, detail => {
-          detail.appendChild(document.createTextNode('Skill consultée '));
-          appendAckSep(detail);
-          detail.appendChild(document.createTextNode(' ' + (m.title || m.slug || '?')));
-        });
-      } else {
-        el.appendChild(document.createTextNode('Skill consultée '));
-        appendAckSep(el);
-        el.appendChild(document.createTextNode(' ' + (m.title || m.slug || '?')));
-      }
+      const lead = m.server ? 'Skill MCP consultée ' : 'Skill consultée ';
+      const build = (host) => {
+        host.appendChild(document.createTextNode(lead));
+        appendAckSep(host);
+        host.appendChild(document.createTextNode(' ' + skillReadAckSubject(m)));
+      };
+      if (m.intent) renderIntentTwoLevel(el, m.intent, null, build);
+      else build(el);
+    },
+  },
+  // Fichier annexe d'une skill MCP (miaou__skills__read sur une URI d'annexe) :
+  // kind DISTINCT de skill_read, pour qu'aucune lecture d'annexe ne puisse
+  // satisfaire une exigence de skill, quel que soit le lecteur de l'ack.
+  skill_file_read: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_BOOK,
+    label: m => 'Fichier de skill MCP lu : ' + skillFileAckSubject(m),
+    renderLabel: (m, el) => {
+      const build = (host) => {
+        host.appendChild(document.createTextNode('Fichier de skill MCP lu '));
+        appendAckSep(host);
+        host.appendChild(document.createTextNode(' ' + skillFileAckSubject(m)));
+      };
+      if (m.intent) renderIntentTwoLevel(el, m.intent, null, build);
+      else build(el);
     },
   },
   // Création/modification d'une skill par le modèle (miaou__skills__write) :
@@ -757,6 +774,17 @@ function renderAgentAckLabel(m, el, verb) {
     el.appendChild(node);
     el.appendChild(document.createTextNode(' »'));
   }
+}
+
+// Sujet d'un ack de lecture de skill : le nom, suivi du serveur pour une skill
+// MCP. Texte nu, posé par `textContent` (le nom vient du serveur).
+function skillReadAckSubject(m) {
+  const name = m.title || m.slug || '?';
+  return m.server ? name + ' (' + m.server + ')' : name;
+}
+function skillFileAckSubject(m) {
+  const file = String(m.uri || '').split('/').pop() || '?';
+  return file + ' — ' + (m.title || '?') + ' (' + (m.server || '?') + ')';
 }
 
 // Wrapper exposé pour les tests (aucun call-site app — buildToolAck utilise

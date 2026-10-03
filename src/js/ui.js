@@ -4932,6 +4932,8 @@ const _tSpace = trackDrawer(openSpaceScreen, closeSpaceScreen);
 openSpaceScreen = _tSpace.open; closeSpaceScreen = _tSpace.close;
 const _tMcp = trackDrawer(openMcpServers, closeMcpServers);
 openMcpServers = _tMcp.open; closeMcpServers = _tMcp.close;
+const _tMcpSkill = trackDrawer(openMcpSkillViewer, closeMcpSkillViewer);
+openMcpSkillViewer = _tMcpSkill.open; closeMcpSkillViewer = _tMcpSkill.close;
 const _tApi = trackDrawer(openApiServers, closeApiServers);
 openApiServers = _tApi.open; closeApiServers = _tApi.close;
 const _tSkills = trackDrawer(openSkills, closeSkills);
@@ -8654,6 +8656,8 @@ function buildMcpCard(server, isNew) {
     viewSection.appendChild(row);
   }
 
+  appendMcpSkillRows(viewSection, originalName, isNew ? null : liveStatus);
+
   card.appendChild(viewSection);
 
   // Toggle vue : persistance immédiate + reconnexion
@@ -8721,6 +8725,276 @@ function buildMcpCard(server, isNew) {
 
   card.appendChild(editSection);
   return card;
+}
+
+// Rangées des skills servies par le serveur de cette carte : une par skill du
+// catalogue, puis une par approbation dont la skill n'est pas présentée
+// actuellement (upstream tombé, serveur injoignable) — grisée, désapprouvable.
+// L'état vient du pur `mcpSkillRows` ; la table d'approbations est relue à
+// chaque rendu, jamais gardée. Les annexes n'y figurent pas : approuver la skill
+// les couvre, son manifeste les liant toutes.
+function appendMcpSkillRows(parent, card, liveStatus) {
+  if (!card) return;
+  const approvals = loadMcpSkillApprovals()[card] || {};
+  const catalogue = (liveStatus && liveStatus.state === 'ok' && liveStatus.skillsDeclared)
+    ? liveStatus.skillCatalogue : null;
+  const rows = mcpSkillRows(catalogue, approvals, mcpSkillSessionApprovalsFor(card),
+    listAllSkillsCache().map(sk => sk.slug));
+  if (!rows.length) return;
+  const box = document.createElement('div');
+  box.className = 'mcp-skills';
+  const title = document.createElement('div');
+  title.className = 'mcp-skills-title';
+  title.textContent = 'Skills servies';
+  box.appendChild(title);
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'mcp-skill-row';
+    row.dataset.state = r.state;
+    row.dataset.skill = r.name;
+    const head = document.createElement('div');
+    head.className = 'mcp-skill-head';
+    const name = document.createElement('span');
+    name.className = 'mcp-skill-name';
+    name.textContent = r.name;
+    head.appendChild(name);
+    const state = document.createElement('span');
+    state.className = 'mcp-skill-state';
+    state.textContent = MCP_SKILL_STATE_LABELS[r.state] || r.state;
+    head.appendChild(state);
+    const actions = document.createElement('span');
+    actions.className = 'mcp-skill-actions';
+    const mkBtn = (cls, label, fn) => {
+      const b = document.createElement('button');
+      b.className = 'drawer-btn ' + cls;
+      b.textContent = label;
+      b.addEventListener('click', fn);
+      actions.appendChild(b);
+    };
+    if (r.state !== 'absent' && r.state !== 'invalid') {
+      mkBtn('mcp-skill-read', 'Lire', () => openMcpSkillViewer(card, r.name));
+    }
+    if (r.state === 'pending' || r.state === 'changed' || r.state === 'session-pending') {
+      mkBtn('primary mcp-skill-approve', 'Approuver', () => onApproveMcpSkill(card, r.name));
+    }
+    if (r.state === 'approved' || r.state === 'changed' || r.state === 'absent' || r.state === 'session-approved') {
+      mkBtn('mcp-skill-disapprove', 'Désapprouver', () => onDisapproveMcpSkill(card, r.name));
+    }
+    head.appendChild(actions);
+    row.appendChild(head);
+    const desc = document.createElement('div');
+    desc.className = 'mcp-skill-desc';
+    desc.textContent = r.problem ? ('Non chargeable\u00a0: ' + r.problem) : r.description;
+    if (desc.textContent) row.appendChild(desc);
+    if (r.dynamic) {
+      const note = document.createElement('div');
+      note.className = 'mcp-skill-note';
+      note.textContent = 'Contenu variable\u00a0: l\u2019approbation fait confiance au serveur pour cette skill, le temps de la session.';
+      row.appendChild(note);
+    }
+    if (r.collision) {
+      const note = document.createElement('div');
+      note.className = 'mcp-skill-note';
+      note.textContent = 'Homonyme d\u2019une skill locale\u00a0: le nom seul désigne toujours la skill locale.';
+      row.appendChild(note);
+    }
+    box.appendChild(row);
+  }
+  parent.appendChild(box);
+}
+
+// ── Lecture d'une skill MCP avant approbation ────────────────────────────────
+// Recommandé par la spec : pouvoir lire une skill avant de l'approuver. Geste
+// de l'utilisateur, donc compatible avec l'interdit de lecture anticipée ; rien
+// n'entre dans une conversation. Entrée FRAÎCHE (`skills/get`) et fichiers
+// vérifiés comme au chargement : une inspection qui ne correspond pas au
+// manifeste le dit, et n'affiche pas le contenu.
+//
+// Présentation : un en-tête (nom, badge d'état, description, champs serveur /
+// adresse / vérification), puis le corps RENDU, comme une skill système
+// (`toggleSystemSkillContent`). Le contenu vient du serveur : il passe par
+// `renderMd`, donc par DOMPurify (piège 21) — le chemin déjà emprunté par les
+// consignes serveur du drawer des outils. Tout le reste est posé par
+// `textContent`. Un fichier annexe qui n'est pas du Markdown est montré en
+// bloc de code (texte posé par `textContent`).
+//
+// `_mcpSkillView` porte l'IDENTITÉ de la lecture en cours : une réponse qui
+// revient après qu'on a ouvert une autre skill (ou fermé) ne peint rien.
+let _mcpSkillView = null;
+
+function openMcpSkillViewer(card, name) {
+  const view = { card: card, name: name, entry: null };
+  _mcpSkillView = view;
+  $('mcp-skill-drawer').classList.add('show');
+  $('mcp-skill-backdrop').classList.add('show');
+  renderMcpSkillViewer(view);
+}
+
+function closeMcpSkillViewer() {
+  $('mcp-skill-drawer').classList.remove('show');
+  $('mcp-skill-backdrop').classList.remove('show');
+  _mcpSkillView = null;
+}
+
+// Ligne clé / valeur de l'en-tête. `mono` pour une adresse ; la prose sinon.
+function _mcpSkillField(parent, key, value, mono) {
+  const row = document.createElement('div');
+  row.className = 'inspect-field';
+  const k = document.createElement('span');
+  k.className = 'inspect-key';
+  k.textContent = key;
+  const v = document.createElement('span');
+  v.className = 'inspect-val' + (mono ? '' : ' is-prose');
+  v.textContent = value;
+  row.append(k, v);
+  parent.appendChild(row);
+  return v;
+}
+
+async function renderMcpSkillViewer(view) {
+  const body = $('mcp-skill-body');
+  const titleEl = $('mcp-skill-title');
+  if (!body) return;
+  body.innerHTML = '';
+  if (titleEl) titleEl.textContent = 'Skill MCP';
+  const st = getMcpStatus(view.card);
+  const listed = st && Array.isArray(st.skillCatalogue) ? st.skillCatalogue.find(e => e.name === view.name && !e.problem) : null;
+  const server = getMcpServer(view.card);
+
+  const head = document.createElement('div');
+  head.className = 'mcp-skill-viewer-head';
+  const titleRow = document.createElement('div');
+  titleRow.className = 'mcp-skill-viewer-title';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'mcp-skill-viewer-name';
+  nameEl.textContent = view.name;
+  const stateEl = document.createElement('span');
+  stateEl.className = 'mcp-skill-viewer-state';
+  titleRow.append(nameEl, stateEl);
+  head.appendChild(titleRow);
+  const descEl = document.createElement('div');
+  descEl.className = 'mcp-skill-viewer-desc';
+  head.appendChild(descEl);
+  const meta = document.createElement('div');
+  meta.className = 'mcp-skill-viewer-meta';
+  head.appendChild(meta);
+  body.appendChild(head);
+
+  _mcpSkillField(meta, 'Serveur', view.card);
+  if (!listed || !server) {
+    stateEl.textContent = MCP_SKILL_STATE_LABELS.absent;
+    stateEl.dataset.state = 'absent';
+    return;
+  }
+  _mcpSkillField(meta, 'Adresse', listed.uri, true);
+  const verifyVal = _mcpSkillField(meta, 'Vérification', 'lecture en cours…');
+  stateEl.textContent = '…';
+
+  const fresh = await fetchMcpSkillEntry(server, listed.uri);
+  if (_mcpSkillView !== view) return;
+  if (fresh.problem) {
+    verifyVal.textContent = 'lecture impossible\u00a0: ' + fresh.problem;
+    verifyVal.classList.add('is-error');
+    stateEl.textContent = '';
+    return;
+  }
+  view.entry = fresh.entry;
+  const approvals = loadMcpSkillApprovals()[view.card] || {};
+  const state = mcpSkillApprovalState(fresh.entry, approvals[view.name] || null,
+    mcpSkillSessionApprovalsFor(view.card)[view.name] || null);
+  stateEl.textContent = MCP_SKILL_STATE_LABELS[state] || state;
+  stateEl.dataset.state = state;
+  descEl.textContent = fresh.entry.description || '';
+  if (fresh.entry.dynamic) {
+    _mcpSkillField(meta, 'Contenu', 'variable\u00a0: ce qui est lu ici peut différer de ce que le modèle lira');
+  }
+  if (state === 'pending' || state === 'changed' || state === 'session-pending') {
+    const btn = document.createElement('button');
+    btn.className = 'drawer-btn primary mcp-skill-approve';
+    btn.textContent = 'Approuver';
+    // Approuve l'entrée qui vient d'être LUE, pas celle du catalogue de la
+    // connexion : c'est elle que l'utilisateur a sous les yeux.
+    btn.addEventListener('click', () => { onApproveMcpSkill(view.card, view.name, fresh.entry); renderMcpSkillViewer(view); });
+    head.appendChild(btn);
+  }
+
+  const main = _inspectSection(body, 'Contenu');
+  const r = await readVerifiedMcpSkillFile(server, fresh.entry, fresh.entry.uri);
+  if (_mcpSkillView !== view) return;
+  if (r.problem) {
+    verifyVal.textContent = 'en échec (' + r.problem + ')\u00a0; contenu non affiché';
+    verifyVal.classList.add('is-error');
+    return;
+  }
+  verifyVal.textContent = fresh.entry.dynamic
+    ? 'impossible, contenu variable sans empreinte publiée'
+    : 'conforme à l\u2019entrée (taille, empreinte, frontmatter)';
+  _mcpSkillRenderFile(main, r.text, fresh.entry.uri, true);
+
+  const annexes = fresh.entry.dynamic ? [] : fresh.entry.resources.filter(x => x.uri !== fresh.entry.uri);
+  if (!annexes.length) return;
+  const sec = _inspectSection(body, 'Fichiers annexes');
+  for (const x of annexes) {
+    const line = document.createElement('div');
+    line.className = 'mcp-skill-annex';
+    const label = document.createElement('span');
+    label.className = 'mcp-skill-annex-uri';
+    label.textContent = x.uri.slice(fresh.entry.dir.length) + ' (' + x.size + ' octets)';
+    line.appendChild(label);
+    const out = document.createElement('div');
+    out.className = 'mcp-skill-annex-body';
+    const btn = document.createElement('button');
+    btn.className = 'drawer-btn';
+    btn.textContent = 'Lire';
+    btn.addEventListener('click', () => { btn.disabled = true; showMcpSkillAnnex(view, server, fresh.entry, x.uri, out); });
+    line.appendChild(btn);
+    sec.appendChild(line);
+    sec.appendChild(out);
+  }
+}
+
+// Rendu d'un fichier vérifié : Markdown rendu (sanitisé), autre texte en bloc
+// de code, binaire signalé. Le frontmatter d'un SKILL.md est retiré de
+// l'affichage, l'en-tête en reprenant nom et description.
+function _mcpSkillRenderFile(parent, text, uri, isSkillMd) {
+  if (text == null) {
+    const n = document.createElement('div');
+    n.className = 'inspect-note';
+    n.textContent = 'Fichier binaire, non affiché.';
+    parent.appendChild(n);
+    return;
+  }
+  if (/\.md$/i.test(uri)) {
+    const el = document.createElement('div');
+    el.className = 'skill-system-content mcp-skill-rendered';
+    el.innerHTML = renderMd(isSkillMd ? stripSkillFrontmatterForDisplay(text) : text, { refs: false });
+    parent.appendChild(el);
+    return;
+  }
+  _inspectCodeBlock(parent, text, 'text', uri.split('/').pop());
+}
+
+// Lit, vérifie et affiche UNE annexe dans `parent`. Un échec de vérification
+// est dit, et le contenu n'est pas montré.
+// Même champ « Vérification » que l'en-tête de la skill ; un filet clôt
+// l'annexe ouverte pour la détacher de la ligne suivante.
+async function showMcpSkillAnnex(view, server, entry, uri, parent) {
+  const meta = document.createElement('div');
+  meta.className = 'mcp-skill-viewer-meta';
+  parent.appendChild(meta);
+  const verifyVal = _mcpSkillField(meta, 'Vérification', 'lecture en cours…');
+  const r = await readVerifiedMcpSkillFile(server, entry, uri);
+  if (_mcpSkillView !== view) return;
+  if (r.problem) {
+    verifyVal.textContent = 'en échec (' + r.problem + ')\u00a0; contenu non affiché';
+    verifyVal.classList.add('is-error');
+  } else {
+    verifyVal.textContent = 'conforme à l\u2019entrée (taille, empreinte)';
+    _mcpSkillRenderFile(parent, r.text, uri, false);
+  }
+  const end = document.createElement('hr');
+  end.className = 'mcp-skill-annex-end';
+  parent.appendChild(end);
 }
 
 // ── Sous-drawer « Serveurs API » (cartes éditables, même pattern que MCP) ─────
@@ -9712,11 +9986,41 @@ function syncPaletteHintUI() {
   el.textContent = isMac ? 'Cmd+K' : 'Ctrl+K';
 }
 
+// Mention, en tête du drawer Skills, des skills servies par les serveurs MCP :
+// elles n'y figurent pas (ni stockées, ni éditables), et se consultent et
+// s'approuvent sur la carte de leur serveur. Affichée seulement s'il y en a
+// (serveur connecté qui en sert, ou approbation enregistrée), avec un lien vers
+// les serveurs MCP. Le lien FERME ce drawer avant d'ouvrir l'autre : le drawer
+// MCP le précède dans le DOM, à z-index égal, et s'ouvrirait dessous.
+function appendMcpSkillsElsewhereNote(wrap) {
+  const served = mcpSkillListEntries(mcpSkillCatalogues()).length;
+  const approved = Object.keys(loadMcpSkillApprovals()).length;
+  if (!served && !approved) return;
+  const note = document.createElement('div');
+  note.className = 'skills-mcp-note';
+  const text = document.createElement('span');
+  // Une phrase COMPLÈTE par cas, accordée en nombre : assembler un sujet
+  // variable et une fin commune donnait « une skill … : elles se consultent ».
+  text.textContent = served === 1
+    ? 'Une skill est servie par un serveur MCP. Elle n\u2019apparaît pas ici\u00a0: elle se consulte et s\u2019approuve sur la carte de son serveur.'
+    : served > 1
+      ? served + ' skills sont servies par des serveurs MCP. Elles n\u2019apparaissent pas ici\u00a0: elles se consultent et s\u2019approuvent sur la carte de leur serveur.'
+      : 'Les skills servies par des serveurs MCP n\u2019apparaissent pas ici\u00a0: elles se consultent et s\u2019approuvent sur la carte de leur serveur.';
+  const link = document.createElement('button');
+  link.type = 'button';
+  link.className = 'skills-mcp-link';
+  link.textContent = 'Ouvrir les serveurs MCP';
+  link.addEventListener('click', () => { closeSkills(); openMcpServers(); });
+  note.append(text, ' ', link);
+  wrap.appendChild(note);
+}
+
 function renderSkills() {
   syncSkillHintUI();   // tout CRUD skill (save/delete/toggle) repasse ici
   const wrap = $('skill-list');
   if (!wrap) return;
   wrap.innerHTML = '';
+  appendMcpSkillsElsewhereNote(wrap);
   const skills = listAllSkillsCache();   // skills.js — méta, ordre d'insertion
   if (!skills.length) {
     const empty = document.createElement('div');

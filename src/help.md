@@ -485,6 +485,13 @@ l'autocomplétion du `/` ni par la palette. Celles qui le sont (comme les règle
 mermaid) y portent une étiquette « système ». Une skill système non proposée
 reste invocable en tapant son slug en entier.
 
+**Skills fournies par un serveur compagnon** : un serveur MCP peut servir ses
+propres skills, que le modèle lit après ton approbation dans la liste des
+serveurs compagnons. Elles n'apparaissent pas dans le panneau Skills ni dans
+l'autocomplétion du `/` — une mention en tête du panneau le rappelle quand il y
+en a, avec un lien vers les serveurs compagnons —, et ne masquent jamais une de
+tes skills du même nom (cf. `mcp`).
+
 ## agents — agents
 
 Le modèle peut lancer un **agent** : une sous-conversation autonome à qui il
@@ -680,6 +687,33 @@ après avoir branché un serveur, c'est peut-être de là que cela vient. Tu peu
 lire la consigne elle-même dans « Voir les outils exposés » : elle s'affiche en
 tête de la section du serveur qui la publie, avant ses outils. Ce qu'elle coûte
 en contexte se lit, lui, dans le compteur de contexte (sujet `contexte`).
+
+**Quand un serveur fournit des skills.** Un serveur compagnon peut aussi servir
+ses propres **skills** — des modes d'emploi pour ses outils — et en exiger la
+lecture avant qu'on appelle ses outils. Le modèle les lit lui-même, en
+indiquant le serveur et l'adresse complète de la skill (`skill://…`), que les
+consignes du serveur lui donnent ; leur seul nom ne suffit pas, et un nom
+identique à celui d'une de tes skills désigne toujours la tienne.
+
+Aucune de ces skills n'est lue sans ton accord. Dans la liste des serveurs
+compagnons, la carte du serveur affiche une ligne par skill qu'il fournit, avec
+son état (approuvée, à approuver, modifiée depuis ton approbation…) et trois
+boutons : **Lire** pour en consulter le contenu avant de décider, **Approuver**
+et **Désapprouver**. Une notification te le signale au démarrage quand une skill
+attend ton approbation. Tant qu'elle n'est pas approuvée, le modèle ne peut ni
+la lire ni appeler les outils qui l'exigent : il te dit quelle skill approuver
+et où, et une notification t'emmène sur la bonne carte. Une fois
+approuvée, redemande simplement la même chose.
+
+Ton approbation porte sur le contenu exact que tu as approuvé : si le serveur
+modifie la skill, elle repasse « modifiée depuis ton approbation » et il faut
+l'approuver à nouveau. Elle survit en revanche à une absence passagère du
+serveur, et suit la carte si tu la renommes ; elle disparaît si tu supprimes la
+carte. Certaines skills ont un contenu variable, qui ne peut pas être figé :
+leur approbation ne vaut que jusqu'au rechargement de la page. Ce que le modèle
+lit d'une skill de serveur est toujours présenté comme venant de ce serveur,
+jamais comme une de tes skills, et la trace de lecture dans la conversation
+porte le nom du serveur.
 
 Pour l'accès au web, le projet compagnon **miaou-mcp-servers** fournit des
 serveurs prêts à l'emploi (téléchargement et recherche de pages web) : c'est la
@@ -1407,8 +1441,8 @@ chat — supprimer une conversation ne le soulage pas.
 
 **Sauvegarder et restaurer tout MIAOU.** Réglages › Données propose « Exporter
 les données » : un fichier `.zip` qui contient absolument tout — conversations,
-résumés, souvenirs, skills, fichiers, Espaces, serveurs, réglages et
-statistiques d'usage. C'est la
+résumés, souvenirs, skills, fichiers, Espaces, serveurs (approbations de leurs
+skills comprises), réglages et statistiques d'usage. C'est la
 seule vraie sauvegarde, et c'est aussi le seul moyen d'emporter ton MIAOU vers
 un autre navigateur ou une autre machine. « Importer les données » le relit et
 **remplace l'intégralité** de ce qui est en place (un récapitulatif s'affiche,

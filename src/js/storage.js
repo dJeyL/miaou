@@ -1052,6 +1052,37 @@ function listEnabledMcpServers() {
   return loadMcpServers().filter(s => s.enabled !== false && s.url);
 }
 
+// Approbations des skills servies par les serveurs MCP (cf. mcp-skills.js) :
+// `{ <carte>: { <name>: { uri, manifest, description, approvedAt } } }`.
+// Clé DÉDIÉE plutôt qu'un champ de la carte : la carte est réécrite en entier
+// par son formulaire (`normalizeMcpServer` ne garde qu'une liste fermée de
+// champs), qui deviendrait un second écrivain des approbations. Écrite par les
+// seuls gestes de la fiche, la suppression et le renommage d'une carte, et le
+// retrait d'une approbation dont le contenu n'a pas passé la vérification.
+// Exportée avec les serveurs : une approbation est liée aux empreintes, la
+// restaurer ailleurs n'approuve que le contenu exact déjà vu.
+const MCP_SKILL_APPROVALS_KEY = 'miaou-mcp-skill-approvals';
+
+function loadMcpSkillApprovals() {
+  try {
+    const o = JSON.parse(localStorage.getItem(MCP_SKILL_APPROVALS_KEY));
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  } catch (e) { return {}; }
+}
+
+function saveMcpSkillApprovals(all) {
+  writeLocalStorage(MCP_SKILL_APPROVALS_KEY, JSON.stringify(all && typeof all === 'object' ? all : {}));
+  syncPost('settings-updated', { keys: ['mcp-skill-approvals'] });   // post-commit (piège 24)
+  return all;
+}
+
+// Toute mutation relit la table FRAÎCHE juste avant d'écrire (rien entre les
+// deux n'attend) : un autre onglet a pu approuver une autre skill entre-temps,
+// et une écriture intégrale périmée ressusciterait ce qu'il a retiré.
+function updateMcpSkillApprovals(fn) {
+  return saveMcpSkillApprovals(fn(loadMcpSkillApprovals()));
+}
+
 // ── Couche IDB conversations/résumés + cache RAM (lot U-1) ──────────────────
 // localStorage saturait (~5-10 Mo) : `miaou-conversations` et `miaou-summaries`
 // sont les deux seules clés qui grossissent sans borne. Elles vivent désormais
@@ -2397,12 +2428,13 @@ const EXPORT_KEYS = [
   'miaou-api-servers',
   'miaou-active-api-server',
   'miaou-mcp-servers',
+  'miaou-mcp-skill-approvals',
   'miaou-spaces',
   'miaou-active-space',
 ];
 
 // Construit le payload d'export complet. `lsSnapshot` : objet { clé: valeur
-// DÉSÉRIALISÉE } pour les 7 clés (l'appelant lit localStorage + JSON.parse, ou
+// DÉSÉRIALISÉE } pour les clés d'`EXPORT_KEYS` (l'appelant lit localStorage + JSON.parse, ou
 // fournit la string brute pour miaou-active-api-server / miaou-active-space —
 // seules clés non-JSON du schéma). `skills` : tableau brut issu de
 // getAllSkillRecords().
@@ -2429,6 +2461,7 @@ function buildExportPayload(lsSnapshot, skills, resources, conversations, summar
       'miaou-api-servers': Array.isArray(ls['miaou-api-servers']) ? ls['miaou-api-servers'] : [],
       'miaou-active-api-server': typeof ls['miaou-active-api-server'] === 'string' ? ls['miaou-active-api-server'] : '',
       'miaou-mcp-servers': Array.isArray(ls['miaou-mcp-servers']) ? ls['miaou-mcp-servers'] : [],
+      'miaou-mcp-skill-approvals': (ls['miaou-mcp-skill-approvals'] && typeof ls['miaou-mcp-skill-approvals'] === 'object' && !Array.isArray(ls['miaou-mcp-skill-approvals'])) ? ls['miaou-mcp-skill-approvals'] : {},
       'miaou-spaces': Array.isArray(ls['miaou-spaces']) ? ls['miaou-spaces'] : [],
       'miaou-active-space': typeof ls['miaou-active-space'] === 'string' ? ls['miaou-active-space'] : '',
     },
