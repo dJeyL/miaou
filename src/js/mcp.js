@@ -114,6 +114,15 @@ function mcpSkillCatalogues() {
   return out;
 }
 
+// Skills MCP lisibles, pour <miaou_skills_context> et sa doctrine
+// (`mcpSkillContextEntries`).
+function approvedMcpSkillsForContext() {
+  const catalogues = mcpSkillCatalogues();
+  const sessions = {};
+  for (const card of Object.keys(catalogues)) sessions[card] = mcpSkillSessionApprovalsFor(card);
+  return mcpSkillContextEntries(catalogues, loadMcpSkillApprovals(), sessions);
+}
+
 // Skill MCP exigée par un outil distant exposé (nom complet `<carte>__…`), ou
 // null : l'URI lue dans le `_meta` de `tools/list` à la connexion.
 function remoteToolRequiresSkill(fullName) {

@@ -239,7 +239,8 @@ Détail : [docs/skills.md](docs/skills.md).
   préfixe des outils qu'elle couvre, jamais aux autres.
 - Un serveur peut servir des **skills** (extension MCP standard) et en exiger la
   lecture avant ses outils : le modèle les lit après approbation de chacune sur
-  la carte du serveur, contenu vérifié contre ses empreintes — cf.
+  la carte du serveur, contenu vérifié contre ses empreintes, et les voit
+  listées comme les skills à déclenchement automatique une fois approuvées — cf.
   [docs/skills.md](docs/skills.md).
 - Posture de sécurité assumée non-prod : le jeton est stocké en clair dans le
   navigateur (`localStorage`). Pour un usage exposé, passer par un proxy qui

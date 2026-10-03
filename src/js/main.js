@@ -1379,11 +1379,24 @@ function buildContextBlock(matches) {
 // skills). C'est une EXCEPTION NOMMÉE, pas un assouplissement : ne pas la
 // généraliser en « lis ce qui te semble utile », le balayage reviendrait.
 // Couvre aussi FILES_PROMOTE_DOCTRINE, qui pose la même obligation.
+//
+// Les skills MCP APPROUVÉES y sont listées à la suite des locales : leur
+// description porte souvent les déclencheurs (« à lire quand… »), et sans ce
+// listing le modèle ne pouvait rapprocher une demande d'une skill servie qu'en
+// appelant skills__list — ce qu'il ne fait pas sans raison. Elles n'ont pas de
+// slug : la ligne porte les deux arguments de leur lecture, `server` et `uri`.
 function buildSkillsContextBlock() {
   const skills = getAutotriggerSkillsMeta();
-  if (!skills.length) return '';
+  const served = approvedMcpSkillsForContext();
+  if (!skills.length && !served.length) return '';
   const lines = skills.map(s => '- [slug: ' + s.slug + ']' + (s.system ? ' [système]' : '') + ' ' +
-    (s.name || s.slug) + (s.description ? ' — ' + s.description : ''));
+    (s.name || s.slug) + (s.description ? ' — ' + s.description : ''))
+    .concat(served.map(s => '- [server: ' + s.server + '] [uri: ' + s.uri + '] ' +
+      s.name + (s.description ? ' — ' + s.description : '')));
+  const mcpNote = served.length
+    ? ' Celles marquées [server: …] [uri: …] sont servies par un serveur MCP : elles n\'ont pas de slug, ' +
+      'lis-les avec miaou__skills__read en passant ces deux valeurs telles quelles.'
+    : '';
   // Mention des skills système AJOUTÉE seulement s'il y en a dans cette liste :
   // sans elle le modèle tente de les réécrire (miaou__skills__write refuse, un
   // tour perdu) ou promet à l'utilisateur de les modifier.
@@ -1399,7 +1412,7 @@ function buildSkillsContextBlock() {
     '(« avant ton premier appel à … »), cette lecture-là est obligatoire — ce « tu peux » ne la ' +
     'lève pas. D\'autres skills existent que l\'utilisateur ' +
     'invoque lui-même à sa discrétion ; elles ne sont pas listées ici et tu n\'as pas à les ' +
-    'chercher.' + systemNote + '\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
+    'chercher.' + systemNote + mcpNote + '\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
 }
 
 // Résolution pure (testable QuickJS) : la description du Space actif est

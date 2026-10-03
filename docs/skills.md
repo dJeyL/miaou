@@ -595,12 +595,27 @@ d'injection. Cf. §2, et `docs/compaction.md` pour le geste qu'elles déclenchen
       manifeste frais. Ack `skill_file_read`, kind DISTINCT de `skill_read` :
       une annexe ne satisfait aucune exigence, par construction et non par un
       drapeau que chaque lecteur devrait connaître.
-    - **Annonce au modèle.** Aucune dans `<miaou_skills_context>` : les skills
-      MCP ne sont annoncées que par le bloc que le serveur génère dans ses
-      `instructions` (préfixes d'outils réécrits, cf. `docs/mcp.md` point 17),
-      par les refus de la garde, et dans le RÉSULTAT de `miaou__skills__list`
-      (tool result, rien dans le contexte fixe). Un slug local introuvable qui nomme une skill
-      MCP rend les arguments exacts de la lecture distante.
+    - **Annonce au modèle.** Les skills MCP LISIBLES (état `approved` ou
+      `session-approved`, `mcpSkillContextEntries`, collectées par
+      `approvedMcpSkillsForContext` dans mcp.js) sont listées dans
+      `<miaou_skills_context>` à la suite des locales autotrigger, une ligne
+      `[server: …] [uri: …] nom — description` portant les deux arguments de
+      leur lecture, plus une phrase qui le dit ; le bloc et la doctrine
+      (`skillDoctrinePrompt`, variante `SKILL_DOCTRINE_BASE_MCP` qui nomme
+      `server`/`uri` à côté du slug) sont émis dès qu'il y a l'une OU l'autre.
+      Motif : la description d'une skill porte ses déclencheurs, et sans ce
+      listing le modèle ne pouvait rapprocher une demande d'une skill servie
+      qu'en appelant `skills__list`, ce qu'il ne fait pas sans raison — des
+      skills système migrées vers un serveur MCP perdaient ainsi leur
+      déclenchement proactif. Une skill à approuver n'y figure PAS : le modèle
+      paierait un tour de refus à chaque sujet voisin. Le bloc ne change qu'à
+      une approbation, une connexion ou une déconnexion, jamais d'un tour à
+      l'autre (piège 16). Les autres voies restent : le bloc que le serveur
+      génère dans ses `instructions` (préfixes d'outils réécrits, cf.
+      `docs/mcp.md` point 17), les refus de la garde, et le RÉSULTAT de
+      `miaou__skills__list`, qui liste aussi les non approuvées. Un slug local
+      introuvable qui nomme une skill MCP rend les arguments exacts de la
+      lecture distante.
     - **Hors périmètre** : skills multi-fichiers LOCALES (lot W, qui
       s'alignera sur la forme `server`/`uri`), `resources/directory/read`,
       skills imbriquées.

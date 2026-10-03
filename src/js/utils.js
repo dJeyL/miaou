@@ -4366,7 +4366,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
   pushEntry('mcp_instructions', 'Consignes des serveurs MCP', sp.mcpInstructions);
   pushEntry('memories_profile', 'Souvenirs de profil', sp.memoriesProfile);
-  pushEntry('skills_context', 'Contexte skills (autotrigger)', sp.skillsContext);
+  pushEntry('skills_context', 'Contexte skills (autotrigger, MCP approuvées)', sp.skillsContext);
   pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
   pushEntry('codeblock_doctrine', 'Doctrine codeblock', sp.codeblock);
   // Le « (+ Espace) » du libellé d'origine est tombé avec la campagne cache :

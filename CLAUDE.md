@@ -780,7 +780,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   avec étiquette d'origine et annexes sous liste blanche (ack
   `skill_file_read` distinct), slug qui lit toujours la locale, et leur
   rappel dans le circuit des skills locales (mention du drawer Skills, entrées
-  `source: 'mcp'` de `skills__list`).
+  `source: 'mcp'` de `skills__list`, et listing des APPROUVÉES dans
+  `<miaou_skills_context>`, `mcpSkillContextEntries`).
 - **`docs/tests.md`** — ce qui est couvert par `tests/runner.py` (QuickJS) et
   ce qui doit être vérifié à la main (`docs/manual-tests.md`) ; porte aussi les
   fixtures des verify Playwright et leur serveur factice commun

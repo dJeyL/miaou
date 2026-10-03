@@ -700,6 +700,10 @@ const IDENTITY_BLURB =
 const SKILL_DOCTRINE_BASE =
   "Pour utiliser une skill listée (qu'elle vienne de <miaou_skills_context> ou d'un " +
   "appel préalable à miaou__skills__list), appelle miaou__skills__read avec son slug.\n\n";
+const SKILL_DOCTRINE_BASE_MCP =
+  "Pour utiliser une skill listée (qu'elle vienne de <miaou_skills_context> ou d'un " +
+  "appel préalable à miaou__skills__list), appelle miaou__skills__read avec son slug, " +
+  "ou avec server et uri si elle est servie par un serveur MCP.\n\n";
 
 // PAS de variante CONFIRM_ON : ask_confirmation après skills__read casse le
 // mécanisme fork B (cf. skillDoctrinePrompt) — jamais réintroduire cette
@@ -4037,9 +4041,15 @@ function intentDoctrinePrompt() {
 // pratique. La confirmation reste inutile de toute façon : lire une skill n'a
 // pas d'effet de bord, seul agir dessus en a un, et l'utilisateur voit l'appel
 // d'outil dans l'ack.
+//
+// Même condition que <miaou_skills_context>, skills MCP approuvées comprises :
+// le bloc peut n'en lister que des MCP. La base nomme alors leur forme de
+// lecture, sans quoi « avec son slug » renverrait le modèle chercher un slug
+// qu'elles n'ont pas.
 function skillDoctrinePrompt() {
-  if (!getAutotriggerSkillsMeta().length) return '';
-  return SKILL_DOCTRINE_BASE + SKILL_DOCTRINE_CONFIRM_OFF + SKILL_DOCTRINE_TAIL;
+  const served = approvedMcpSkillsForContext().length > 0;
+  if (!getAutotriggerSkillsMeta().length && !served) return '';
+  return (served ? SKILL_DOCTRINE_BASE_MCP : SKILL_DOCTRINE_BASE) + SKILL_DOCTRINE_CONFIRM_OFF + SKILL_DOCTRINE_TAIL;
 }
 
 // ── Astuce d'accueil (encart sous l'écran d'accueil) ──────────────────────

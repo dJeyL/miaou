@@ -909,3 +909,58 @@ describe('mcpSkillListEntries / miaou__skills__list', function() {
     clearPendingToolAcks();
   });
 });
+
+describe('skills MCP approuvées dans <miaou_skills_context>', function() {
+  var INVALID = { uri: 'skill://z/z/SKILL.md', name: 'z', problem: 'p' };
+  it('mcpSkillContextEntries : approuvées et approuvées pour la session seulement', function() {
+    var cats = { proxy: [BENCH_NORM, DYN_NORM, INVALID], mort: null };
+    expect(mcpSkillContextEntries(cats, {}, {})).toEqual([]);
+    var appr = approveMcpSkill({}, 'proxy', BENCH_NORM, 1);
+    expect(mcpSkillContextEntries(cats, appr, {}).map(function(e) { return e.name; })).toEqual(['bench']);
+    var both = mcpSkillContextEntries(cats, appr, { proxy: { gen: DYN_NORM.uri } });
+    expect(both.map(function(e) { return e.name; })).toEqual(['bench', 'gen']);
+    expect(both[0]).toEqual({ name: 'bench', description: 'Règle de restitution.', server: 'proxy', uri: BENCH_NORM.uri });
+  });
+  it('approbation périmée (manifeste changé) : absente', function() {
+    var appr = approveMcpSkill({}, 'proxy', BENCH_NORM, 1);
+    appr.proxy.bench.manifest = [{ uri: BENCH_NORM.uri, digest: 'autre', size: 1 }];
+    expect(mcpSkillContextEntries({ proxy: [BENCH_NORM] }, appr, {})).toEqual([]);
+  });
+  function withServed(approve, fn) {
+    _remoteStatus.proxy = { state: 'ok', skillsDeclared: true, skillCatalogue: [BENCH_NORM] };
+    if (approve) saveMcpSkillApprovals(approveMcpSkill({}, 'proxy', BENCH_NORM, 1));
+    try { fn(); } finally {
+      delete _remoteStatus.proxy;
+      localStorage.removeItem(MCP_SKILL_APPROVALS_KEY);
+      setSkillsCache([]);
+    }
+  }
+  it('bloc et doctrine émis pour une skill MCP approuvée seule, avec ses arguments de lecture', function() {
+    setSkillsCache([]);
+    withServed(true, function() {
+      var b = buildSkillsContextBlock();
+      expect(b).toContain('miaou_skills_context');
+      expect(b).toContain('[server: proxy] [uri: ' + BENCH_NORM.uri + '] bench — Règle de restitution.');
+      expect(b).toContain('lis-les avec miaou__skills__read en passant ces deux valeurs');
+      var d = skillDoctrinePrompt();
+      expect(d).toContain('server et uri');
+    });
+  });
+  it('skill MCP à approuver : ni bloc ni doctrine', function() {
+    setSkillsCache([]);
+    withServed(false, function() {
+      expect(buildSkillsContextBlock()).toBe('');
+      expect(skillDoctrinePrompt()).toBe('');
+    });
+  });
+  it('locales d\'abord, puis MCP ; doctrine locale inchangée sans MCP', function() {
+    setSkillsCache([{ slug: 'loc', name: 'Locale', autotrigger: true }]);
+    expect(skillDoctrinePrompt()).toBe(SKILL_DOCTRINE_BASE + SKILL_DOCTRINE_CONFIRM_OFF + SKILL_DOCTRINE_TAIL);
+    expect(buildSkillsContextBlock().indexOf('[server:')).toBe(-1);
+    withServed(true, function() {
+      var b = buildSkillsContextBlock();
+      expect(b.indexOf('[slug: loc]') >= 0).toBe(true);
+      expect(b.indexOf('[slug: loc]') < b.indexOf('[server: proxy]')).toBe(true);
+    });
+  });
+});

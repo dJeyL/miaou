@@ -487,7 +487,8 @@ reste invocable en tapant son slug en entier.
 
 **Skills fournies par un serveur compagnon** : un serveur MCP peut servir ses
 propres skills, que le modèle lit après ton approbation dans la liste des
-serveurs compagnons. Elles n'apparaissent pas dans le panneau Skills ni dans
+serveurs compagnons — une fois approuvées, il peut les consulter de lui-même,
+comme une skill activée, quand ta demande touche leur sujet. Elles n'apparaissent pas dans le panneau Skills ni dans
 l'autocomplétion du `/` — une mention en tête du panneau le rappelle quand il y
 en a, avec un lien vers les serveurs compagnons —, et ne masquent jamais une de
 tes skills du même nom (cf. `mcp`).
@@ -693,7 +694,10 @@ ses propres **skills** — des modes d'emploi pour ses outils — et en exiger l
 lecture avant qu'on appelle ses outils. Le modèle les lit lui-même, en
 indiquant le serveur et l'adresse complète de la skill (`skill://…`), que les
 consignes du serveur lui donnent ; leur seul nom ne suffit pas, et un nom
-identique à celui d'une de tes skills désigne toujours la tienne.
+identique à celui d'une de tes skills désigne toujours la tienne. Une fois
+approuvées, elles lui sont présentées à chaque échange avec leur nom et leur
+description, comme tes skills à déclenchement automatique : il peut ainsi en
+lire une de lui-même quand ta demande touche son sujet.
 
 Aucune de ces skills n'est lue sans ton accord. Dans la liste des serveurs
 compagnons, la carte du serveur affiche une ligne par skill qu'il fournit, avec
@@ -856,7 +860,7 @@ reste **identique octet pour octet** d'un tour à l'autre, et place en préfixe
 éphémère du dernier message le seul contenu qui change vraiment à chaque envoi.
 Côté stable : tes instructions système, les définitions d'outils, les consignes
 des serveurs compagnons, les souvenirs de portée générale, la liste des skills à
-déclenchement automatique, et un bloc unique décrivant l'Espace actif (sa
+déclenchement automatique et des skills de serveur approuvées, et un bloc unique décrivant l'Espace actif (sa
 description, ce qu'il dit de sa bibliothèque — le nombre de fichiers, ou leur
 liste si tu as activé le réglage ci-dessus —, les souvenirs qui lui sont
 rattachés). Côté éphémère : la date et l'heure, et les résumés injectés.
@@ -876,7 +880,8 @@ serveur.
 
 Certains gestes cassent volontairement ce préfixe stable, parce que le contexte
 change réellement : changer d'Espace actif, modifier tes instructions système,
-brancher ou débrancher un serveur compagnon, activer une skill, déposer un
+brancher ou débrancher un serveur compagnon, activer une skill ou approuver
+celle d'un serveur, déposer un
 fichier dans la bibliothèque. C'est attendu, et sans conséquence durable — le
 préfixe se re-stabilise dès le tour suivant.
 

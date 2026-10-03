@@ -856,6 +856,31 @@ function stripSkillFrontmatterForDisplay(text) {
 // que liste l'outil ne la trouve pas, et conclut qu'elle n'existe pas (mesuré).
 // Valides seulement, quel que soit leur état d'approbation : une lecture non
 // approuvée est refusée avec le geste à faire, ce qui vaut mieux qu'un silence.
+// Skills MCP annoncées dans <miaou_skills_context>, pendant des skills locales
+// autotrigger : seulement celles dont la lecture aboutirait (approuvée, ou
+// approuvée pour la session si dynamique). Une skill à approuver n'y figure pas :
+// lister au modèle ce qu'il ne peut pas lire lui ferait payer un tour de refus à
+// chaque sujet voisin. Approuver est le geste qui la rend proactive — le bloc ne
+// change donc qu'à un geste ou une (dé)connexion, jamais d'un tour à l'autre
+// (piège 16). `sessions` : `{ <carte>: { <name>: uri } }`. Pure.
+function mcpSkillContextEntries(catalogues, approvals, sessions) {
+  const out = [];
+  const all = approvals || {};
+  const sess = sessions || {};
+  for (const card of Object.keys(catalogues || {}).sort()) {
+    const appr = all[card] || {};
+    const cardSess = sess[card] || {};
+    for (const e of Array.isArray(catalogues[card]) ? catalogues[card] : []) {
+      if (!e) continue;
+      const state = mcpSkillApprovalState(e,
+        Object.prototype.hasOwnProperty.call(appr, e.name) ? appr[e.name] : null, cardSess[e.name] || null);
+      if (!mcpSkillStateAllowsLoad(state)) continue;
+      out.push({ name: e.name, description: e.description || '', server: card, uri: e.uri });
+    }
+  }
+  return out;
+}
+
 function mcpSkillListEntries(catalogues) {
   const out = [];
   for (const card of Object.keys(catalogues || {}).sort()) {
