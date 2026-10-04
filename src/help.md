@@ -748,29 +748,29 @@ Tu peux sortir tes conversations de MIAOU de plusieurs manières :
   Sans clavier, l'entrée `Exporter la conversation (Markdown)` de la palette de
   commandes fait la même chose.
 
-Les pages HTML produites embarquent **les deux thèmes** (clair et sombre),
-diagrammes compris, et toutes les palettes de couleurs. Elles
-s'ouvrent sur celui qui était actif au moment de l'export, et un bouton en haut
-à droite permet de basculer à la lecture ; ton choix est retenu et s'applique à
-tous tes exports, y compris ceux que tu produiras plus tard. Cette bascule
-fonctionne **sans JavaScript** : elle marche donc partout, y compris dans les
-visionneuses de pièces jointes qui n'exécutent aucun script
-(l'aperçu de fichier d'iOS, par exemple). Juste à côté, des boutons **– / +**
-élargissent ou resserrent la colonne de lecture, sur les mêmes crans que dans
-l'application ; la page s'ouvre à la largeur que tu avais au moment de
-l'export. Ils fonctionnent eux aussi sans JavaScript, et disparaissent sur un
-petit écran, où la colonne occupe déjà toute la largeur. L'en-tête qui porte
-ces boutons reste en haut de la page pendant la lecture, et se fait plus
-discret dès qu'on fait défiler. Entre les deux, une pastille ronde de la
-couleur active fait passer à la palette suivante : la page s'ouvre sur la
-palette de l'auteur, mais le lecteur n'y est pas tenu. Le réglage **« Export
-HTML interactif »** (réglages, section « Apparence ») ne conditionne ni l'un ni
-l'autre : activé par défaut, il ajoute seulement les boutons
-copier/télécharger sur les blocs de code, et fait retenir ton choix de thème,
-de palette et de largeur d'une ouverture à l'autre, pour tous tes exports. Décoché, les
-boutons restent disponibles, mais le choix n'est plus mémorisé. Les diagrammes,
-eux, gardent dans tous les cas les couleurs (thème et palette) qu'ils avaient à
-l'export.
+Les pages HTML produites embarquent **les deux thèmes** (clair et sombre) et
+toutes les palettes de couleurs. Un en-tête en haut de la page porte trois
+commandes de lecture : des boutons **– / +** qui élargissent ou resserrent la
+colonne, sur les mêmes crans que dans l'application ; une pastille ronde de la
+couleur active, qui fait passer à la palette suivante ; et un bouton qui bascule
+entre clair et sombre. La page s'ouvre sur la largeur, la palette et le thème
+actifs au moment de l'export, mais le lecteur n'y est pas tenu. Ces trois
+commandes fonctionnent **sans JavaScript**, dans **tout** export : elles
+marchent donc partout, y compris dans les visionneuses de pièces jointes qui
+n'exécutent aucun script (l'aperçu de fichier d'iOS, par exemple). Les boutons
+– / + disparaissent sur un petit écran, où la colonne occupe déjà toute la
+largeur. L'en-tête reste en haut de la page pendant la lecture, et se fait plus
+discret dès qu'on fait défiler. Les diagrammes suivent la bascule clair/sombre,
+mais gardent la palette qu'ils avaient à l'export.
+
+Le réglage **« Export HTML interactif »** (réglages, section « Apparence »),
+activé par défaut, ajoute à la page un petit script qui apporte deux choses, et
+seulement celles-là : des boutons copier/télécharger sur les blocs de code, et
+la **mémorisation** du thème, de la palette et de la largeur choisis à la
+lecture, retenus d'une ouverture à l'autre et pour tous tes exports, y compris
+ceux que tu produiras plus tard. Il ne conditionne pas les commandes de lecture
+elles-mêmes : décoché, elles restent présentes et fonctionnelles, seul le choix
+n'est plus retenu.
 
 Ces exports sont à sens unique : ce sont des fichiers de lecture, il n'existe
 aucune fonction pour réimporter un `.md` ou un `.html` exporté dans MIAOU (ni

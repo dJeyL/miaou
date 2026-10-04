@@ -544,11 +544,12 @@ motivé le passage au markup statique.
   focus passent par `body:has(#theme-switch:…)`.
 - **Icône** : soleil quand on est en sombre, lune quand on est en clair —
   l'icône montre **la destination**, pas l'état courant.
-- **Limite connue : les diagrammes Mermaid ne suivent pas.** `embedExportMermaid`
-  produit un SVG portant un `<style>` interne aux couleurs **résolues à
-  l'export** ; la bascule ne les recolore pas. Les faire suivre imposerait
-  d'embarquer Mermaid dans le fichier exporté (hors sujet, ~2,5 Mo). Limite
-  assumée, documentée aussi dans `src/help.md`.
+- **Diagrammes Mermaid : ils suivent, par double rendu.** Le `<style>` interne
+  d'un SVG Mermaid porte des couleurs **résolues à l'export**, que la bascule ne
+  recolore pas ; `embedExportMermaid` embarque donc une variante sombre et une
+  claire, et `exportMermaidThemeCss()` masque l'inactive sur la case (cf.
+  `embedExportMermaid` plus haut). Une source qui fixe son propre thème n'est
+  rendue qu'une fois et ne suit pas.
 
 ## Palette dans l'export
 
@@ -575,8 +576,9 @@ fait défiler les palettes, sans JavaScript, sur le modèle de la largeur.
 - **Persistance** par `EXPORT_SCRIPT` (`miaou-export-palette`, clef commune à
   tous les exports) : le choix du lecteur s'applique aux exports qu'il ouvre
   ensuite, d'où qu'ils viennent.
-- **Limite** : les diagrammes Mermaid gardent les couleurs résolues à l'export,
-  pour la palette comme pour la luminosité.
+- **Limite** : les diagrammes Mermaid gardent la palette résolue à l'export.
+  Seule la luminosité a ses deux variantes (cf. « Bascule de thème ») : une
+  variante par palette multiplierait les rendus par le nombre de palettes.
 
 ## Largeur de colonne dans l'export
 
