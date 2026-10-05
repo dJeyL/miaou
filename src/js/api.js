@@ -1203,6 +1203,8 @@ async function runConversation(messages, hooks) {
             // dans le `_meta` de son résultat, hors `content` — donc hors
             // contexte modèle (webMetaFromResult, utils.js).
             const webMeta = webMetaFromResult(rawResult);
+            // Moteur d'une recherche (`_meta["miaou/search"]`), même canal.
+            const searchEngine = searchEngineFromResult(rawResult);
             out = flattenToolResult(rawResult);
             // Marqueur de citation tout prêt en queue d'une page lue
             // (webCiteNoteFor, utils.js) : dans `out`, donc à la fois dans le
@@ -1226,6 +1228,7 @@ async function runConversation(messages, hooks) {
               group,
               assistantText,
               webMeta,
+              searchEngine,
             });
           } finally {
             bgActivityEnd(bgTask);

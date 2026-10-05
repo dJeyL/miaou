@@ -76,6 +76,9 @@ const ACK_COPY_FIELDS = [
                                           // titre, nom de site, URL finale, favicon), assainies par webMetaFromResult.
                                           // Hors émission par construction (expandThread n'envoie que result et args) :
                                           // elles n'alimentent que le libellé et l'infobulle des pastilles de source.
+  'searchEngine',                         // moteur qui a répondu à une recherche MCP (`_meta["miaou/search"].engine` de
+                                          // search/image_search), assaini par searchEngineFromResult. Affichage seul,
+                                          // hors émission comme webMeta.
   'args', 'result', 'ts', 'group', 'assistantText',   // réinjection cross-turn
   'errorCode', 'authorizationUrl', 'upstream', 'mcpServer',
                                           // campagne AB — refus d'autorisation d'un serveur MCP. Persistés
@@ -97,7 +100,7 @@ const ACK_COPY_FIELDS = [
 function ackEnrichmentFields(p) {
   const src = p || {};
   const fields = {};
-  const names = ['name', 'args', 'result', 'ts', 'group', 'assistantText', 'webMeta'];
+  const names = ['name', 'args', 'result', 'ts', 'group', 'assistantText', 'webMeta', 'searchEngine'];
   for (const n of names) if (src[n] != null) fields[n] = src[n];
   return fields;
 }
@@ -2002,6 +2005,19 @@ function webMetaFromResult(result) {
       /^https?:\/\/[^\s]+$/i.test(w.canonical_url)) out.canonical_url = w.canonical_url;
   if (isSafeIconSrc(w.favicon)) out.favicon = w.favicon;
   return Object.keys(out).length ? out : null;
+}
+
+// Moteur qui a répondu à une recherche, posé par `search`/`image_search` de
+// mcp_web dans `_meta["miaou/search"] = { engine }` (le dernier essayé de sa
+// chaîne de repli). Clé distincte de `miaou/web`, et absente quand aucun moteur
+// n'a répondu. Le même nom figure dans le JSON servi au modèle, mais c'est
+// `_meta` qui fait foi pour l'affichage. Le canal vient d'un serveur : un
+// identifiant court et sans espace, ou `null`. Pur.
+function searchEngineFromResult(result) {
+  const meta = result && result._meta;
+  const s = meta && typeof meta === 'object' ? meta['miaou/search'] : null;
+  const e = s && typeof s === 'object' && typeof s.engine === 'string' ? s.engine.trim() : '';
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(e) ? e : null;
 }
 
 // Clé de comparaison d'une URL de source : fragment retiré, slash final du

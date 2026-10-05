@@ -5404,6 +5404,30 @@ describe('webMetaFromResult — _meta["miaou/web"] d\'un résultat MCP', functio
   });
 });
 
+describe('searchEngineFromResult — _meta["miaou/search"] d\'une recherche MCP', function() {
+  it('lit le moteur qui a répondu', function() {
+    expect(searchEngineFromResult({ _meta: { 'miaou/search': { engine: 'brave' } } })).toBe('brave');
+    expect(searchEngineFromResult({ _meta: { 'miaou/search': { engine: ' ddg ' } } })).toBe('ddg');
+  });
+  it('clé absente, miaou/web seul, ou moteur vide → null', function() {
+    expect(searchEngineFromResult({ content: [] })).toBe(null);
+    expect(searchEngineFromResult({ _meta: { 'miaou/web': { title: 'T' } } })).toBe(null);
+    expect(searchEngineFromResult({ _meta: { 'miaou/search': {} } })).toBe(null);
+    expect(searchEngineFromResult({ _meta: { 'miaou/search': { engine: '' } } })).toBe(null);
+    expect(searchEngineFromResult(null)).toBe(null);
+  });
+  it('nom non conforme refusé (le canal vient d\'un serveur)', function() {
+    expect(searchEngineFromResult({ _meta: { 'miaou/search': { engine: 'a b' } } })).toBe(null);
+    expect(searchEngineFromResult({ _meta: { 'miaou/search': { engine: '<img>' } } })).toBe(null);
+    expect(searchEngineFromResult({ _meta: { 'miaou/search': { engine: 42 } } })).toBe(null);
+    expect(searchEngineFromResult({ _meta: { 'miaou/search': { engine: 'x'.repeat(41) } } })).toBe(null);
+  });
+  it('searchEngine traverse ackEnrichmentFields et copyAckFields', function() {
+    expect(ackEnrichmentFields({ isMcp: true, searchEngine: 'ollama' }).searchEngine).toBe('ollama');
+    expect(copyAckFields({ kind: 'mcp_call', searchEngine: 'ollama' }, {}).searchEngine).toBe('ollama');
+  });
+});
+
 describe('isSafeIconSrc — src d\'une favicon', function() {
   it('formats matriciels base64 admis', function() {
     expect(isSafeIconSrc(PNG_ICON)).toBe(true);

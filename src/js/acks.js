@@ -1108,10 +1108,14 @@ function collapseCompactionSummary(body, content) {
   };
 }
 
-// Lien vers la page visée par l'appel (`ackPageLink`, prédicat UNIQUE) : en
+// Queue de la ligne technique : lien vers la page visée par l'appel
+// (`ackPageLink`, prédicat UNIQUE), puis moteur de recherche qui a répondu
+// (`searchEngine`, posé à la réponse depuis `_meta["miaou/search"]`, absent
+// quand aucun moteur n'a répondu). Le reste de ce commentaire vaut pour les
+// deux, le moteur arrivant lui aussi après le premier rendu. Lien : en
 // queue de la ligne technique — le détail replié quand l'ack a un intent, la
 // ligne unique sinon ; hors de `.mcp-intent-row`, donc le clic n'y replie rien.
-// Porté par un conteneur `.ack-page` pour être IDEMPOTENTE : elle est rappelée
+// Portés par des conteneurs `.ack-page` et `.ack-engine` pour être IDEMPOTENTE : elle est rappelée
 // sur un ack déjà peint, parce qu'un ack MCP l'est par `onEarlyAcks` AVANT que
 // `args` n'y soit posé (markEarlyAckPending) et que `webMeta`, d'où vient la
 // favicon, n'arrive qu'avec la réponse (settleEarlyAckPending) ; et après
@@ -1125,20 +1129,35 @@ function collapseCompactionSummary(body, content) {
 // `isSafeIconSrc` à l'affichage, comme pour les pastilles ; absente, aucune icône — pas de globe générique, le domaine suffit à
 // dire où mène le lien. Nouvel onglet sans `opener` ni référent. Comme `.ack-dl`,
 // ABSENT des exports (piège 21) : `_formatToolCallHtml` ne passe pas par ici.
-function refreshAckPageLink(node, entry) {
+function refreshAckTail(node, entry) {
   if (!node || !entry) return;
   const label = node.classList && node.classList.contains('ack-label') ? node : node.querySelector('.ack-label');
   if (!label) return;
-  const old = label.querySelector('.ack-page');
-  if (old) old.remove();
+  for (const old of label.querySelectorAll('.ack-page, .ack-engine')) old.remove();
+  const host = label.querySelector('.mcp-breadcrumb-detail') || label;
   // Registre du fil AFFICHÉ (mémo de vue, ui.js) : un nœud n'est peint que pour
   // lui (piège 28). Garde typeof : ui.js n'est pas chargé par tous les tests.
   const link = ackPageLink(entry, typeof displayedWebSources === 'function' ? displayedWebSources() : null);
-  if (!link) return;
+  if (link) host.appendChild(buildAckPageLink(link));
+  if (typeof entry.searchEngine === 'string' && entry.searchEngine) {
+    const box = document.createElement('span');
+    box.className = 'ack-engine';
+    const sep = document.createElement('span');
+    sep.className = 'ack-tail-sep';
+    sep.textContent = '·';
+    box.appendChild(document.createTextNode(' '));
+    box.appendChild(sep);
+    // textContent : le nom vient d'un serveur.
+    box.appendChild(document.createTextNode(' moteur\u00a0: ' + entry.searchEngine));
+    host.appendChild(box);
+  }
+}
+
+function buildAckPageLink(link) {
   const box = document.createElement('span');
   box.className = 'ack-page';
   const sep = document.createElement('span');
-  sep.className = 'ack-page-sep';
+  sep.className = 'ack-tail-sep';
   sep.textContent = '·';
   box.appendChild(document.createTextNode(' '));
   box.appendChild(sep);
@@ -1158,7 +1177,7 @@ function refreshAckPageLink(node, entry) {
   a.appendChild(document.createTextNode(link.domain));
   setTip(a, link.url);
   box.appendChild(a);
-  (label.querySelector('.mcp-breadcrumb-detail') || label).appendChild(box);
+  return box;
 }
 
 function buildToolAck(m) {
@@ -1196,9 +1215,9 @@ function buildToolAck(m) {
   } else {
     label.textContent = spec.label(m);
   }
-  // Lien vers la page visée : prédicat UNIQUE `ackPageLink`, jamais un test de
-  // kind ici (cf. refreshAckPageLink, juste au-dessus).
-  refreshAckPageLink(label, m);
+  // Queue technique (lien de page, moteur de recherche) : prédicats sur la
+  // donnée, jamais un test de kind ici (cf. refreshAckTail, juste au-dessus).
+  refreshAckTail(label, m);
   wrap.appendChild(label);
 
   // Téléchargement de la ressource désignée par l'ack (lot V). Placé APRÈS le

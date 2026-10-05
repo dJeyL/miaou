@@ -1376,6 +1376,12 @@ modèle.
   du site, précédé de son icône quand l'outil l'a fournie. Un clic ouvre la page dans un nouvel onglet ; survole-le pour lire
   l'adresse complète. Si la trace affiche une intention, ce lien est dans son
   détail, sous le petit chevron.
+- **Savoir quel moteur a répondu à une recherche** : certains outils de
+  recherche web interrogent plusieurs moteurs à tour de rôle et signalent celui
+  qui a répondu. Leur trace se termine alors par « · moteur : » suivi de
+  son nom (au même endroit que le lien de page : dans le détail, sous le
+  chevron, si la trace affiche une intention). Aucun moteur n'est indiqué
+  quand la recherche a échoué partout.
 - **Inspecter un appel pendant qu'il tourne** : la loupe apparaît dès que
   l'appel part, sans attendre sa réponse. Le panneau montre alors déjà **ce qui
   a été demandé** — les paramètres de l'appel, l'outil, le serveur — et indique

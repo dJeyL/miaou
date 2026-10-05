@@ -795,7 +795,7 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
 19. **`_meta` d'un appel `tools/call` : métadonnées de page (lot AI).** Un
     précédent distinct du point 16, qui lit le `_meta` de `tools/list` : ici
     c'est celui du RÉSULTAT d'un appel, canal hors modèle d'un outil vers
-    l'application. Seul `fetch_url` (`mcp_web`, miaou-mcp-servers) l'emploie :
+    l'application. `fetch_url` (`mcp_web`, miaou-mcp-servers) y pose
     `_meta["miaou/web"] = { title, site_name, canonical_url, favicon }`, tous
     facultatifs, clé préfixée `miaou/` comme `miaou/unauthorized_upstreams`
     (anti-collision dans l'espace partagé `_meta`). `favicon` est une data-URL
@@ -817,6 +817,17 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       `args`). Il ne sert qu'au libellé et à l'infobulle des pastilles de source
       (`webSourceRegistry`, cf. `docs/tools.md`), jamais à la provenance. Pas de
       dédoublonnage des favicons par domaine : stockage par ack, borné.
+    - **Second usage, `miaou/search`** : `search` et `image_search` de
+      `mcp_web` posent `_meta["miaou/search"] = { engine }`, le moteur qui a
+      répondu dans leur chaîne de repli (`brave`, `ollama`, `ddg`). Clé
+      distincte de `miaou/web`, pour ne pas passer pour un en-tête de page
+      vide ; absente quand aucun moteur n'a répondu (le résultat n'est alors
+      qu'un texte d'échec). Le même nom figure dans le JSON servi au modèle,
+      mais c'est `_meta` qui fait foi pour l'affichage. Même chemin que
+      `webMeta` : `searchEngineFromResult` (utils.js, pure — identifiant court
+      sans espace, sinon `null`), champ d'ack `searchEngine` (dans
+      `ACK_COPY_FIELDS` et `ackEnrichmentFields`), rendu en queue de la ligne
+      technique par `refreshAckTail` (cf. `docs/tools.md`).
 
 20. **Révision 2026-07-28 : sonde d'ère et repli sur `initialize` (lot AM).**
     La révision 2026-07-28 supprime le handshake et la session : chaque requête

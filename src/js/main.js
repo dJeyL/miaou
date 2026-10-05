@@ -375,7 +375,7 @@ function applyEarlyAckError(registry) {
         if (lbl) {
           lbl.textContent = '';
           ACK_KINDS.mcp_call.renderLabel(entry, lbl);
-          refreshAckPageLink(lbl, entry);
+          refreshAckTail(lbl, entry);
         }
         refreshAckAuthorizationAffordance(node, entry);
       }
@@ -424,7 +424,7 @@ function markEarlyAckPending(entry, node, args) {
   if (args != null && entry.args == null) entry.args = args;
   refreshAckInspectAffordance(node, entry);
   // Même différé pour le lien de page : il dépend de ces mêmes `args`.
-  refreshAckPageLink(node, entry);
+  refreshAckTail(node, entry);
 }
 
 // Retire le drapeau d'attente et remet l'affichage d'accord avec la donnée.
@@ -444,7 +444,7 @@ function settleEarlyAckPending(entry, node) {
   delete entry.pending;
   refreshAckInspectAffordance(node, entry);
   // `webMeta` (favicon) n'arrive qu'avec la réponse.
-  refreshAckPageLink(node, entry);
+  refreshAckTail(node, entry);
   // Le drawer peut être ouvert SUR cette entrée : sans ce rafraîchissement il
   // resterait sur « réponse en attente » alors que la réponse est arrivée.
   refreshToolInspectorIfOpen(entry);
@@ -4386,7 +4386,7 @@ async function dispatchSend(matches, continuation) {
               if (lbl) {
                 lbl.textContent = '';
                 ACK_KINDS.mcp_call.renderLabel(entry, lbl);
-                refreshAckPageLink(lbl, entry);
+                refreshAckTail(lbl, entry);
               }
               // Même différé que la loupe (cf. onEnrichLastAck) : l'ack a été
               // peint avant le round-trip, l'entrée ne portait alors rien qui

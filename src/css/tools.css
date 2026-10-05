@@ -59,7 +59,8 @@
    médian s'efface comme le › du détail replié. Trait fin et pâli au repos (la
    couleur, plus que l'épaisseur, fait l'agressivité), plein au survol. Jamais
    sous 1px : arrondi à 0 ou 1 selon le navigateur hors écran Retina. */
-.tool-ack .ack-page-sep { opacity: 0.6; }
+/* Même point médian pour le moteur de recherche (.ack-engine), qui suit. */
+.tool-ack .ack-tail-sep { opacity: 0.6; }
 .tool-ack .ack-page-link {
   color: inherit;
   text-decoration: underline;

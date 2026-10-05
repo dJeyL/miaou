@@ -1123,7 +1123,7 @@ celui des pastilles de source : `https://banque.test@ailleurs.test` s'affiche
 demandée). `args` et non `webMeta.canonical_url` : le lien dit ce que le modèle a
 demandé, pas où la redirection a mené.
 
-**Rendu** (`refreshAckPageLink`, acks.js) : ` · domaine` en queue de la ligne
+**Rendu** (`refreshAckTail`, acks.js) : ` · domaine` en queue de la ligne
 technique — le détail replié (`.mcp-breadcrumb-detail`) quand l'ack a un intent,
 la ligne unique sinon ; hors de `.mcp-intent-row`, donc le clic ne replie rien.
 Précédé de la favicon de `webMeta` quand elle est là, sinon de celle que le
@@ -1138,6 +1138,13 @@ mène le lien). Nouvel onglet, `href` et
 Couleur héritée, donc souligné au repos (trait fin et pâli). **Absent des deux
 exports**, comme les affordances de fin d'ack : `_formatToolCallHtml` ne passe
 pas par `buildToolAck`.
+
+**Moteur de recherche** : même fonction, même queue de ligne, après le lien de
+page — ` · moteur : <nom>` quand l'ack porte `searchEngine` (lu dans
+`_meta["miaou/search"]` d'un `search`/`image_search` de `mcp_web`, cf.
+`docs/mcp.md` point 19). Texte nu en `textContent`, conteneur `.ack-engine`
+retiré et reposé à chaque appel comme `.ack-page`. Absent des exports pour la
+même raison.
 
 **Idempotente et rappelée, comme la loupe.** Un ack MCP est peint par
 `onEarlyAcks` avant que `args` n'y soit posé, et `webMeta` n'arrive qu'avec la
