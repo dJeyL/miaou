@@ -6985,15 +6985,27 @@ const CTX_EXPLAIN_SPACE_VARIANTS = {
   note: 'Tout ce qui décrit l\'Espace actif : sa description, les souvenirs qui lui sont rattachés, et le nombre de fichiers de sa bibliothèque — la liste est servie au modèle à sa demande.',
 };
 
+// Les états du bloc <miaou_skills_context> (`skillsContextForm`) : les skills
+// MCP approuvées n'y sont listées que s'il y en a. La valeur de table
+// (`CTX_EXPLAIN.skills_context`) couvre le cas des seules skills autotrigger.
+// Phrases entières, même règle que pour l'Espace.
+const CTX_EXPLAIN_SKILLS_CONTEXT_VARIANTS = {
+  mcp: 'La liste des skills servies par un serveur MCP et approuvées, avec leur description — pas leur contenu.',
+  both: 'La liste des skills à déclenchement automatique et des skills servies par un serveur MCP et approuvées, avec leur description — pas leur contenu.',
+};
+
 // Explication affichée pour une source, résolue contre l'état courant.
-// Pure : `libraryForm` est passé, pas lu — le seul appelant (le rendu du
-// drawer) fait la lecture impure. Toute source sans variante, et tout état sans
+// Pure : `libraryForm` et `skillsContextForm` sont passés, pas lus — le seul
+// appelant (le rendu du drawer) fait la lecture impure. Toute source sans variante, et tout état sans
 // entrée dans la table des variantes, retombe sur la valeur de table : le
 // contrat du test d'alignement (une string non vide par source produite) vaut
 // donc dans tous les états.
-function contextExplainFor(source, libraryForm) {
+function contextExplainFor(source, libraryForm, skillsContextForm) {
   if (source === 'space' && CTX_EXPLAIN_SPACE_VARIANTS[libraryForm]) {
     return CTX_EXPLAIN_SPACE_VARIANTS[libraryForm];
+  }
+  if (source === 'skills_context' && CTX_EXPLAIN_SKILLS_CONTEXT_VARIANTS[skillsContextForm]) {
+    return CTX_EXPLAIN_SKILLS_CONTEXT_VARIANTS[skillsContextForm];
   }
   return CTX_EXPLAIN[source] || '';
 }
@@ -7459,6 +7471,7 @@ function renderContextInspector() {
     // depuis — la tooltip décrirait alors un bloc que ces chiffres ne mesurent
     // pas.
     const libraryForm = m.libraryForm || '';
+    const skillsContextForm = m.skillsContextForm || '';
     const rows = m.entries.map(e => {
       const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
       const color = CTX_PALETTE[e.source] || '#888';
@@ -7469,7 +7482,7 @@ function renderContextInspector() {
       // apostrophes. L'échappement reste inconditionnel pour qu'un jour où
       // cette valeur deviendrait dynamique, le point d'injection ne soit pas
       // déjà ouvert.
-      const why = contextExplainFor(e.source, libraryForm);
+      const why = contextExplainFor(e.source, libraryForm, skillsContextForm);
       const tipAttr = why ? tipAttrs(why, { text: e.label }) : '';
       const labelCls = why ? ' class="ctx-label-explained"' : '';
       return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>` +

@@ -136,6 +136,26 @@ jamais reniflée** sur le texte produit, et le rendu prend celle du manifeste
 (photo du dernier envoi) plutôt que de relire le réglage courant — qui
 décrirait sinon un bloc que les chiffres affichés ne mesurent pas.
 
+Le bloc `skills_context` suit le même montage, pour la même raison : il porte
+les skills autotrigger, les skills MCP approuvées, ou les deux.
+`systemMessageParts().skillsContextForm` (`local`, `mcp`, `both`, calculé par
+`skillsContextFormFor` sur les MÊMES listes que celles passées à
+`buildSkillsContextBlock`) est reporté sur le manifeste. Ici c'est aussi le
+**libellé** qui varie (`SKILLS_CONTEXT_LABELS`, utils.js) : un libellé figé
+« (autotrigger, MCP approuvées) » annonçait des skills MCP dans un bloc qui n'en
+portait aucune, ce qui était le cas de la plupart des installations.
+
+**Règle générale : libellé et tooltip décrivent ce que le bloc porte DANS CET
+ÉTAT, jamais ce qu'il peut porter.** Ajouter un contenu CONDITIONNEL à un bloc
+existant (une nouvelle famille listée, une section qui n'apparaît que si…)
+n'appelle pas le manifeste et ne touche pas `CTX_EXPLAIN`, donc rien ne signale
+que l'inspecteur décrit désormais un sur-ensemble. Le geste à faire alors :
+une métadonnée de forme posée par `systemMessageParts` à partir des données qui
+produisent le bloc (jamais reniflée sur son texte), reportée sur le manifeste,
+et une variante de libellé ou de tooltip par état. Le défaut inverse (élargir
+le libellé fixe « pour couvrir les deux cas ») est celui qui a été corrigé
+ici.
+
 Chaque `source` doit avoir une entrée dans `CTX_PALETTE` **et** dans
 `CTX_EXPLAIN` (ui.js) : sans couleur le segment de barre est invisible, sans
 explication le libellé perd sa tooltip — deux dégradations silencieuses. Un test
@@ -397,9 +417,11 @@ Trois décisions à ne pas défaire :
   deviendrait dynamique.
 
 Une explication peut avoir **plusieurs états**, quand le bloc qu'elle décrit en
-a. `contextExplainFor(source, libraryForm)` résout `space` contre
-`CTX_EXPLAIN_SPACE_VARIANTS` — cardinal, liste complète, ou bibliothèque vide —
-et rend la valeur de table pour toute autre source. Deux règles s'y attachent.
+a. `contextExplainFor(source, libraryForm, skillsContextForm)` résout `space`
+contre `CTX_EXPLAIN_SPACE_VARIANTS` — cardinal, liste complète, ou bibliothèque
+vide —, `skills_context` contre `CTX_EXPLAIN_SKILLS_CONTEXT_VARIANTS` (skills
+MCP seules, ou avec les autotrigger ; la valeur de table couvre les autotrigger
+seules), et rend la valeur de table pour toute autre source. Deux règles s'y attachent.
 La variante est une **phrase entière**, jamais un fragment recollé à la valeur
 de table : une substitution partielle redevient muette au premier reword de
 `CTX_EXPLAIN.space`, sans que rien ne le signale. Et le test d'alignement

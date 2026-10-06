@@ -4320,8 +4320,9 @@ function lastAuthenticUserIndex(msgs) {
 //
 // `sysParts` : { identity, root, intent, mcpInstructions, memoriesProfile,
 //   space, skillsContext, skills, codeblock, user } (systemMessageParts()),
-//   plus `libraryForm` — métadonnée, pas un sous-bloc : jamais mesurée, juste
-//   reportée sur le manifeste pour que le rendu sache quelle tooltip servir.
+//   plus `libraryForm` et `skillsContextForm` — métadonnées, pas des
+//   sous-blocs : jamais mesurées, juste reportées sur le manifeste pour que le
+//   rendu sache quelle tooltip servir (et, pour la seconde, quel libellé).
 // `dynParts` : { contextDateModel, summaries } — chaque sous-bloc DÉJÀ formaté
 //   en string (ou '' si absent).
 // Les deux listes dérivent de leurs sources (systemMessageParts/contextBlockParts) :
@@ -4385,6 +4386,12 @@ function lastAuthenticUserIndex(msgs) {
 // et cet écran ne sert à rien s'il le maquille. Ne pas fusionner non plus deux
 // entrées voisines pour « faire propre » : leur séparation est ce qui rend un
 // écart visible. Cf. `docs/context-inspector.md`.
+const SKILLS_CONTEXT_LABELS = {
+  local: 'Contexte skills (autotrigger)',
+  mcp: 'Contexte skills (MCP approuvées)',
+  both: 'Contexte skills (autotrigger, MCP approuvées)',
+};
+
 function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiUsage, promptOrder) {
   const sp = sysParts || {};
   const dp = dynParts || {};
@@ -4423,7 +4430,10 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
   pushEntry('mcp_instructions', 'Consignes des serveurs MCP', sp.mcpInstructions);
   pushEntry('memories_profile', 'Souvenirs de profil', sp.memoriesProfile);
-  pushEntry('skills_context', 'Contexte skills (autotrigger, MCP approuvées)', sp.skillsContext);
+  // Libellé selon ce que le bloc porte (`skillsContextForm`) : les skills MCP
+  // n'y sont nommées que s'il en liste. Repli neutre pour un appelant qui ne
+  // passe pas la forme (tests antérieurs).
+  pushEntry('skills_context', SKILLS_CONTEXT_LABELS[sp.skillsContextForm] || 'Contexte skills', sp.skillsContext);
   pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
   pushEntry('codeblock_doctrine', 'Doctrine codeblock', sp.codeblock);
   // Le « (+ Espace) » du libellé d'origine est tombé avec la campagne cache :
@@ -4509,13 +4519,14 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   const totalChars = entries.reduce((a, e) => a + (e.chars || 0), 0);
   const totalTokens = entries.reduce((a, e) => a + (e.tokens || 0), 0);
 
-  // `libraryForm` reporté tel quel : le manifeste est une PHOTO du dernier
+  // `libraryForm` et `skillsContextForm` reportés tels quels : le manifeste est une PHOTO du dernier
   // envoi, donc le rendu doit lire la forme qui valait À CE MOMENT-LÀ, pas
   // relire le réglage courant (qui a pu changer depuis, et décrirait alors un
   // bloc que la mesure ne contient pas).
   return {
     entries, totalChars, totalTokens, imageCount,
     libraryForm: sp.libraryForm || '',
+    skillsContextForm: sp.skillsContextForm || '',
     apiUsage: apiUsage || null,
   };
 }

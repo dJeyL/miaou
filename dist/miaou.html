@@ -5557,7 +5557,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-06 19:35 UTC */
+/* miaou — built: 2026-10-06 22:37 UTC */
 
 /* ── utils.js ── */
 
@@ -7850,6 +7850,12 @@ function lastAuthenticUserIndex(msgs) {
   return (msgs || []).reduce((acc, m, i) => (m && m.role === 'user' && !m._synthetic) ? i : acc, -1);
 }
 
+const SKILLS_CONTEXT_LABELS = {
+  local: 'Contexte skills (autotrigger)',
+  mcp: 'Contexte skills (MCP approuvées)',
+  both: 'Contexte skills (autotrigger, MCP approuvées)',
+};
+
 function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiUsage, promptOrder) {
   const sp = sysParts || {};
   const dp = dynParts || {};
@@ -7878,7 +7884,8 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
   pushEntry('mcp_instructions', 'Consignes des serveurs MCP', sp.mcpInstructions);
   pushEntry('memories_profile', 'Souvenirs de profil', sp.memoriesProfile);
-  pushEntry('skills_context', 'Contexte skills (autotrigger, MCP approuvées)', sp.skillsContext);
+
+  pushEntry('skills_context', SKILLS_CONTEXT_LABELS[sp.skillsContextForm] || 'Contexte skills', sp.skillsContext);
   pushEntry('skills_doctrine', 'Doctrine skills', sp.skills);
   pushEntry('codeblock_doctrine', 'Doctrine codeblock', sp.codeblock);
 
@@ -7933,6 +7940,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   return {
     entries, totalChars, totalTokens, imageCount,
     libraryForm: sp.libraryForm || '',
+    skillsContextForm: sp.skillsContextForm || '',
     apiUsage: apiUsage || null,
   };
 }
@@ -11070,7 +11078,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1791315310}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1791326238}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -25203,9 +25211,17 @@ const CTX_EXPLAIN_SPACE_VARIANTS = {
   note: 'Tout ce qui décrit l\'Espace actif : sa description, les souvenirs qui lui sont rattachés, et le nombre de fichiers de sa bibliothèque — la liste est servie au modèle à sa demande.',
 };
 
-function contextExplainFor(source, libraryForm) {
+const CTX_EXPLAIN_SKILLS_CONTEXT_VARIANTS = {
+  mcp: 'La liste des skills servies par un serveur MCP et approuvées, avec leur description — pas leur contenu.',
+  both: 'La liste des skills à déclenchement automatique et des skills servies par un serveur MCP et approuvées, avec leur description — pas leur contenu.',
+};
+
+function contextExplainFor(source, libraryForm, skillsContextForm) {
   if (source === 'space' && CTX_EXPLAIN_SPACE_VARIANTS[libraryForm]) {
     return CTX_EXPLAIN_SPACE_VARIANTS[libraryForm];
+  }
+  if (source === 'skills_context' && CTX_EXPLAIN_SKILLS_CONTEXT_VARIANTS[skillsContextForm]) {
+    return CTX_EXPLAIN_SKILLS_CONTEXT_VARIANTS[skillsContextForm];
   }
   return CTX_EXPLAIN[source] || '';
 }
@@ -25503,12 +25519,13 @@ function renderContextInspector() {
   if (body) {
 
     const libraryForm = m.libraryForm || '';
+    const skillsContextForm = m.skillsContextForm || '';
     const rows = m.entries.map(e => {
       const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
       const color = CTX_PALETTE[e.source] || '#888';
       const note = e.source === 'attachment_images' ? ' <span class="hint">(très approximatif)</span>' : '';
 
-      const why = contextExplainFor(e.source, libraryForm);
+      const why = contextExplainFor(e.source, libraryForm, skillsContextForm);
       const tipAttr = why ? tipAttrs(why, { text: e.label }) : '';
       const labelCls = why ? ' class="ctx-label-explained"' : '';
       return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>` +
@@ -32460,9 +32477,9 @@ function buildContextBlock(matches) {
     inner + '\n</miaou_context>\n\n';
 }
 
-function buildSkillsContextBlock() {
-  const skills = getAutotriggerSkillsMeta();
-  const served = approvedMcpSkillsForContext();
+function buildSkillsContextBlock(localSkills, servedSkills) {
+  const skills = localSkills || getAutotriggerSkillsMeta();
+  const served = servedSkills || approvedMcpSkillsForContext();
   if (!skills.length && !served.length) return '';
   const lines = skills.map(s => '- [slug: ' + s.slug + ']' + (s.system ? ' [système]' : '') + ' ' +
     (s.name || s.slug) + (s.description ? ' — ' + s.description : ''))
@@ -32486,6 +32503,12 @@ function buildSkillsContextBlock() {
     'lève pas. D\'autres skills existent que l\'utilisateur ' +
     'invoque lui-même à sa discrétion ; elles ne sont pas listées ici et tu n\'as pas à les ' +
     'chercher.' + systemNote + mcpNote + '\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
+}
+
+function skillsContextFormFor(localCount, servedCount) {
+  if (localCount && servedCount) return 'both';
+  if (servedCount) return 'mcp';
+  return localCount ? 'local' : '';
 }
 
 function resolveUserSystemPrompt(globalSystemPrompt) {
@@ -32525,6 +32548,8 @@ function systemMessageParts() {
     skills: '', codeblock: '', user: '',
 
     libraryForm: '',
+
+    skillsContextForm: '',
   };
 
   out.identity = IDENTITY_BLURB;
@@ -32544,7 +32569,10 @@ function systemMessageParts() {
     ? ''
     : (settings.libraryManifestInContext ? 'manifest' : 'note');
   out.space = buildSpaceBlock(space, libraryNote, buildSpaceMemoriesBlock());
-  out.skillsContext = buildSkillsContextBlock();
+  const localSkills = getAutotriggerSkillsMeta();
+  const servedSkills = approvedMcpSkillsForContext();
+  out.skillsContext = buildSkillsContextBlock(localSkills, servedSkills);
+  out.skillsContextForm = skillsContextFormFor(localSkills.length, servedSkills.length);
   out.skills = skillDoctrinePrompt();
   out.codeblock = CODEBLOCK_DOCTRINE;
 

@@ -990,4 +990,22 @@ describe('skills MCP approuvées dans <miaou_skills_context>', function() {
       expect(b.indexOf('[slug: loc]') < b.indexOf('[server: proxy]')).toBe(true);
     });
   });
+  // La forme annoncée à l'inspecteur de contexte suit le bloc réellement émis :
+  // pas de « MCP approuvées » tant qu'aucune ne l'est.
+  it('systemMessageParts : skillsContextForm suit le contenu du bloc', function() {
+    setSkillsCache([{ slug: 'loc', name: 'Locale', autotrigger: true }]);
+    expect(systemMessageParts().skillsContextForm).toBe('local');
+    withServed(false, function() {
+      setSkillsCache([{ slug: 'loc', name: 'Locale', autotrigger: true }]);
+      expect(systemMessageParts().skillsContextForm).toBe('local');
+    });
+    withServed(true, function() {
+      setSkillsCache([{ slug: 'loc', name: 'Locale', autotrigger: true }]);
+      expect(systemMessageParts().skillsContextForm).toBe('both');
+    });
+    withServed(true, function() {
+      setSkillsCache([]);
+      expect(systemMessageParts().skillsContextForm).toBe('mcp');
+    });
+  });
 });

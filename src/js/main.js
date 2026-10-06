@@ -1385,9 +1385,14 @@ function buildContextBlock(matches) {
 // listing le modèle ne pouvait rapprocher une demande d'une skill servie qu'en
 // appelant skills__list — ce qu'il ne fait pas sans raison. Elles n'ont pas de
 // slug : la ligne porte les deux arguments de leur lecture, `server` et `uri`.
-function buildSkillsContextBlock() {
-  const skills = getAutotriggerSkillsMeta();
-  const served = approvedMcpSkillsForContext();
+//
+// Les deux listes peuvent être PASSÉES : `systemMessageParts` les lit une fois
+// et en dérive aussi `skillsContextForm`, pour que la forme annoncée par
+// l'inspecteur et le bloc envoyé ne puissent pas lire deux états différents.
+// Sans argument (tests, appel isolé), lecture directe.
+function buildSkillsContextBlock(localSkills, servedSkills) {
+  const skills = localSkills || getAutotriggerSkillsMeta();
+  const served = servedSkills || approvedMcpSkillsForContext();
   if (!skills.length && !served.length) return '';
   const lines = skills.map(s => '- [slug: ' + s.slug + ']' + (s.system ? ' [système]' : '') + ' ' +
     (s.name || s.slug) + (s.description ? ' — ' + s.description : ''))
@@ -1413,6 +1418,15 @@ function buildSkillsContextBlock() {
     'lève pas. D\'autres skills existent que l\'utilisateur ' +
     'invoque lui-même à sa discrétion ; elles ne sont pas listées ici et tu n\'as pas à les ' +
     'chercher.' + systemNote + mcpNote + '\n\n' + lines.join('\n') + '\n</miaou_skills_context>\n\n';
+}
+
+// Ce que porte le bloc <miaou_skills_context>, pour l'inspecteur de contexte :
+// '' (bloc absent), 'local' (skills autotrigger seules), 'mcp' (skills MCP
+// approuvées seules) ou 'both'. Même condition de vide que le bloc. Pure.
+function skillsContextFormFor(localCount, servedCount) {
+  if (localCount && servedCount) return 'both';
+  if (servedCount) return 'mcp';
+  return localCount ? 'local' : '';
 }
 
 // Résolution pure (testable QuickJS) : la description du Space actif est
@@ -1489,6 +1503,12 @@ function buildSpaceBlock(space, libraryNote, memories) {
 // unique pour buildSystemMessage() ET pour le manifeste de contexte — jamais
 // de re-split du séparateur '\n\n---\n\n' (fragile, audit §6). '' pour un
 // sous-bloc absent/désactivé.
+//
+// Ajouter un contenu CONDITIONNEL à l'un de ces blocs (ici ou dans son
+// constructeur) change ce que l'inspecteur de contexte doit en dire : son
+// libellé et sa tooltip décrivent ce que le bloc porte dans l'état courant,
+// jamais ce qu'il peut porter. D'où les métadonnées de forme `libraryForm` et
+// `skillsContextForm` ci-dessous. Cf. docs/context-inspector.md.
 function systemMessageParts() {
   const settings = loadSettings();
   const out = {
@@ -1498,6 +1518,10 @@ function systemMessageParts() {
     // PAS un sous-bloc : métadonnée sur le contenu de `space` (voir plus bas).
     // Le manifeste l'utilise pour libeller, jamais pour mesurer.
     libraryForm: '',
+    // Idem pour `skillsContext` : skills autotrigger, skills MCP approuvées, ou
+    // les deux (`skillsContextFormFor`). Le libellé et la tooltip de
+    // l'inspecteur n'annoncent les skills MCP que si le bloc en porte.
+    skillsContextForm: '',
   };
   // identity, root, codeblock : INCONDITIONNELLES (TOOLS est une const build-time
   // non vide — l'ancien gate `if (TOOLS.length)` était une branche morte, retirée).
@@ -1541,7 +1565,10 @@ function systemMessageParts() {
     ? ''
     : (settings.libraryManifestInContext ? 'manifest' : 'note');
   out.space = buildSpaceBlock(space, libraryNote, buildSpaceMemoriesBlock());
-  out.skillsContext = buildSkillsContextBlock();
+  const localSkills = getAutotriggerSkillsMeta();
+  const servedSkills = approvedMcpSkillsForContext();
+  out.skillsContext = buildSkillsContextBlock(localSkills, servedSkills);
+  out.skillsContextForm = skillsContextFormFor(localSkills.length, servedSkills.length);
   out.skills = skillDoctrinePrompt();
   out.codeblock = CODEBLOCK_DOCTRINE;
   // `null` en second argument, PAS `space` : la description de l'Espace vit

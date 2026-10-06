@@ -93,6 +93,33 @@ describe('buildContextManifest', function() {
     expect(buildContextManifest(sp, baseDynParts(), [], '', null).libraryForm).toBe('note');
   });
 
+  // Les skills MCP approuvées ne sont nommées par le libellé que si le bloc en
+  // porte : sans serveur de skills, « MCP approuvées » annonçait un contenu
+  // absent.
+  it('le libellé du contexte skills ne nomme les skills MCP que si le bloc en porte', function() {
+    var label = function(form) {
+      var sp = baseSysParts();
+      sp.skillsContext = '<miaou_skills_context>x</miaou_skills_context>';
+      sp.skillsContextForm = form;
+      var m = buildContextManifest(sp, baseDynParts(), [], '', null);
+      return m.entries.filter(function(e) { return e.source === 'skills_context'; })[0].label;
+    };
+    expect(label('local').indexOf('MCP')).toBe(-1);
+    expect(label('local')).toContain('autotrigger');
+    expect(label('mcp')).toContain('MCP approuvées');
+    expect(label('mcp').indexOf('autotrigger')).toBe(-1);
+    expect(label('both')).toContain('autotrigger');
+    expect(label('both')).toContain('MCP approuvées');
+    expect(label('').indexOf('MCP')).toBe(-1);
+  });
+
+  it('la forme du contexte skills est reportée sur le manifeste rendu', function() {
+    var sp = baseSysParts();
+    sp.skillsContext = '<miaou_skills_context>x</miaou_skills_context>';
+    sp.skillsContextForm = 'both';
+    expect(buildContextManifest(sp, baseDynParts(), [], '', null).skillsContextForm).toBe('both');
+  });
+
   it('les définitions d\'outils sont mesurées depuis leur JSON, pas depuis les messages', function() {
     var toolDefsJson = JSON.stringify([{ type: 'function', function: { name: 'x' } }]);
     var m = buildContextManifest(baseSysParts(), baseDynParts(), [], toolDefsJson, null);
@@ -675,8 +702,10 @@ describe('alignement CTX_PALETTE / CTX_EXPLAIN sur les sources du manifeste', fu
     // laisserait une variante vide passer inaperçue : c'est la fonction servie
     // au rendu qui doit rendre du texte, dans CHACUN de ses états.
     ['manifest', 'note', ''].forEach(function(libraryForm) {
-      m.entries.forEach(function(e) {
-        expect(contextExplainFor(e.source, libraryForm).length > 0).toBe(true);
+      ['local', 'mcp', 'both', ''].forEach(function(skillsContextForm) {
+        m.entries.concat([{ source: 'skills_context' }]).forEach(function(e) {
+          expect(contextExplainFor(e.source, libraryForm, skillsContextForm).length > 0).toBe(true);
+        });
       });
     });
   });
@@ -701,6 +730,24 @@ describe('contextExplainFor (tooltips à contenu variable)', function() {
     var empty = contextExplainFor('space', '');
     expect(empty.indexOf('fichiers') >= 0).toBe(false);
     expect(empty).toBe(CTX_EXPLAIN.space);
+  });
+
+  it('la tooltip du contexte skills ne parle de skills MCP que si le bloc en porte', function() {
+    expect(contextExplainFor('skills_context', '', 'local').indexOf('MCP')).toBe(-1);
+    expect(contextExplainFor('skills_context', '', '').indexOf('MCP')).toBe(-1);
+    var mcp = contextExplainFor('skills_context', '', 'mcp');
+    var both = contextExplainFor('skills_context', '', 'both');
+    expect(mcp).toContain('MCP');
+    expect(mcp.indexOf('déclenchement automatique')).toBe(-1);
+    expect(both).toContain('MCP');
+    expect(both).toContain('déclenchement automatique');
+  });
+
+  it('skillsContextFormFor suit la même condition de vide que le bloc', function() {
+    expect(skillsContextFormFor(0, 0)).toBe('');
+    expect(skillsContextFormFor(3, 0)).toBe('local');
+    expect(skillsContextFormFor(0, 1)).toBe('mcp');
+    expect(skillsContextFormFor(3, 1)).toBe('both');
   });
 
   it('une source sans variante rend la valeur de table, quel que soit l\'état', function() {

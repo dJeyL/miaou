@@ -710,7 +710,14 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   deviner (la détection par en-tête a été tentée puis écartée). À lire avant de
   toucher au manifeste **et avant de toucher à l'ordre du join de
   `buildSystemMessage()`**, que ce fichier documente et dont deux gardes de
-  position dépendent. Le drawer héberge depuis le lot AE l'affordance de
+  position dépendent. À lire AUSSI avant d'ajouter un contenu CONDITIONNEL à
+  un bloc existant de `systemMessageParts()` (une famille de plus listée, une
+  section qui n'apparaît que si…) : le geste ne touche ni le manifeste ni
+  `CTX_EXPLAIN`, donc rien ne signale que libellé et tooltip décrivent
+  désormais un sur-ensemble — ils doivent dire ce que le bloc porte DANS CET
+  ÉTAT (métadonnée de forme reportée sur le manifeste, une variante par état,
+  modèle `libraryForm` / `skillsContextForm`). Payé sur « Contexte skills
+  (autotrigger, MCP approuvées) », affiché sans aucune skill MCP. Le drawer héberge depuis le lot AE l'affordance de
   compaction, et la pilule son glyphe de seuil (`docs/compaction.md`) : le
   réglage de fenêtre de contexte n'y est plus un pur dénominateur d'affichage.
 - **`docs/spaces.md`** — Spaces / « Espaces » (lot C) : herméticité (piège 18,
