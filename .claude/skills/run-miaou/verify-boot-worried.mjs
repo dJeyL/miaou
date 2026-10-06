@@ -34,7 +34,7 @@
 //
 // Usage : node verify-boot-worried.mjs [--headed]
 //   Prérequis : `python3 build.py` fait.
-import { launchIsolated } from './stub-backend.js';
+import { launchIsolated, seededMcpSentinel } from './stub-backend.js';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,11 +47,27 @@ const headed = process.argv.includes('--headed');
 const SLOW_PORT = 8793;    // refuse APRÈS un délai (cf. startSlowFailServer)
 const HANG_PORT = 8794;    // accepte la connexion et ne répond JAMAIS
 
-// Délai avant l'échec, calé pour tomber JUSTE APRÈS le plancher nominal
+// Le VERDICT d'échec doit tomber JUSTE APRÈS le plancher nominal
 // (BOOT_MIN_AFTER_READY_MS = 1800 ms). C'est toute la fenêtre du défaut : un
 // verdict plus rapide arrive à temps même sur le code cassé, un verdict plus
-// lent dépasse la borne dure et n'est légitimement plus attendu.
-const SLOW_FAIL_MS = 2000;
+// lent dépasse la borne dure (BOOT_MAX_WAIT_MS = 2600 ms) et n'est
+// légitimement plus attendu.
+//
+// Ce délai est PAR TENTATIVE, et un serveur injoignable en coûte DEUX : la
+// sonde `server/discover`, puis, sur échec réseau, le repli sur `initialize`
+// (`mcpProbeVerdict` rend 'legacy' — un navigateur ne distingue pas un refus
+// d'un blocage CORS). D'où 1000 ms, pour un verdict vers 2000 ms. Réglé à
+// 2000 ms, valeur d'avant la révision 2026-07-28, le verdict tombait vers
+// 4000 ms, au-delà de la borne dure : le scénario 1 était rouge sur un code
+// conforme à sa conception. Le compte de requêtes est vérifié plus bas : s'il
+// redevenait 1, le verdict retomberait AVANT le plancher et le scénario ne
+// mesurerait plus la fenêtre.
+//
+// Conséquence connue côté appli, non traitée ici : un poste qui refuse en ~2 s
+// par tentative (poste Windows de Julien) dépasse la borne dure, et le chat n'y
+// fronce plus pendant le boot.
+const SLOW_FAIL_MS = 1000;
+const SLOW_FAIL_ATTEMPTS = 2;
 
 const failures = [];
 function check(label, cond, detail) {
@@ -126,10 +142,10 @@ function mcpFixture(url) {
 // Un boot complet, chronométré depuis l'horloge interne de l'app.
 async function bootAndMeasure(browser, mcpUrl) {
   const page = await browser.newPage();
-  await page.addInitScript((servers) => {
+  await page.addInitScript(([servers, seeded]) => {
     localStorage.setItem('miaou-mcp-servers', servers);
-    localStorage.setItem('miaou-mcp-seeded', '1');   // le seed de build n'écrase pas la fixture
-  }, mcpFixture(mcpUrl));
+    localStorage.setItem('miaou-mcp-seeded', seeded);   // le seed de build n'écrase pas la fixture
+  }, [mcpFixture(mcpUrl), seededMcpSentinel()]);
 
   // Observateur posé AVANT le premier paint : il enregistre si le fronçage est
   // arrivé pendant que l'overlay était encore VISIBLE. Lire la classe après coup
@@ -171,11 +187,12 @@ async function bootAndMeasure(browser, mcpUrl) {
   console.log('\n=== Chat soucieux au boot ===\n');
 
   // ── 1. MCP injoignable : le chat fronce PENDANT le boot ───────────────────
-  console.log(`[1] serveur MCP qui échoue après ${SLOW_FAIL_MS} ms (cas du poste de travail)`);
+  console.log(`[1] serveur MCP qui échoue après ${SLOW_FAIL_MS} ms par tentative (cas du poste de travail)`);
   await startSlowFailServer();
   {
     const r = await bootAndMeasure(browser, `http://127.0.0.1:${SLOW_PORT}/mcp`);
-    check('le serveur a bien été sollicité', slowHits > 0, slowHits + ' requête(s)');
+    check('le serveur a bien été sollicité, sonde puis repli',
+          slowHits === SLOW_FAIL_ATTEMPTS, slowHits + ' requête(s), attendu ' + SLOW_FAIL_ATTEMPTS);
     // Prémisse : sans elle, les deux assertions suivantes seraient vraies sur
     // un scénario où rien n'a été tenté.
     check('le serveur MCP est bien en erreur', r.mcpState === 'error',
@@ -213,10 +230,10 @@ async function bootAndMeasure(browser, mcpUrl) {
   console.log('\n[3] aucun serveur MCP configuré');
   {
     const page = await browser.newPage();
-    await page.addInitScript(() => {
+    await page.addInitScript((seeded) => {
       localStorage.setItem('miaou-mcp-servers', '[]');
-      localStorage.setItem('miaou-mcp-seeded', '1');
-    });
+      localStorage.setItem('miaou-mcp-seeded', seeded);
+    }, seededMcpSentinel());
     await page.goto('file://' + distPath);
     await page.waitForFunction(
       () => document.querySelector('.boot-done') !== null, { timeout: 15000 });

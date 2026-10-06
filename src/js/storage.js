@@ -132,8 +132,9 @@ const MCP_RECHECK_MIN_INTERVAL_MS = 120000;
 const API_PROBE_MIN_INTERVAL_MS = 120000;
 // Serveur(s) MCP pré-configurés au build : permet de livrer un binaire déjà
 // branché sur un proxy MCP partagé (déploiement d'équipe) sans faire saisir la
-// carte à chaque utilisateur. Objet unique OU tableau — le singulier est le cas
-// courant, le tableau évite une migration de clef le jour où il en faut deux.
+// carte à chaque utilisateur. Deux clefs, exclusives (le build ÉCHOUE si les
+// deux sont posées, `check_mcp_server_keys`) : `mcp_servers`, tableau, et le
+// singulier historique `mcp_server`, objet unique ou tableau.
 // Le délai s'y nomme `timeout_s`, suffixe d'unité de toutes les durées de
 // `config.json` (`mcp_default_timeout_s`, `stream_idle_timeout_s`…) et du champ
 // homonyme de la carte : tout le domaine MCP est en secondes, la seule
@@ -142,7 +143,7 @@ const API_PROBE_MIN_INTERVAL_MS = 120000;
 // Pas de `authorization_token` : cette config est versionnée dans le bundle,
 // un jeton y serait lisible par quiconque reçoit le fichier.
 const BUILD_MCP_SERVERS = (function () {
-  const raw = BUILD_CONFIG.mcp_server;
+  const raw = BUILD_CONFIG.mcp_servers || BUILD_CONFIG.mcp_server;
   if (!raw) return [];
   return Array.isArray(raw) ? raw.filter(Boolean) : [raw];
 })();
@@ -939,39 +940,49 @@ const MCP_SERVERS_KEY = 'miaou-mcp-servers';
 // MCP_DEFAULT_TIMEOUT_S (défaut, éditable par serveur) est déclaré
 // plus haut avec les autres bornes configurables.
 
-// Sentinelle du seed de build. ONE-SHOT, et il lui faut sa propre clef : à la
+// Sentinelle du seed de build : la liste des serveurs de config DÉJÀ TRAITÉS
+// (`[{ name, url }]`, cf. `mcpSeedPlan`). Il lui faut sa propre clef : à la
 // différence des serveurs API (où l'absence de `miaou-api-servers` prouve qu'on
 // n'a jamais rien écrit), `miaou-mcp-servers` existe déjà chez tout utilisateur
-// ayant ouvert le drawer MCP — elle ne dit donc rien du seed. Posée dès le
-// premier passage, même quand il n'y a rien à insérer : le contrat est « ce
-// build s'est présenté une fois », pas « il a inséré quelque chose ».
+// ayant ouvert le drawer MCP — elle ne dit donc rien du seed.
+//
+// Une liste d'identités et non un drapeau : chaque serveur de config est seedé
+// UNE fois, à la première rencontre, même s'il arrive dans un build ultérieur
+// à côté d'un serveur déjà livré. Un drapeau unique (la valeur `'1'` d'avant
+// les serveurs multiples) ne mémorisait aucune identité, donc brûlait d'un coup
+// le seed de tout serveur ajouté plus tard. Cette valeur héritée est lue comme
+// une liste vide (`parseMcpSeededSentinel`) : un serveur de config sans carte
+// équivalente est alors inséré, au prix assumé de faire revenir une fois une
+// carte seedée sous l'ancien drapeau puis supprimée — les deux cas sont
+// indiscernables, et le second serveur n'arriverait sinon jamais chez les
+// installations existantes.
 //
 // Conséquence assumée : un serveur seedé puis supprimé par l'utilisateur reste
 // supprimé, et une URL de proxy changée dans un build ultérieur ne se propage
-// PAS aux installations existantes (elle vaut une consigne humaine, pas une
-// resynchronisation automatique qui annulerait les suppressions).
+// PAS aux installations existantes (le nom suffit à reconnaître l'entrée déjà
+// traitée ; ce serait sinon une resynchronisation qui annulerait les
+// suppressions).
 const MCP_SEEDED_KEY = 'miaou-mcp-seeded';
 
 function seedBuildMcpServersIfNeeded() {
-  // Config vide → on ne pose RIEN, pas même la sentinelle. La poser ici
-  // brûlerait le seed d'un build ULTÉRIEUR qui, lui, porte une config : la
-  // sentinelle ne mémorise aucune identité de build, elle ne peut donc pas
-  // signifier « ce build s'est présenté » — seulement « une config non vide a
-  // été traitée ». Tout build antérieur à cette feature est dans ce cas.
+  // Config vide → on ne touche à RIEN. Un build sans serveur n'a rien à
+  // ajouter à la liste, et la réécrire n'apprendrait rien au build suivant.
   if (!BUILD_MCP_SERVERS.length) return;
-  if (localStorage.getItem(MCP_SEEDED_KEY) !== null) return;
+  const rawSeeded = localStorage.getItem(MCP_SEEDED_KEY);
   let existing = [];
   try {
     const arr = JSON.parse(localStorage.getItem(MCP_SERVERS_KEY));
     if (Array.isArray(arr)) existing = arr;
   } catch (e) { existing = []; }
-  const candidates = mcpSeedCandidates(BUILD_MCP_SERVERS, existing);
-  // Posée même sans candidat retenu : une config non vide dont tous les
-  // serveurs ont un équivalent existant EST traitée — ne pas re-tester à
-  // chaque démarrage, sinon supprimer la carte la ferait revenir.
-  writeLocalStorage(MCP_SEEDED_KEY, '1');
-  if (!candidates.length) return;
-  const next = existing.concat(candidates.map(c => normalizeMcpServer({
+  const plan = mcpSeedPlan(BUILD_MCP_SERVERS, existing, parseMcpSeededSentinel(rawSeeded));
+  // Écrite même sans insertion : une entrée de config dont la carte équivalente
+  // existe déjà EST traitée — sinon supprimer cette carte la ferait revenir au
+  // démarrage suivant. Réécrite seulement si elle change (chaque démarrage
+  // passe ici).
+  const nextSeeded = JSON.stringify(plan.seeded);
+  if (nextSeeded !== rawSeeded) writeLocalStorage(MCP_SEEDED_KEY, nextSeeded);
+  if (!plan.insert.length) return;
+  const next = existing.concat(plan.insert.map(c => normalizeMcpServer({
     name: c.name,
     url: c.url,
     enabled: c.enabled,

@@ -55,8 +55,8 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
    avec sa pilule et la devinette d'URL qui pouvait choisir d'elle-même
    l'option non implémentée. Une carte ancienne qui le porte encore le perd à
    sa prochaine normalisation (`normalizeMcpServer`) ; d'ici là il est inerte.
-   Côté `config.json`, la clef `mcp_server.transport` lève désormais le WARN de
-   clef inconnue au build.
+   Côté `config.json`, la clef `transport` d'une entrée de `mcp_server`/`mcp_servers` lève
+   désormais le WARN de clef inconnue au build.
    Sur ce transport, deux révisions de protocole coexistent depuis le lot AM :
    le handshake `initialize` à session (ère `legacy`) et la révision 2026-07-28
    sans session (ère `modern`). Même endpoint, même POST, même lecture JSON ou
@@ -178,43 +178,63 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
     dans le drawer Paramètres déjà chargé. `validateMcpServerName` (pur) refuse
     espace, `__`, `miaou`, et les doublons.
 
-11b. **Serveur pré-configuré au build (`mcp_server` de `config.json`).** Un
-    déploiement d'équipe veut livrer un bundle déjà branché sur son proxy MCP
-    sans faire saisir la carte à chacun. La clef accepte un objet **ou** un
-    tableau (`BUILD_MCP_SERVERS`, storage.js) ; son `timeout` est en
-    **secondes** et converti en ms au seed — le champ homonyme de la carte
-    persistée est en ms, c'est le seul endroit où les deux unités se croisent.
-    Aucun `authorization_token` n'est lu depuis la config : elle est sérialisée
+11b. **Serveurs pré-configurés au build (`mcp_servers` / `mcp_server` de
+    `config.json`).** Un déploiement d'équipe veut livrer un bundle déjà branché
+    sur son ou ses proxys MCP sans faire saisir les cartes à chacun. Deux clefs,
+    **exclusives** : `mcp_servers` (tableau) et le singulier historique
+    `mcp_server` (objet, tableau toléré), lues en `BUILD_MCP_SERVERS`
+    (storage.js). Le build **échoue** si les deux sont posées
+    (`check_mcp_server_keys`, build.py), valeur nulle comprise : ni la fusion
+    (un singulier oublié en migrant livrerait un serveur en double) ni la
+    préférence (l'autre clef ignorée en silence) n'est une lecture juste. Le
+    délai s'y nomme `timeout_s`, comme le champ de la carte. Aucun
+    `authorization_token` n'est lu depuis la config : elle est sérialisée
     dans `dist/miaou.html`, donc lisible par qui reçoit le fichier.
 
-    Le seed est **one-shot**, gardé par sa propre clef `miaou-mcp-seeded` :
-    `miaou-mcp-servers` existe déjà chez tout utilisateur ayant ouvert le
-    drawer, elle ne peut donc pas servir de marqueur comme
-    `miaou-api-servers` le fait pour les serveurs API. Elle signifie « une
-    config **non vide** a été traitée une fois » — elle ne mémorise aucune
-    identité de build, donc elle ne peut pas signifier « ce build s'est
-    présenté ». D'où l'ordre des gardes : **config vide → on ne pose rien**, pas
-    même la sentinelle, sinon tout build antérieur à cette feature (ils le sont
-    tous) brûlerait au premier démarrage le seed du build suivant qui, lui,
-    porterait une config. En revanche elle EST posée quand la config est non
-    vide mais qu'aucun candidat n'est retenu (tous ont déjà un équivalent) :
-    sans ça, supprimer la carte la ferait revenir au démarrage suivant.
-    Conséquences assumées : une
-    carte seedée puis supprimée ne revient pas, et changer l'URL du proxy dans
-    un build ultérieur ne la propage PAS aux installations existantes (ce serait
-    un re-seed récurrent, qui annulerait les suppressions).
+    Le seed se fait **une fois par serveur de config**, gardé par sa propre clef
+    `miaou-mcp-seeded` : `miaou-mcp-servers` existe déjà chez tout utilisateur
+    ayant ouvert le drawer, elle ne peut donc pas servir de marqueur comme
+    `miaou-api-servers` le fait pour les serveurs API. La sentinelle est la
+    **liste des serveurs de config déjà traités** (`[{ name, url }]`), pas un
+    drapeau : un serveur ajouté à la config d'un build ultérieur arrive chez
+    les installations existantes, un serveur déjà traité n'est jamais
+    réinséré. Entre dans la liste toute entrée valide rencontrée, insérée ou
+    écartée parce qu'une carte équivalente existait — sans quoi supprimer
+    cette carte la ferait revenir au démarrage suivant. Une entrée invalide
+    (sans URL, nom refusé) n'y entre PAS : c'est une faute de config, et la
+    consigner brûlerait par son URL le seed de la version corrigée. Config
+    vide → rien n'est écrit.
 
-    La décision d'insérer est pure et testée : `mcpSeedCandidates(configured,
-    existing)` (utils) écarte tout candidat ayant un équivalent **par nom** (le
-    nom est le préfixe d'outil, donc l'identité) ou **par URL** au sens de
-    `mcpUrlIdentity` — trim, casse, slash final, et rien de plus : l'équivalence
-    d'hôtes (`localhost` vs `127.0.0.1`) serait une devinette sur un
-    déploiement qu'on ne connaît pas. Les candidats sont aussi dédupliqués entre
-    eux, et un nom invalide est écarté plutôt que de créer une carte au préfixe
-    cassé. `miaou-mcp-seeded` n'est **pas** dans `EXPORT_KEYS` : c'est un
-    marqueur d'installation, pas une donnée utilisateur — l'exporter
-    empêcherait un import sur machine neuve de recevoir le seed de son propre
-    build.
+    L'ancienne valeur `'1'` (drapeau d'avant les serveurs multiples, qui ne
+    disait pas QUELS serveurs il couvrait) est lue comme une liste vide
+    (`parseMcpSeededSentinel`) : tout serveur de config sans carte équivalente
+    est alors inséré. Prix assumé : une carte seedée sous l'ancien drapeau puis
+    supprimée revient une fois — indiscernable d'un serveur nouveau, et le
+    second serveur n'arriverait sinon jamais chez les installations existantes.
+
+    Conséquences assumées : une carte seedée puis supprimée ne revient pas, et
+    changer l'URL d'un serveur dans un build ultérieur ne la propage PAS aux
+    installations existantes (le nom suffit à reconnaître l'entrée déjà
+    traitée ; propager serait un re-seed récurrent, qui annulerait les
+    suppressions).
+
+    Le plan est pur et testé : `mcpSeedPlan(configured, existing, seeded)`
+    (utils) rend `{ insert, seeded }` — il retire les entrées déjà traitées
+    (même nom OU même URL qu'une entrée de la sentinelle) puis délègue à
+    `mcpSeedCandidates(configured, existing)`, qui écarte tout candidat ayant
+    un équivalent **par nom** (le nom est le préfixe d'outil, donc l'identité)
+    ou **par URL** au sens de `mcpUrlIdentity` — trim, casse, slash final, et
+    rien de plus : l'équivalence d'hôtes (`localhost` vs `127.0.0.1`) serait une
+    devinette sur un déploiement qu'on ne connaît pas. Les candidats sont aussi
+    dédupliqués entre eux, et un nom invalide est écarté plutôt que de créer
+    une carte au préfixe cassé. `miaou-mcp-seeded` n'est **pas** dans
+    `EXPORT_KEYS` : c'est un marqueur d'installation, pas une donnée
+    utilisateur — l'exporter empêcherait un import sur machine neuve de
+    recevoir le seed de son propre build.
+
+    Les verify Playwright neutralisent le seed en posant la sentinelle à
+    `seededMcpSentinel()` (`stub-backend.js`), composée depuis le
+    `config.json` local : `'1'` ne neutralise plus rien.
 
 12. **Hook d'inflation dispatcher pour les pièces jointes (brief A — moitié
     client du lot D `mcp_docs`).** `callTool` route désormais les appels

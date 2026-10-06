@@ -595,8 +595,33 @@ def load_config(use_config: bool = True) -> dict:
         sys.exit(f'[erreur] config.json : JSON invalide ligne {e.lineno}, '
                  f'colonne {e.colno} — {e.msg}. Rappel : JSON exige des '
                  f'guillemets DOUBLES (\"...\"), jamais simples.')
+    check_mcp_server_keys(cfg)
     warn_unknown_config_keys(cfg)
     return cfg
+
+
+# Les deux formes de la clef des serveurs MCP pré-configurés. Le singulier est
+# historique (objet unique, tableau toléré) ; le pluriel nomme ce qu'il porte
+# quand on en livre plusieurs. Le runtime lit l'une OU l'autre
+# (`BUILD_MCP_SERVERS`, storage.js) — jamais leur union.
+MCP_SERVER_KEYS = ('mcp_server', 'mcp_servers')
+
+
+def check_mcp_server_keys(cfg: dict) -> None:
+    """Refuse une config qui pose À LA FOIS `mcp_server` et `mcp_servers`.
+
+    Une erreur et non un WARN : il n'existe pas de lecture juste des deux. Les
+    fusionner ferait d'une clef oubliée en migrant (singulier laissé à côté du
+    pluriel) un serveur livré en double ou au mauvais nom ; en préférer une
+    ferait ignorer l'autre en silence — exactement le défaut que
+    `warn_unknown_config_keys` existe pour rendre visible. La présence de la
+    clef suffit, valeur nulle comprise : c'est l'ambiguïté qu'on refuse, pas
+    un contenu.
+    """
+    if all(k in cfg for k in MCP_SERVER_KEYS):
+        sys.exit('[erreur] config.json : « mcp_server » et « mcp_servers » sont '
+                 'tous deux présents. Garder une seule clef — « mcp_servers » '
+                 '(tableau) pour plusieurs serveurs.')
 
 
 def warn_unknown_config_keys(cfg: dict) -> list:
@@ -632,6 +657,7 @@ def warn_unknown_config_keys(cfg: dict) -> list:
               'non vérifiées.')
         return []
     known.add('build_ts')
+    known.update(MCP_SERVER_KEYS)    # le sample n'en montre qu'une des deux
     unknown = sorted(k for k in cfg if k not in known)
     for k in unknown:
         near = difflib.get_close_matches(k, known, n=1, cutoff=0.7)
@@ -639,7 +665,7 @@ def warn_unknown_config_keys(cfg: dict) -> list:
         print(f'  [warn] config.json : clef inconnue « {k} », ignorée au '
               f'runtime{hint}')
 
-    # Les clefs IMBRIQUÉES de `mcp_server` échappent à la boucle ci-dessus, qui
+    # Les clefs IMBRIQUÉES de `mcp_server`/`mcp_servers` échappent à la boucle ci-dessus, qui
     # ne parcourt que le premier niveau. Le cas n'est pas théorique : `timeout`
     # y a été renommé `timeout_s` (alignement sur la convention d'unité), et une
     # config restée à l'ancien nom serait silencieusement ignorée — précisément
@@ -658,17 +684,18 @@ def warn_unknown_config_keys(cfg: dict) -> list:
     if isinstance(sample_mcp, dict):
         sub_known |= set(sample_mcp.keys())
     sub_known |= {'enabled', 'toolAllowlist', 'toolDenylist'}
-    raw = cfg.get('mcp_server')
-    entries = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        for k in sorted(k for k in entry if k not in sub_known):
-            near = difflib.get_close_matches(k, sub_known, n=1, cutoff=0.7)
-            hint = f' — vouliez-vous « {near[0]} » ?' if near else ''
-            print(f'  [warn] config.json : clef inconnue « mcp_server.{k} », '
-                  f'ignorée au runtime{hint}')
-            unknown.append('mcp_server.' + k)
+    for key in MCP_SERVER_KEYS:
+        raw = cfg.get(key)
+        entries = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            for k in sorted(k for k in entry if k not in sub_known):
+                near = difflib.get_close_matches(k, sub_known, n=1, cutoff=0.7)
+                hint = f' — vouliez-vous « {near[0]} » ?' if near else ''
+                print(f'  [warn] config.json : clef inconnue « {key}.{k} », '
+                      f'ignorée au runtime{hint}')
+                unknown.append(f'{key}.{k}')
 
     return unknown
 

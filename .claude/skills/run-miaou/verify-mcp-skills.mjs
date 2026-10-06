@@ -25,7 +25,7 @@
 // Rejeu contre le code d'avant le lot : `VERIFY_DIST=<chemin>/dist/miaou.html`.
 //
 // Usage : node verify-mcp-skills.mjs [dossier-captures] [--headed]
-import { launchIsolated } from './stub-backend.js';
+import { launchIsolated, seededMcpSentinel } from './stub-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,12 +62,12 @@ const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 page.on('pageerror', (e) => consoleErrors.push(String(e)));
 
-await page.addInitScript((url) => {
+await page.addInitScript(([url, seeded]) => {
   if (localStorage.getItem('miaou-mcp-seeded') !== null) return;
   localStorage.setItem('miaou-mcp-servers', JSON.stringify([{ name: 'proxy', url: url, enabled: true }]));
-  localStorage.setItem('miaou-mcp-seeded', '1');
+  localStorage.setItem('miaou-mcp-seeded', seeded);
   localStorage.setItem('miaou-settings', JSON.stringify({ theme: 'dark' }));
-}, proxyUrl);
+}, [proxyUrl, seededMcpSentinel()]);
 
 // ── Modèle stubé ────────────────────────────────────────────────────────────
 // `script` : un tableau de tours ; un tour est un appel d'outil `{ name, args }`

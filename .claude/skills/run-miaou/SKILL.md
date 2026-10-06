@@ -876,12 +876,14 @@ the machine as much as the code. Three shapes, all of which flip with the state
 of Julien's environment rather than with `src/`:
 
 - **The build-seeded MCP server.** `seedBuildMcpServersIfNeeded` appends the
-  config's `mcp_server` to whatever list is found at boot — including an empty
-  `[]` set by the fixture. With the proxy down, `ERR_CONNECTION_REFUSED` reddens
-  every "no console error" check; with it up, "no MCP server connected" fails
-  instead. Setting `miaou-mcp-servers` to `[]` is not enough: set
-  `miaou-mcp-seeded` to `'1'` next to it. In an `addInitScript`, guard it to the
-  first load (`if (localStorage.getItem('miaou-mcp-seeded') !== null) return;`),
+  config's `mcp_servers` (or `mcp_server`) to whatever list is found at boot —
+  including an empty `[]` set by the fixture. With the proxy down,
+  `ERR_CONNECTION_REFUSED` reddens every "no console error" check; with it up,
+  "no MCP server connected" fails instead. Setting `miaou-mcp-servers` to `[]`
+  is not enough: set `miaou-mcp-seeded` next to it, to `seededMcpSentinel()`
+  (stub-backend.js) — the sentinel is the LIST of config servers already
+  handled, and the legacy `'1'` now reads as an empty list, so it neutralises
+  nothing. In an `addInitScript`, guard it to the first load (`if (localStorage.getItem('miaou-mcp-seeded') !== null) return;`),
   or a later `page.reload()` wipes the list the scenario built.
 - **Endpoints added after the stub was written.** A `fetch` stub that answers
   `/models` and `/chat/completions` and passes everything else to the network

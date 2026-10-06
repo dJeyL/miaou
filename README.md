@@ -371,12 +371,16 @@ est faite au seul point de lecture.
   backend lent à produire son premier token.
 - `mcp_default_timeout_s` : délai d'attente **par défaut** d'un appel à un
   serveur MCP (défaut 30 s). Reste modifiable serveur par serveur dans l'UI.
-- `mcp_server` : serveur MCP pré-configuré, ajouté automatiquement au premier
-  démarrage — de quoi livrer un build déjà branché sur un proxy MCP d'équipe.
-  Un objet `{ name, url }` (`timeout_s`, `enabled`,
-  `toolAllowlist`, `toolDenylist` optionnels), ou un tableau d'objets. L'ajout
-  est **unique et non répété** : il n'a lieu que si aucun serveur existant ne
-  porte déjà ce nom ou cette URL, et une carte supprimée ensuite ne revient pas.
+- `mcp_servers` / `mcp_server` : serveurs MCP pré-configurés, ajoutés
+  automatiquement au démarrage — de quoi livrer un build déjà branché sur les
+  proxys MCP d'une équipe. `mcp_servers` est un tableau d'objets
+  `{ name, url }` (`timeout_s`, `enabled`, `toolAllowlist`, `toolDenylist`
+  optionnels) ; `mcp_server` accepte un seul de ces objets. Une clef ou
+  l'autre : le build échoue si les deux sont présentes. Chaque serveur n'est
+  ajouté **qu'une fois** : seulement si aucun serveur existant ne porte déjà
+  ce nom ou cette URL, et une carte supprimée ensuite ne revient pas. Un
+  serveur ajouté à la config d'un build ultérieur arrive bien chez les
+  installations existantes.
   Pas de jeton ici — la config part dans le bundle distribué (cf.
   `docs/mcp.md`).
 - `attachment_image_max_bytes` / `attachment_max_images` : plafond de taille

@@ -2824,6 +2824,47 @@ function mcpSeedCandidates(configured, existing) {
   return out;
 }
 
+// Lit la sentinelle du seed de build (`miaou-mcp-seeded`) : la liste des
+// serveurs de config déjà traités, `[{ name, url }]`. Absente, illisible, ou
+// valant le drapeau `'1'` d'avant les serveurs multiples → liste vide : le
+// drapeau ne disait pas QUELS serveurs il couvrait (cf. storage.js).
+function parseMcpSeededSentinel(raw) {
+  if (raw == null || raw === '1') return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(function (r) { return r && typeof r === 'object'; })
+      .map(function (r) { return { name: String(r.name || '').trim(), url: mcpUrlIdentity(r.url) }; });
+  } catch (e) { return []; }
+}
+
+// Plan du seed de build. Pure : `configured` (entrées de config.json),
+// `existing` (cartes en place), `seeded` (sentinelle déjà parsée). Rend
+// `{ insert, seeded }` — les cartes à ajouter, et la sentinelle à écrire.
+//
+// Une entrée de config déjà traitée (même nom OU même URL qu'une entrée de la
+// sentinelle) est ignorée, qu'elle ait une carte ou non : c'est ce qui empêche
+// une carte supprimée de revenir. Le nom suffit à la reconnaître même si son
+// URL a changé d'un build à l'autre (pas de propagation, cf. storage.js).
+// Toute entrée non traitée entre dans la sentinelle, insérée ou non : écartée
+// par `mcpSeedCandidates` parce qu'un équivalent existe déjà, elle n'a pas à
+// être retentée. Sauf une entrée INVALIDE (sans URL, nom refusé) : faute de
+// config, pas décision — la consigner brûlerait par son URL le seed de la
+// version corrigée au build suivant.
+function mcpSeedPlan(configured, existing, seeded) {
+  const done = Array.isArray(seeded) ? seeded.slice() : [];
+  const pending = (Array.isArray(configured) ? configured : []).filter(function (c) {
+    if (!c || !c.url || validateMcpServerName(c.name, null)) return false;
+    const n = String(c.name || '').trim();
+    const u = mcpUrlIdentity(c.url);
+    return !done.some(function (r) { return (n && r.name === n) || (u && r.url === u); });
+  });
+  pending.forEach(function (c) {
+    done.push({ name: String(c.name || '').trim(), url: mcpUrlIdentity(c.url) });
+  });
+  return { insert: mcpSeedCandidates(pending, existing), seeded: done };
+}
+
 // Filtre les outils d'un serveur au moment du merge. allowlist/denylist
 // portent sur le nom NU de l'outil (tel que renvoyé par tools/list, avant préfixe).
 // denylist gagne en cas de conflit ; allowlist vide → tout passe ; denylist retire.

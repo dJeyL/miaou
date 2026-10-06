@@ -16,7 +16,10 @@
 //     l'appli : un script qui pose le sien, ou un reload, n'est pas écrasé) ;
 //   - mcp    : aucun serveur MCP, sentinelle du seed de build posée — sans elle
 //     le serveur de config.json est ajouté au tableau vide au démarrage
-//     (seedBuildMcpServersIfNeeded). Premier chargement seulement ;
+//     (seedBuildMcpServersIfNeeded). Premier chargement seulement. La
+//     sentinelle est la LISTE des serveurs de config déjà traités : `'1'` ne
+//     neutralise plus rien (valeur héritée, lue comme liste vide), d'où
+//     `seededMcpSentinel()`, qui la compose depuis le config.json local ;
 //   - native : la sonde native d'Ollama sur stub.local répond 404 (« pas un
 //     Ollama »), au lieu de partir sur le réseau (ERR_NAME_NOT_RESOLVED) ;
 //   - serve  : liste de modèles et chat servis sur stub.local — le chat en SSE
@@ -46,14 +49,29 @@
 //   const browser = await launchIsolated({ headless }, { serve: false });
 
 import { chromium } from 'playwright';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const STUB_URL = 'http://stub.local/v1';
 export const STUB_MODEL = 'stub-model';
 
 // Hôtes légitimes hors stub : bibliothèques et fontes chargées depuis un CDN.
 const AUDIT_ALLOWED = /^https?:\/\/(stub\.local|cdn\.jsdelivr\.net|cdnjs\.cloudflare\.com|unpkg\.com|fonts\.googleapis\.com|fonts\.gstatic\.com|esm\.sh)(\/|:|$)/;
+
+// Valeur de `miaou-mcp-seeded` qui marque comme déjà traités TOUS les serveurs
+// MCP du config.json local (`mcp_servers` ou `mcp_server`, objet ou tableau) :
+// le seed de build n'ajoute alors rien. Lue sur le config.json du dépôt, donc
+// juste pour le bundle buildé ici ; un `VERIFY_DIST` d'une autre config
+// réclamerait la sienne.
+export function seededMcpSentinel() {
+  const p = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../config.json');
+  let cfg = {};
+  try { if (existsSync(p)) cfg = JSON.parse(readFileSync(p, 'utf-8')); } catch (e) { cfg = {}; }
+  const raw = cfg.mcp_servers || cfg.mcp_server;
+  const list = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+  return JSON.stringify(list.filter(Boolean).map((c) => ({ name: c.name, url: c.url })));
+}
 
 const DEFAULTS = { server: true, mcp: true, native: true, serve: true, models: [STUB_MODEL] };
 
@@ -70,7 +88,7 @@ function installStubBackend(o) {
     }
     if (o.mcp && localStorage.getItem('miaou-mcp-seeded') === null) {
       localStorage.setItem('miaou-mcp-servers', '[]');
-      localStorage.setItem('miaou-mcp-seeded', '1');
+      localStorage.setItem('miaou-mcp-seeded', o.mcpSeeded);
     }
   } catch (e) { /* storage indisponible : rien à isoler */ }
 
@@ -113,7 +131,7 @@ function installStubBackend(o) {
 // avant sa première page : il est donc redirigé vers newContext() + newPage(),
 // et le contexte est fermé avec sa page (même cycle de vie qu'avant).
 export async function launchIsolated(launchOpts, backendOpts) {
-  const o = Object.assign({}, DEFAULTS, { url: STUB_URL }, backendOpts || {});
+  const o = Object.assign({}, DEFAULTS, { url: STUB_URL, mcpSeeded: seededMcpSentinel() }, backendOpts || {});
   const browser = await chromium.launch(launchOpts);
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (ctxOpts) => {

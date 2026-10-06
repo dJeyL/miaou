@@ -435,6 +435,60 @@ describe('mcpSeedCandidates (seed de build)', function() {
   });
 });
 
+describe('parseMcpSeededSentinel (sentinelle du seed de build)', function() {
+  it('absente → liste vide', function() { expect(parseMcpSeededSentinel(null).length).toBe(0); });
+  it('drapeau hérité \'1\' → liste vide (identités inconnues)', function() {
+    expect(parseMcpSeededSentinel('1').length).toBe(0);
+  });
+  it('illisible → liste vide', function() { expect(parseMcpSeededSentinel('{x').length).toBe(0); });
+  it('liste → identités normalisées', function() {
+    var r = parseMcpSeededSentinel(JSON.stringify([{ name: ' a ', url: 'HTTP://H/mcp/' }]));
+    expect(r[0].name).toBe('a');
+    expect(r[0].url).toBe('http://h/mcp');
+  });
+});
+
+describe('mcpSeedPlan (serveurs multiples)', function() {
+  var a = { name: 'miaou-mcp', url: 'http://127.0.0.1:8765/mcp' };
+  var b = { name: 'second', url: 'http://h2/mcp' };
+  function names(list) { return list.map(function (c) { return c.name; }).join(','); }
+  it('install neuve : seede tous les serveurs de config', function() {
+    var p = mcpSeedPlan([a, b], [], []);
+    expect(names(p.insert)).toBe('miaou-mcp,second');
+    expect(names(p.seeded)).toBe('miaou-mcp,second');
+  });
+  it('serveur ajouté dans un build ultérieur : seul le nouveau est inséré', function() {
+    var p = mcpSeedPlan([a, b], [a], parseMcpSeededSentinel(JSON.stringify([a])));
+    expect(names(p.insert)).toBe('second');
+  });
+  it('carte seedée puis supprimée : ne revient pas', function() {
+    var p = mcpSeedPlan([a, b], [], parseMcpSeededSentinel(JSON.stringify([a, b])));
+    expect(p.insert.length).toBe(0);
+  });
+  it('URL changée dans un build ultérieur : le nom suffit, pas de re-seed', function() {
+    var p = mcpSeedPlan([{ name: 'miaou-mcp', url: 'http://neuf/mcp' }], [],
+      parseMcpSeededSentinel(JSON.stringify([a])));
+    expect(p.insert.length).toBe(0);
+  });
+  it('drapeau hérité \'1\' : les serveurs sans carte équivalente sont insérés', function() {
+    var p = mcpSeedPlan([a, b], [a], parseMcpSeededSentinel('1'));
+    expect(names(p.insert)).toBe('second');
+    expect(names(p.seeded)).toBe('miaou-mcp,second');
+  });
+  it('équivalent existant : non inséré mais consigné (une suppression ne le ramène pas)', function() {
+    var p1 = mcpSeedPlan([a], [{ name: 'perso', url: a.url }], []);
+    expect(p1.insert.length).toBe(0);
+    var p2 = mcpSeedPlan([a], [], p1.seeded);
+    expect(p2.insert.length).toBe(0);
+  });
+  it('entrée invalide : ni insérée ni consignée, la version corrigée sera seedée', function() {
+    var p1 = mcpSeedPlan([{ name: 'miaou', url: 'http://h3/mcp' }], [], []);
+    expect(p1.seeded.length).toBe(0);
+    var p2 = mcpSeedPlan([{ name: 'h3', url: 'http://h3/mcp' }], [], p1.seeded);
+    expect(names(p2.insert)).toBe('h3');
+  });
+});
+
 describe('filterMcpTools (D7, denylist gagne)', function() {
   var tools = [{ name: 'a' }, { name: 'b' }, { name: 'c' }];
   it('vide/vide → tout passe', function() { expect(filterMcpTools(tools, [], []).length).toBe(3); });

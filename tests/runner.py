@@ -581,6 +581,28 @@ def run_build_unit_tests() -> tuple[int, int]:
     check('config : la faute de frappe réelle (tiret pour underscore) est signalée',
           build.warn_unknown_config_keys({'prompt-order': 'tools-last'}) == ['prompt-order'])
 
+    # mcp_server / mcp_servers : les deux formes sont connues, leur coexistence
+    # fait ÉCHOUER le build (pas de lecture juste des deux).
+    check('config : mcp_servers est une clef connue',
+          build.warn_unknown_config_keys({'mcp_servers': [{'name': 'a', 'url': 'http://h/mcp'}]}) == [])
+    check('config : clef imbriquée inconnue de mcp_servers signalée sous son préfixe',
+          build.warn_unknown_config_keys({'mcp_servers': [{'name': 'a', 'url': 'u', 'timeout': 3}]})
+          == ['mcp_servers.timeout'])
+
+    def mcp_keys_raise(cfg):
+        try:
+            build.check_mcp_server_keys(cfg)
+            return False
+        except SystemExit:
+            return True
+
+    check('config : mcp_server seul passe', not mcp_keys_raise({'mcp_server': {'name': 'a'}}))
+    check('config : mcp_servers seul passe', not mcp_keys_raise({'mcp_servers': []}))
+    check('config : mcp_server ET mcp_servers font échouer le build',
+          mcp_keys_raise({'mcp_server': {'name': 'a'}, 'mcp_servers': []}))
+    check('config : la présence suffit, valeur nulle comprise',
+          mcp_keys_raise({'mcp_server': None, 'mcp_servers': None}))
+
     # Le sample EST la référence : s'il contenait une clef que le code ne lit
     # pas, la garde validerait une faute de frappe pour toujours. On vérifie
     # donc que chacune de ses clefs est réellement lue quelque part dans src/js

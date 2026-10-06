@@ -527,10 +527,11 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   posture de transparence, aucun toggle de masquage. CRUD
   dans `storage.js` (`loadMcpServers`/`upsertMcpServer`/`deleteMcpServer`/
   `getMcpServer`/`listEnabledMcpServers`). `loadMcpServers` déclenche au passage
-  le seed **one-shot** du serveur pré-configuré au build (`mcp_server` de
+  le seed des serveurs pré-configurés au build (`mcp_servers` ou `mcp_server` de
   `config.json`, cf. `docs/mcp.md` point 11b), gardé par la clef sentinelle
-  `miaou-mcp-seeded` — une string `'1'`, posée seulement si le build porte une
-  config non vide (sinon elle brûlerait le seed d'un build ultérieur), et
+  `miaou-mcp-seeded` — la liste JSON `[{ name, url }]` des serveurs de config
+  déjà traités (l'ancienne valeur `'1'` est lue comme une liste vide), écrite
+  seulement si le build porte une config non vide, et
   **hors `EXPORT_KEYS`** : c'est un marqueur d'installation, pas une donnée
   utilisateur. **Aucun état de session/outils distants
   n'est persisté** ici : le cache (`_remoteTools`/`_remoteStatus`, mcp.js) est en
