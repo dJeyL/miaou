@@ -187,9 +187,15 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
     (`check_mcp_server_keys`, build.py), valeur nulle comprise : ni la fusion
     (un singulier oublié en migrant livrerait un serveur en double) ni la
     préférence (l'autre clef ignorée en silence) n'est une lecture juste. Le
-    délai s'y nomme `timeout_s`, comme le champ de la carte. Aucun
-    `authorization_token` n'est lu depuis la config : elle est sérialisée
-    dans `dist/miaou.html`, donc lisible par qui reçoit le fichier.
+    délai s'y nomme `timeout_s`, comme le champ de la carte. Le jeton n'est
+    **jamais écrit dans `config.json`** : l'entrée nomme une variable
+    d'environnement (`authorization_token_env`), que le build résout en
+    `authorization_token` (`resolve_mcp_token_env`, build.py) et dont
+    l'absence le fait échouer — un `authorization_token` en clair aussi. La
+    config est sérialisée dans `dist/miaou.html`, versionné et publié : le
+    secret n'entre que dans le bundle du build qui définit la variable (le
+    déploiement), et reste lisible par qui reçoit CE fichier. Comme l'URL, un
+    jeton changé dans un build ultérieur n'atteint pas une carte déjà seedée.
 
     Le seed se fait **une fois par serveur de config**, gardé par sa propre clef
     `miaou-mcp-seeded` : `miaou-mcp-servers` existe déjà chez tout utilisateur

@@ -381,8 +381,10 @@ est faite au seul point de lecture.
   ce nom ou cette URL, et une carte supprimée ensuite ne revient pas. Un
   serveur ajouté à la config d'un build ultérieur arrive bien chez les
   installations existantes.
-  Pas de jeton ici — la config part dans le bundle distribué (cf.
-  `docs/mcp.md`).
+  Jamais de jeton en clair ici (le build le refuse) : `authorization_token_env`
+  nomme la variable d'environnement qui le porte au moment du build, et le
+  build échoue si elle est absente ou vide. Le jeton finit quand même dans le
+  bundle produit (cf. `docs/mcp.md`).
 - `attachment_image_max_bytes` / `attachment_max_images` : plafond de taille
   d'une image jointe, appliqué avant redimensionnement (défaut 10 Mo), et
   nombre d'images par message (défaut 4). Les fichiers non-image relèvent d'un

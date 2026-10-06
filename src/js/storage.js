@@ -140,8 +140,11 @@ const API_PROBE_MIN_INTERVAL_MS = 120000;
 // homonyme de la carte : tout le domaine MCP est en secondes, la seule
 // conversion vers les millisecondes vit dans `mcpRpcAttempt`, au contact de
 // `setTimeout`. Absent → le défaut.
-// Pas de `authorization_token` : cette config est versionnée dans le bundle,
-// un jeton y serait lisible par quiconque reçoit le fichier.
+// Jeton : jamais en clair dans `config.json`. L'entrée nomme une variable
+// d'environnement (`authorization_token_env`), que le build résout en
+// `authorization_token` et refuse si elle manque (`resolve_mcp_token_env`) —
+// seul le build qui la définit embarque le secret, lisible par quiconque reçoit
+// CE bundle-là.
 const BUILD_MCP_SERVERS = (function () {
   const raw = BUILD_CONFIG.mcp_servers || BUILD_CONFIG.mcp_server;
   if (!raw) return [];
@@ -986,6 +989,7 @@ function seedBuildMcpServersIfNeeded() {
     name: c.name,
     url: c.url,
     enabled: c.enabled,
+    authorization_token: c.authorization_token,
     timeout_s: c.timeout_s,
     toolAllowlist: c.toolAllowlist,
     toolDenylist: c.toolDenylist,

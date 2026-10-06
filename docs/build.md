@@ -87,6 +87,15 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   défaut `0` côté `storage.js` signifie donc « sources non buildées » (tests
   QuickJS), jamais « config incomplète ». Les autres clefs, elles, viennent
   toutes de `config.json` et sont documentées dans le README.
+- **Le jeton d'un serveur MCP pré-configuré vient de l'ENVIRONNEMENT du
+  build** (`resolve_mcp_token_env`, appelée en fin de `load_config`) : l'entrée
+  pose `authorization_token_env`, nom d'une variable d'environnement, et le
+  build injecte sa valeur sous `authorization_token`, le champ de la carte.
+  Variable absente ou vide, nom vide, ou `authorization_token` en clair dans
+  `config.json` → le build **échoue**. Motif : `dist/miaou.html` est versionné
+  puis publié, et un `config.json` de poste de dev porteur d'un jeton le ferait
+  partir au premier commit du bundle ; seul le build qui définit la variable
+  (celui du déploiement) embarque le secret. Cf. `docs/mcp.md` (point 11b).
 - **Une clef inconnue de `config.json` est signalée en WARN**
   (`warn_unknown_config_keys`), avec suggestion du nom proche quand il y en a un.
   Motif : une clef mal orthographiée est du JSON parfaitement valide — le build

@@ -799,6 +799,15 @@ is lying — the behaviour predates the work in progress. This costs a minute an
 is the only thing that distinguishes "I broke it" from "the rig cannot see it",
 which reading the source cannot do: the code looks correct in both cases.
 
+**"Point the script at that dist" is the step that silently fails.** Only a
+handful of verifies read `VERIFY_DIST`; most hard-code `distPath` to the repo's
+`dist/miaou.html`, so setting the variable changes nothing and the "old" replay
+runs the CURRENT bundle. It then reproduces the current reds — which is exactly
+the outcome that reads as "pre-existing, not my change". Paid on 2026-10-06
+(`verify-boot-worried.mjs`), caught only by re-reading the script. Before
+trusting the replay, grep the script for `VERIFY_DIST`; if absent, patch a
+throwaway `_` copy's `distPath` to the worktree's bundle.
+
 Corollary for the checklist: a red assertion about an **absence** (does not
 title, does not call, does not write) deserves this treatment before any other,
 since a rig that silently disables the trigger produces exactly that shape.

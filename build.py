@@ -7,6 +7,7 @@ import argparse
 import base64
 import difflib
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -597,7 +598,7 @@ def load_config(use_config: bool = True) -> dict:
                  f'guillemets DOUBLES (\"...\"), jamais simples.')
     check_mcp_server_keys(cfg)
     warn_unknown_config_keys(cfg)
-    return cfg
+    return resolve_mcp_token_env(cfg, os.environ)
 
 
 # Les deux formes de la clef des serveurs MCP pré-configurés. Le singulier est
@@ -622,6 +623,62 @@ def check_mcp_server_keys(cfg: dict) -> None:
         sys.exit('[erreur] config.json : « mcp_server » et « mcp_servers » sont '
                  'tous deux présents. Garder une seule clef — « mcp_servers » '
                  '(tableau) pour plusieurs serveurs.')
+
+
+def resolve_mcp_token_env(cfg: dict, environ) -> dict:
+    """Résout `authorization_token_env` des serveurs MCP pré-configurés.
+
+    Le jeton n'est jamais écrit dans `config.json` : l'entrée nomme une
+    variable d'environnement, lue ici, et c'est sa valeur qui part dans le
+    bundle sous `authorization_token` (le champ de la carte). Motif : le
+    `config.json` d'un poste de dev peut être recopié ou commité sans y penser,
+    et le `dist/miaou.html` qu'il produit est versionné puis publié — seul le
+    build qui définit la variable (celui du déploiement) embarque le secret.
+
+    ÉCHOUE plutôt que d'ignorer, dans trois cas :
+    - la variable nommée est absente ou vide : un build sans jeton livrerait une
+      carte qui échoue en 401 chez chaque utilisateur, loin de sa cause ;
+    - le nom n'est pas une chaîne non vide : faute de config, même silence ;
+    - un `authorization_token` littéral est posé : c'est précisément le chemin
+      que cette indirection ferme, il ne doit pas rester ouvert à côté.
+
+    Rend une copie ; `cfg` n'est pas muté. Les clefs `_env` sont retirées de la
+    sortie (le nom de la variable n'a rien à faire au runtime).
+    """
+    out = dict(cfg)
+    for key in MCP_SERVER_KEYS:
+        raw = cfg.get(key)
+        if raw is None:
+            continue
+        is_list = isinstance(raw, list)
+        entries = raw if is_list else [raw]
+        resolved = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                resolved.append(entry)
+                continue
+            label = f'{key}[{entry.get("name", "?")}]'
+            if 'authorization_token' in entry:
+                sys.exit(f'[erreur] config.json : {label} pose un '
+                         f'« authorization_token » en clair. Nommer plutôt une '
+                         f'variable d\'environnement dans « authorization_token_env ».')
+            if 'authorization_token_env' not in entry:
+                resolved.append(entry)
+                continue
+            var = entry['authorization_token_env']
+            if not isinstance(var, str) or not var.strip():
+                sys.exit(f'[erreur] config.json : {label}.authorization_token_env '
+                         f'doit être un nom de variable d\'environnement non vide.')
+            value = environ.get(var.strip(), '')
+            if not value:
+                sys.exit(f'[erreur] {label} : la variable d\'environnement '
+                         f'« {var.strip()} » (authorization_token_env) est absente '
+                         f'ou vide.')
+            e = {k: v for k, v in entry.items() if k != 'authorization_token_env'}
+            e['authorization_token'] = value
+            resolved.append(e)
+        out[key] = resolved if is_list else resolved[0]
+    return out
 
 
 def warn_unknown_config_keys(cfg: dict) -> list:
@@ -683,7 +740,7 @@ def warn_unknown_config_keys(cfg: dict) -> list:
         sample_mcp = None
     if isinstance(sample_mcp, dict):
         sub_known |= set(sample_mcp.keys())
-    sub_known |= {'enabled', 'toolAllowlist', 'toolDenylist'}
+    sub_known |= {'enabled', 'toolAllowlist', 'toolDenylist', 'authorization_token_env'}
     for key in MCP_SERVER_KEYS:
         raw = cfg.get(key)
         entries = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])

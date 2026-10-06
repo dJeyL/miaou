@@ -603,6 +603,44 @@ def run_build_unit_tests() -> tuple[int, int]:
     check('config : la présence suffit, valeur nulle comprise',
           mcp_keys_raise({'mcp_server': None, 'mcp_servers': None}))
 
+    # authorization_token_env : le jeton vient de l'environnement du build,
+    # jamais de config.json ; toute absence fait ÉCHOUER le build.
+    def token_env(cfg, environ):
+        try:
+            return build.resolve_mcp_token_env(cfg, environ)
+        except SystemExit:
+            return 'EXIT'
+
+    check('config : authorization_token_env est une clef connue',
+          build.warn_unknown_config_keys({'mcp_servers': [
+              {'name': 'a', 'url': 'u', 'authorization_token_env': 'T'}]}) == [])
+    resolved = token_env({'mcp_servers': [
+        {'name': 'a', 'url': 'u', 'authorization_token_env': 'MIAOU_T'},
+        {'name': 'b', 'url': 'v'}]}, {'MIAOU_T': 's3cr3t'})
+    check('config : authorization_token_env résolu en authorization_token, nom de variable retiré',
+          resolved != 'EXIT'
+          and resolved['mcp_servers'][0] == {'name': 'a', 'url': 'u', 'authorization_token': 's3cr3t'})
+    check('config : serveur sans authorization_token_env laissé tel quel',
+          resolved != 'EXIT' and resolved['mcp_servers'][1] == {'name': 'b', 'url': 'v'})
+    single = token_env({'mcp_server': {'name': 'a', 'url': 'u', 'authorization_token_env': 'T'}},
+                       {'T': 'x'})
+    check('config : mcp_server objet unique résolu et gardé objet',
+          single != 'EXIT' and single['mcp_server'] == {'name': 'a', 'url': 'u', 'authorization_token': 'x'})
+    src_cfg = {'mcp_server': {'name': 'a', 'url': 'u', 'authorization_token_env': 'T'}}
+    token_env(src_cfg, {'T': 'x'})
+    check('config : la config source n\'est pas mutée',
+          src_cfg['mcp_server'] == {'name': 'a', 'url': 'u', 'authorization_token_env': 'T'})
+    check('config : variable absente fait échouer le build',
+          token_env({'mcp_servers': [{'name': 'a', 'url': 'u', 'authorization_token_env': 'T'}]}, {}) == 'EXIT')
+    check('config : variable vide fait échouer le build',
+          token_env({'mcp_servers': [{'name': 'a', 'url': 'u', 'authorization_token_env': 'T'}]}, {'T': ''}) == 'EXIT')
+    check('config : nom de variable vide fait échouer le build',
+          token_env({'mcp_servers': [{'name': 'a', 'url': 'u', 'authorization_token_env': ' '}]}, {' ': 'x'}) == 'EXIT')
+    check('config : authorization_token en clair fait échouer le build',
+          token_env({'mcp_servers': [{'name': 'a', 'url': 'u', 'authorization_token': 'x'}]}, {}) == 'EXIT')
+    check('config : sans serveur MCP, rien ne change',
+          token_env({'max_turns': 3}, {}) == {'max_turns': 3})
+
     # Le sample EST la référence : s'il contenait une clef que le code ne lit
     # pas, la garde validerait une faute de frappe pour toujours. On vérifie
     # donc que chacune de ses clefs est réellement lue quelque part dans src/js
