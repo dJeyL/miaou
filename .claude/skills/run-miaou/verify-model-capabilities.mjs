@@ -188,7 +188,7 @@ check('7. mN : reasoning_effort absent du corps, malgré le défaut « high » d
 await page.evaluate(() => openContextInspector());
 const caps8 = await safe(() => { const el = $('ctx-caps-hint'); return el ? el.textContent : '(absent)'; }, '(absent)');
 check('8. inspecteur sur mN : « ✗ » partout, outils envoyés quand même',
-  caps8.includes('lecture d\'images ✗, outils ✗, raisonnement ✗') && caps8.includes('envoyés quand même'), caps8);
+  caps8.includes('lecture d\'images\u00a0✗, outils\u00a0✗, raisonnement\u00a0✗') && caps8.includes('envoyés quand même'), caps8);
 
 // ── 9 ────────────────────────────────────────────────────────────────────────
 await page.evaluate(() => pickComposerModel('mU', 'srvA'));

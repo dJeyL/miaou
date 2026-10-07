@@ -7408,8 +7408,9 @@ function formatModelCapsLine(caps, vision, efforts, learned) {
     + manual;
   // Coche / croix pour un déclaré, mot en clair pour l'inconnu : un glyphe
   // de plus (« ? ») se lirait mal à côté des deux autres, et l'inconnu est
-  // justement ce que la ligne doit nommer sans ambiguïté.
-  const v = (x) => x === true ? '✓' : (x === false ? '✗' : 'inconnu');
+  // justement ce que la ligne doit nommer sans ambiguïté. L'espace qui précède
+  // un glyphe est insécable : seul en début de ligne, il perdrait son libellé.
+  const v = (x) => x === true ? '\u00a0✓' : (x === false ? '\u00a0✗' : ' inconnu');
   // Niveaux déclarés à la suite du raisonnement, avec les libellés du menu
   // (« activé » pour un modèle qui ne pense qu'en booléen). Rien si le
   // raisonnement est déclaré absent : les niveaux n'y ont plus de sens.
@@ -7417,8 +7418,8 @@ function formatModelCapsLine(caps, vision, efforts, learned) {
   const choices = c.thinking === false ? null : reasoningEffortChoices(efforts);
   const levels = choices ? ' (niveaux' + (learned ? ' appris d\'un refus' : '') + '\u00a0: '
     + choices.map(x => x.label).join(', ') + ')' : '';
-  return 'Capacités déclarées par le serveur : lecture d\'images ' + v(c.vision) +
-    ', outils ' + v(c.tools) + ', raisonnement ' + v(c.thinking) + levels + '.' +
+  return 'Capacités déclarées par le serveur : lecture d\'images' + v(c.vision) +
+    ', outils' + v(c.tools) + ', raisonnement' + v(c.thinking) + levels + '.' +
     (c.tools === false ? ' Les outils sont envoyés quand même.' : '') + manual;
 }
 

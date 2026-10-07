@@ -944,7 +944,7 @@ describe('libellés de fenêtre (inspecteur, carte serveur)', function() {
 describe('formatModelCapsLine (inspecteur, lot AF)', function() {
   it('capacités déclarées, inconnue nommée comme telle', function() {
     expect(formatModelCapsLine({ vision: true, tools: true, thinking: null }, { enabled: true, source: 'declared' }))
-      .toBe('Capacités déclarées par le serveur\u00a0: lecture d\'images ✓, outils ✓, raisonnement inconnu.');
+      .toBe('Capacités déclarées par le serveur\u00a0: lecture d\'images\u00a0✓, outils\u00a0✓, raisonnement inconnu.');
   });
   it('outils déclarés absents : dit qu\'ils partent quand même', function() {
     expect(formatModelCapsLine({ vision: false, tools: false, thinking: false }, { enabled: false, source: 'declared' }))
@@ -958,19 +958,19 @@ describe('formatModelCapsLine (inspecteur, lot AF)', function() {
   it('niveaux de raisonnement déclarés, avec les libellés du menu', function() {
     expect(formatModelCapsLine({ vision: true, tools: true, thinking: true }, { enabled: true, source: 'declared' },
       { levels: ['none', true], default: null }))
-      .toBe('Capacités déclarées par le serveur\u00a0: lecture d\'images ✓, outils ✓, raisonnement ✓ (niveaux\u00a0: none, activé).');
+      .toBe('Capacités déclarées par le serveur\u00a0: lecture d\'images\u00a0✓, outils\u00a0✓, raisonnement\u00a0✓ (niveaux\u00a0: none, activé).');
   });
   it('niveaux appris d\'un refus : dit comme tels', function() {
     expect(formatModelCapsLine({ vision: true, tools: true, thinking: true }, { enabled: true, source: 'declared' },
       { levels: ['none', 'high'], default: null }, true))
-      .toContain('raisonnement ✓ (niveaux appris d\'un refus\u00a0: none, high).');
+      .toContain('raisonnement\u00a0✓ (niveaux appris d\'un refus\u00a0: none, high).');
     expect(formatModelCapsLine({ vision: null, tools: null, thinking: null }, { enabled: true, source: 'unknown' },
       { levels: ['none', 'high'], default: null }, true))
       .toBe('Capacités du modèle\u00a0: non déclarées par le serveur. Niveaux de raisonnement appris d\'un refus\u00a0: none, high.');
   });
   it('raisonnement déclaré absent : niveaux tus', function() {
     expect(formatModelCapsLine({ vision: true, tools: true, thinking: false }, { enabled: true, source: 'declared' },
-      { levels: ['low'], default: null })).toContain('raisonnement ✗.');
+      { levels: ['low'], default: null })).toContain('raisonnement\u00a0✗.');
   });
 });
 
