@@ -408,6 +408,62 @@ describe('parseSummaryJSON (parsing défensif des résumés)', function() {
   });
 });
 
+// Corps de refus : l'API de Mistral en direct (relevé du 2026-10-07), et la
+// même erreur emballée par une passerelle devant un vLLM (reconstituée d'après
+// sa forme : JSON stringifié dans le message d'un autre JSON).
+var RE_MISTRAL_REFUSAL = JSON.stringify({ object: 'error',
+  message: "reasoning_effort low is not supported for this model, supported values: [<ReasoningEffort.high: 'high'>, <ReasoningEffort.none: 'none'>]",
+  type: 'invalid_request_invalid_args', param: null, code: '3051', raw_status_code: 400 });
+var RE_GATEWAY_REFUSAL = JSON.stringify({ error: { type: 'http_error',
+  message: '400: ' + JSON.stringify({ object: 'Error',
+    message: "reasoning_effort medium is not supported for this model, supported values: [<ReasoningEffort.high: 'high'>, <ReasoningEffort.none: 'none'>]",
+    type: 'BadRequestError', code: 400 }) } });
+
+describe('niveaux appris du corps d\'un refus (reasoningEffortsFromRefusal)', function() {
+  it('API de Mistral : none et high, le niveau envoyé retiré', function() {
+    expect(reasoningEffortsFromRefusal(RE_MISTRAL_REFUSAL, 'low')).toEqual({ levels: ['none', 'high'], default: null });
+  });
+  it('passerelle qui emballe l\'erreur en JSON stringifié : même lecture', function() {
+    expect(reasoningEffortsFromRefusal(RE_GATEWAY_REFUSAL, 'medium')).toEqual({ levels: ['none', 'high'], default: null });
+  });
+  it('400 sans rapport avec le raisonnement → rien appris', function() {
+    expect(reasoningEffortsFromRefusal('{"error":{"message":"max_tokens is too high"}}', 'low')).toBe(null);
+  });
+  it('corps qui parle de raisonnement sans citer le niveau envoyé → rien appris', function() {
+    expect(reasoningEffortsFromRefusal('{"message":"reasoning is not available: high only"}', 'low')).toBe(null);
+  });
+  it('mots entiers : xhigh ne vaut pas high, max_tokens ne vaut pas max, None n\'est pas none', function() {
+    expect(reasoningEffortsFromRefusal("reasoning_effort low refused; accepted: xhigh; max_tokens=None", 'low'))
+      .toEqual({ levels: ['xhigh'], default: null });
+  });
+  it('corps illisible ou vide → rien appris', function() {
+    expect(reasoningEffortsFromRefusal('', 'low')).toBe(null);
+    expect(reasoningEffortsFromRefusal(null, 'low')).toBe(null);
+  });
+  it('un refus appris restreint les niveaux connus, sans serveur actif', function() {
+    noteReasoningEffortRefused('http://r3/v1', 'm', 'low', RE_MISTRAL_REFUSAL);
+    expect(knownReasoningEfforts('http://r3/v1', 'm')).toEqual({ efforts: { levels: ['none', 'high'], default: null }, learned: true });
+    expect(knownReasoningEfforts('http://r3/v1', 'autre')).toBe(null);
+  });
+});
+
+describe('refus de NIVEAU de reasoning_effort (cache session)', function() {
+  it('un niveau refusé est noté sans bloquer le paramètre', function() {
+    noteReasoningEffortRefused('http://r1/v1', 'm', 'low');
+    expect(refusedReasoningEfforts('http://r1/v1', 'm')).toEqual(['low']);
+    expect(isReasoningEffortRejected('http://r1/v1', 'm')).toBeFalsy();
+    expect(refusedReasoningEfforts('http://r1/v1', 'autre')).toEqual([]);
+  });
+  it('tous les niveaux statiques refusés → paramètre bloqué', function() {
+    REASONING_EFFORT_STATIC_LEVELS.forEach(function(l) { noteReasoningEffortRefused('http://r2/v1', 'm', l); });
+    expect(isReasoningEffortRejected('http://r2/v1', 'm')).toBeTruthy();
+  });
+  it('épuisement : un hors-liste refusé ne compte pas', function() {
+    expect(reasoningEffortRefusalsExhaust(['low', 'medium', 'xhigh'])).toBe(false);
+    expect(reasoningEffortRefusalsExhaust(['high', 'medium', 'low', 'none'])).toBe(true);
+  });
+});
+
 describe('rejet de reasoning_effort (cache session par endpoint+modèle)', function() {
   it('non marqué → pas rejeté', function() {
     expect(isReasoningEffortRejected('http://u1/v1', 'm1')).toBeFalsy();
@@ -993,7 +1049,7 @@ describe('modelPropsFromOpenAIModels (schéma OpenRouter réel)', function() {
     var p = modelPropsFromOpenAIModels(AF_OPENROUTER_MODELS);
     expect(p['openai/gpt-6.1-sol-pro']).toEqual({
       contextMax: 1050000, contextSource: 'models:context_length', contextConfigured: null, served: null,
-      caps: { vision: true, tools: true, thinking: true },
+      caps: { vision: true, tools: true, thinking: true }, efforts: null,
     });
     expect(p['qwen/qwen3-max'].caps).toEqual({ vision: false, tools: true, thinking: false });
   });
@@ -1073,7 +1129,7 @@ describe('modelPropsFromOpenAIModels (schéma Mistral réel)', function() {
     expect(Object.keys(p).sort()).toEqual(['mistral-medium-3-5-0', 'mistral-small-2603']);
     expect(p['mistral-medium-3-5-0']).toEqual({
       contextMax: 262144, contextSource: 'models:max_context_length', contextConfigured: null, served: null,
-      caps: { vision: true, tools: true, thinking: true },
+      caps: { vision: true, tools: true, thinking: true }, efforts: null,
     });
   });
   it('vLLM nu : fenêtre connue, capacités inconnues', function() {
@@ -1084,7 +1140,7 @@ describe('modelPropsFromOpenAIModels (schéma Mistral réel)', function() {
   it('/v1/models d\'Ollama (id seul) : tout inconnu', function() {
     var p = modelPropsFromOpenAIModels({ object: 'list', data: [{ id: 'gemma4:26b-nvfp4', object: 'model', owned_by: 'library' }] });
     expect(p['gemma4:26b-nvfp4']).toEqual({ contextMax: null, contextSource: null, contextConfigured: null, served: null,
-      caps: { vision: null, tools: null, thinking: null } });
+      caps: { vision: null, tools: null, thinking: null }, efforts: null });
   });
   it('réponse illisible → objet vide', function() {
     expect(modelPropsFromOpenAIModels(null)).toEqual({});
@@ -1107,7 +1163,7 @@ describe('modelPropsFromOllamaTags / Show (Ollama réel)', function() {
   it('/api/show GGUF : capacités complètes et fenêtre préfixée', function() {
     expect(modelPropsFromOllamaShow(AF_OLLAMA_SHOW_GGUF)).toEqual({
       contextMax: 262144, contextSource: 'show:qwen35.context_length', contextConfigured: null, served: null,
-      caps: { vision: true, tools: true, thinking: true },
+      caps: { vision: true, tools: true, thinking: true }, efforts: null,
     });
   });
   it('/api/show safetensors : parameters sans num_ctx → pas de fenêtre configurée', function() {
@@ -1122,7 +1178,76 @@ describe('modelPropsFromOllamaTags / Show (Ollama réel)', function() {
   });
   it('/api/show illisible → record inconnu, jamais une exception', function() {
     expect(modelPropsFromOllamaShow(null)).toEqual({ contextMax: null, contextSource: null, contextConfigured: null, served: null,
-      caps: { vision: null, tools: null, thinking: null } });
+      caps: { vision: null, tools: null, thinking: null }, efforts: null });
+  });
+});
+
+// Niveaux de raisonnement déclarés, formes relevées le 2026-10-07 : objet
+// `reasoning` de `/models` chez OpenRouter (niveaux rangés par intensité
+// DÉCROISSANTE), `thinking` de `/api/show` chez Ollama (chaînes, booléens, ou
+// les deux mêlés).
+describe('niveaux de raisonnement déclarés', function() {
+  it('OpenRouter : supported_efforts et default_effort', function() {
+    var p = modelPropsFromOpenAIModels({ data: [{ id: 'm', supported_parameters: ['reasoning', 'tools'],
+      reasoning: { mandatory: false, default_enabled: true,
+        supported_efforts: ['max', 'xhigh', 'high', 'medium', 'low', 'none'], default_effort: 'medium' } }] });
+    expect(p.m.efforts).toEqual({ levels: ['max', 'xhigh', 'high', 'medium', 'low', 'none'], default: 'medium' });
+  });
+  it('OpenRouter : objet reasoning sans supported_efforts → inconnu', function() {
+    var p = modelPropsFromOpenAIModels(AF_OPENROUTER_MODELS);
+    expect(p['qwen/qwen3-max'].efforts).toBe(null);
+    expect(p['nvidia/switchyard'].efforts).toBe(null);
+  });
+  it('Ollama : niveaux en chaînes', function() {
+    var p = modelPropsFromOllamaShow({ capabilities: ['completion', 'tools', 'thinking'],
+      thinking: { values: ['low', 'medium', 'high'], default: 'medium' } });
+    expect(p.efforts).toEqual({ levels: ['low', 'medium', 'high'], default: 'medium' });
+  });
+  it('Ollama : booléens — false vaut none, défaut booléen jamais annoncé', function() {
+    var p = modelPropsFromOllamaShow({ capabilities: ['completion', 'thinking'],
+      thinking: { values: [false, true], default: true } });
+    expect(p.efforts).toEqual({ levels: ['none', true], default: null });
+  });
+  it('Ollama : forme mêlée', function() {
+    var p = modelPropsFromOllamaShow({ capabilities: ['thinking'],
+      thinking: { values: [false, 'low', 'medium', 'xhigh'], default: 'medium' } });
+    expect(p.efforts).toEqual({ levels: ['none', 'low', 'medium', 'xhigh'], default: 'medium' });
+  });
+  it('Ollama : thinking null ou illisible → inconnu', function() {
+    expect(modelPropsFromOllamaShow({ capabilities: ['thinking'], thinking: null }).efforts).toBe(null);
+    expect(modelPropsFromOllamaShow({ thinking: { values: [] } }).efforts).toBe(null);
+    expect(modelPropsFromOllamaShow({ thinking: { values: [1, null, ''] } }).efforts).toBe(null);
+  });
+  it('défaut hors des niveaux déclarés → non retenu', function() {
+    expect(normalizeReasoningEfforts(['low', 'high'], 'medium')).toEqual({ levels: ['low', 'high'], default: null });
+  });
+  it('choix rangés par intensité croissante, hors-échelle à la fin', function() {
+    expect(reasoningEffortChoices({ levels: ['max', 'high', 'turbo', 'low', 'none'] }).map(function(c) { return c.value; }))
+      .toEqual(['none', 'low', 'high', 'max', 'turbo']);
+  });
+  it('true d\'un modèle booléen → « activé », qui envoie high', function() {
+    expect(reasoningEffortChoices({ levels: ['none', true] }))
+      .toEqual([{ value: 'none', label: 'none' }, { value: 'high', label: 'activé' }]);
+  });
+  it('true à côté d\'un high déclaré : le niveau nommé gagne', function() {
+    expect(reasoningEffortChoices({ levels: [true, 'high'] })).toEqual([{ value: 'high', label: 'high' }]);
+  });
+  it('rien de déclaré → pas de choix, tout niveau peut partir', function() {
+    expect(reasoningEffortChoices(null)).toBe(null);
+    expect(reasoningEffortDeclaredOk(null, 'low')).toBe(true);
+  });
+  it('déclaré : seul un niveau listé peut partir', function() {
+    var e = { levels: ['low', 'medium', 'high'], default: 'medium' };
+    expect(reasoningEffortDeclaredOk(e, 'high')).toBe(true);
+    expect(reasoningEffortDeclaredOk(e, 'none')).toBe(false);
+    expect(reasoningEffortDeclaredOk({ levels: ['none', true] }, 'high')).toBe(true);
+    expect(reasoningEffortDeclaredOk({ levels: ['none', true] }, 'low')).toBe(false);
+  });
+  it('fusion : une liste connue remplace, un inconnu n\'efface rien', function() {
+    var base = modelPropsRecord(null, null, null, null, null, { levels: ['low'], default: null });
+    expect(mergeModelProps(base, modelPropsRecord()).efforts).toEqual({ levels: ['low'], default: null });
+    var over = modelPropsRecord(null, null, null, null, null, { levels: ['high'], default: 'high' });
+    expect(mergeModelProps(base, over).efforts).toEqual({ levels: ['high'], default: 'high' });
   });
 });
 

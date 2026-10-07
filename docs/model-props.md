@@ -25,10 +25,11 @@ la réponse, comme pour `promptOrder` (`docs/context-inspector.md`).
   `video`) pour la vision, et `supported_parameters`, liste des paramètres
   de requête acceptés, pour les outils (`tools`) et le raisonnement
   (`reasoning` ou `include_reasoning`). L'entrée porte aussi un objet
-  `reasoning` (`mandatory`, `supported_efforts`…) qu'on ne lit pas : il
-  existe sur des modèles dont `supported_parameters` ne liste pas
-  `reasoning` (`qwen/qwen3-max`), et c'est la requête acceptée qui décide de
-  ce que MIAOU peut envoyer. `top_provider.context_length` diffère de
+  `reasoning` (`mandatory`, `supported_efforts`, `default_effort`…) qui ne
+  décide PAS de la capacité : il existe sur des modèles dont
+  `supported_parameters` ne liste pas `reasoning` (`qwen/qwen3-max`), et c'est
+  la requête acceptée qui décide de ce que MIAOU peut envoyer. On n'y lit que
+  les **niveaux** (cf. « Niveaux de raisonnement déclarés »). `top_provider.context_length` diffère de
   `context_length` sur 41 modèles (plus petit, ou `null` sur les routeurs) :
   on garde `context_length`, le maximum du modèle.
 - **`/api/tags` d'Ollama.** `capabilities` y est une **liste de chaînes**,
@@ -46,6 +47,8 @@ la réponse, comme pour `promptOrder` (`docs/context-inspector.md`).
   `parameters` peut porter un `num_ctx` fixé dans le Modelfile. La fenêtre
   qu'il fixe est rendue à part (`contextConfigured`), parce qu'elle n'a pas
   le statut d'un maximum.
+  Son objet `thinking` (`values`, `default`) porte les niveaux de
+  raisonnement acceptés (cf. « Niveaux de raisonnement déclarés »).
 - **`/api/ps` d'Ollama** donne la fenêtre **réellement servie**, pour les
   seuls modèles chargés. Un modèle absent est froid, ce qui ne veut pas dire
   « sans fenêtre ».
@@ -266,7 +269,8 @@ marque n'est donc visible qu'avec lui. Quand elle est affichée, le budget de
 caractères du libellé lui réserve sa place (`COMPOSER_MODEL_VISION_PX`).
 
 **Raisonnement.** `reasoningEffortBlocked(url, model)` (api.js) est vrai si
-l'endpoint a rejeté `reasoning_effort` pendant la session, ou si le serveur
+l'endpoint a refusé TOUS les niveaux statiques pendant la session (cf.
+« Niveaux refusés » plus bas), ou si le serveur
 actif déclare le modèle sans raisonnement. C'est le prédicat unique de
 l'envoi (`streamCompletion`) et du sélecteur (`syncReasoningUI`, désormais
 appelé en fin de `syncModelUI`). Bloqué, le sélecteur se masque **sans
@@ -276,6 +280,89 @@ qui, une fois `syncReasoningUI` appelé depuis `syncModelUI`, effaçait le
 niveau d'une conversation à sa simple ouverture si son modèle était
 bloqué. La capacité déclarée ne pilote jamais
 l'**affichage** du raisonnement, qui se détecte sur le delta (piège 14).
+
+## Niveaux de raisonnement déclarés
+
+Champ `efforts` du record : `{levels, default}`, ou `null` quand rien n'est
+déclaré. Deux formes relevées le 2026-10-07 :
+
+- OpenRouter, sur `/models` : `reasoning.supported_efforts`, 192 modèles sur
+  465, rangés par intensité DÉCROISSANTE ; `default_effort` y figure toujours.
+  Les autres ont `supported_efforts` à `null`, ou pas d'objet `reasoning`.
+- Ollama, sur `/api/show` (donc pour le modèle actif et la ligne relue à la
+  demande seulement, jamais un balayage) : `thinking.values`, en chaînes
+  (`gpt-oss` : low, medium, high), en booléens (`qwen3`, `gemma4` :
+  `[false, true]`), ou mêlé (`[false, "low", "medium", "xhigh"]`). `thinking`
+  peut être `null` sur un modèle qui pense.
+
+`normalizeReasoningEfforts` (api.js, pur) traduit `false` en `none` et garde
+`true` tel quel. Un défaut booléen n'est jamais retenu, parce que `gemma4`
+déclare `default: true` et ne raisonne pas sans paramètre en `/v1` (mesuré).
+`reasoningEffortChoices` rend les choix `{value, label}` par intensité
+croissante (`REASONING_EFFORT_SCALE`, un niveau hors échelle venant après) ;
+le `true` d'un modèle booléen y devient « activé », qui envoie `high`
+(`REASONING_EFFORT_ON_VALUE`). C'est la seule traduction du domaine, et elle
+repose sur une **mesure**, pas sur une doc : sur Ollama 0.35 en `/v1`, `high`
+active la réflexion de `qwen3` et de `gemma4`, alors que `low` et `medium` la
+laissent éteinte chez `gemma4`. À remesurer si Ollama change. `mergeModelProps`
+traite `efforts` comme les capacités : une liste connue remplace, `null`
+n'efface rien.
+
+Ce qu'en font les consommateurs :
+
+- **Composer.** `composerReasoningOptions` remplace la liste statique par
+  « défaut » plus les choix déclarés ; « défaut » nomme le défaut déclaré
+  (« défaut (medium) »). Sans déclaration, la liste statique reste.
+- **Niveau de conversation non déclaré.** `syncReasoningUI` le remet à
+  « défaut », et c'est **persisté** (décision du 2026-10-07 : revenir à un
+  modèle qui l'acceptait ne le rend pas). Ça ne vaut que pour une liste
+  CONNUE et un modèle non bloqué : un modèle bloqué ou une liste inconnue ne
+  touchent jamais au niveau enregistré (cf. le défaut corrigé décrit plus
+  haut). Chez Ollama la liste arrive après l'ouverture (`/api/show`), donc la
+  remise à zéro peut suivre l'ouverture de peu.
+- **Envoi.** `streamCompletion` s'abstient d'un niveau absent des choix
+  connus (`reasoningEffortDeclaredOk` sur `knownReasoningEfforts`). Ça
+  couvre le défaut global des Paramètres, qui n'est jamais remis à zéro, et les
+  agents. Les motifs sont mesurés : OpenRouter accepte en silence un niveau
+  valide mais non déclaré (`minimal` sur un modèle qui ne le liste pas), et
+  `gpt-oss` raisonne malgré un `none` qu'il ne déclare pas.
+- **Inspecteur.** `formatModelCapsLine` ajoute les libellés des choix après
+  « raisonnement ✓ », sauf pour un raisonnement déclaré absent.
+- **Réglages.** Le défaut global garde la liste statique : il ne connaît pas
+  de modèle.
+
+**Niveaux refusés.** Un backend peut ne rien déclarer et refuser un niveau à
+l'envoi. Mesuré sur l'API de Mistral (`mistral-medium-3-5`), et sur un vLLM qui
+sert le même modèle derrière une passerelle : `none` et `high` passent, `low` et
+`medium` reçoivent un 400 dont le message liste les valeurs acceptées en repr
+d'enum Python. Ni `/models` ni `/models/{id}` n'en disent rien. Une 400 (verdict,
+`httpStatusIsVerdict`) sur une requête qui portait `reasoning_effort` note CE
+niveau refusé pour (endpoint, modèle) le reste de la session
+(`noteReasoningEffortRefused`), puis rejoue la requête sans le paramètre. Le
+niveau sort du menu (`composerReasoningOptions`, second argument), la
+conversation repasse à « défaut » comme pour un niveau non déclaré, et l'envoi
+ne le reprend plus. Le paramètre entier n'est bloqué qu'une fois tous les
+niveaux statiques refusés (`reasoningEffortRefusalsExhaust`) : c'est ainsi
+qu'un backend qui refuse `reasoning_effort` en bloc finit par masquer le
+sélecteur, un niveau à la fois. Avant ce changement, le premier refus bloquait
+le paramètre entier : le sélecteur disparaissait, et la conversation restait
+sur le niveau refusé sans moyen d'en sortir.
+
+**Niveaux appris d'un refus.** Le corps de cette 400 est lu
+(`reasoningEffortsFromRefusal`, pur) pour y apprendre les niveaux acceptés,
+mis en cache pour la session (`_reasoningEffortsLearned`). La lecture est
+uniforme, sans parser la forme de chaque pile : le corps BRUT est parcouru à la
+recherche des mots de `REASONING_EFFORT_SCALE`, en mots entiers et en
+minuscules, ce qui traverse une passerelle qui emballe l'erreur en JSON
+stringifié. Deux gardes : le corps doit parler de raisonnement ET citer le
+niveau envoyé (sinon la 400 a peut-être une autre cause, et « max_tokens too
+high » apprendrait `high`), et le niveau envoyé est toujours retiré. Une erreur
+qui énumère tout le vocabulaire (valeur hors échelle chez OpenRouter, Ollama ou
+Mistral) rend un sur-ensemble, aussi permissif que « rien de déclaré ».
+`knownReasoningEfforts` est le point unique de l'envoi, du menu et de
+l'inspecteur : une déclaration du serveur passe avant un apprentissage. Rien
+n'est persisté : aucune relecture de `/models` ne l'effacerait chez un backend
+qui ne déclare rien. L'inspecteur dit « niveaux appris d'un refus ».
 
 **Outils.** `tools: false` n'empêche rien : les outils partent quand même.
 La capacité est seulement affichée dans l'inspecteur (`formatModelCapsLine`).
@@ -434,6 +521,18 @@ passage par un modèle bloqué et à la réouverture après rechargement. Rejeu 
 sur le build d'avant l'étape, les contrôles propres à la déclaration passent
 au rouge. Sur une version qui remettait le niveau à zéro en masquant le
 sélecteur, seul ce dernier contrôle tombe, et c'est lui qui l'a attrapée.
+
+Les niveaux de raisonnement sont vérifiés par `verify-reasoning-levels.mjs`.
+Le stub sert trois modèles : un qui déclare ses niveaux (forme d'OpenRouter),
+un qui ne déclare rien et refuse en 400 avec la liste dans le message (forme
+de la pile Mistral, emballée par une passerelle), et un qui refuse tout niveau
+sans rien lister. Le script couvre le menu et la pilule (« défaut (medium) »),
+l'abstention d'un défaut global non déclaré, le rejeu sans le paramètre, la
+remise à « défaut » persistée en IDB, le menu appris et sa mention dans
+l'inspecteur, puis l'épuisement niveau par niveau qui masque le sélecteur.
+Rejeu sur le build d'avant : les huit contrôles propres au changement passent
+au rouge. Avec la remise à « défaut » neutralisée dans `syncReasoningUI`,
+quatre tombent.
 
 Le catalogue de modèles est vérifié par `verify-model-catalogue.mjs` : trois
 serveurs stubés (un Ollama reconnu, un agrégateur en mode « tout masquer », un

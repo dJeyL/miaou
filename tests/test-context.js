@@ -955,6 +955,45 @@ describe('formatModelCapsLine (inspecteur, lot AF)', function() {
     expect(formatModelCapsLine(unk, { enabled: true, source: 'unknown' })).toBe('Capacités du modèle\u00a0: non déclarées par le serveur.');
     expect(formatModelCapsLine(unk, { enabled: false, source: 'manual' })).toContain('Marqué «\u00a0Sans vision\u00a0»');
   });
+  it('niveaux de raisonnement déclarés, avec les libellés du menu', function() {
+    expect(formatModelCapsLine({ vision: true, tools: true, thinking: true }, { enabled: true, source: 'declared' },
+      { levels: ['none', true], default: null }))
+      .toBe('Capacités déclarées par le serveur\u00a0: lecture d\'images ✓, outils ✓, raisonnement ✓ (niveaux\u00a0: none, activé).');
+  });
+  it('niveaux appris d\'un refus : dit comme tels', function() {
+    expect(formatModelCapsLine({ vision: true, tools: true, thinking: true }, { enabled: true, source: 'declared' },
+      { levels: ['none', 'high'], default: null }, true))
+      .toContain('raisonnement ✓ (niveaux appris d\'un refus\u00a0: none, high).');
+    expect(formatModelCapsLine({ vision: null, tools: null, thinking: null }, { enabled: true, source: 'unknown' },
+      { levels: ['none', 'high'], default: null }, true))
+      .toBe('Capacités du modèle\u00a0: non déclarées par le serveur. Niveaux de raisonnement appris d\'un refus\u00a0: none, high.');
+  });
+  it('raisonnement déclaré absent : niveaux tus', function() {
+    expect(formatModelCapsLine({ vision: true, tools: true, thinking: false }, { enabled: true, source: 'declared' },
+      { levels: ['low'], default: null })).toContain('raisonnement ✗.');
+  });
+});
+
+describe('composerReasoningOptions (menu du composer)', function() {
+  it('rien de déclaré → liste statique', function() {
+    expect(composerReasoningOptions(null)).toBe(REASONING_EFFORT_OPTIONS);
+  });
+  it('déclaré : « défaut » nomme le défaut du modèle, puis les choix', function() {
+    expect(composerReasoningOptions({ levels: ['high', 'medium', 'low'], default: 'medium' }))
+      .toEqual([{ value: '', label: 'défaut (medium)' }, { value: 'low', label: 'low' },
+        { value: 'medium', label: 'medium' }, { value: 'high', label: 'high' }]);
+  });
+  it('niveaux refusés retirés de la liste statique (cas mesuré : none et high seuls acceptés)', function() {
+    expect(composerReasoningOptions(null, ['low', 'medium']).map(function(o) { return o.value; }))
+      .toEqual(['', 'none', 'high']);
+  });
+  it('niveau refusé retiré des déclarés, et ne nomme plus le défaut', function() {
+    expect(composerReasoningOptions({ levels: ['low', 'medium', 'high'], default: 'medium' }, ['medium']))
+      .toEqual([{ value: '', label: 'défaut' }, { value: 'low', label: 'low' }, { value: 'high', label: 'high' }]);
+  });
+  it('sans défaut déclaré : « défaut » nu', function() {
+    expect(composerReasoningOptions({ levels: ['none', true], default: null })[0]).toEqual({ value: '', label: 'défaut' });
+  });
 });
 
 describe('fenêtre de contexte : forme compacte (formatContextWindowCompact)', function() {

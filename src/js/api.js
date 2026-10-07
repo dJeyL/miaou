@@ -197,7 +197,78 @@ function reasoningEffortBlocked(url, model) {
   return !!srv && (srv.url || '').trim() === String(url || '').trim()
     && modelThinkingDeclared(srv, model) === false;
 }
+// Niveaux connus du modèle : ceux que DÉCLARE le serveur ACTIF (même
+// rattachement que `reasoningEffortBlocked` : une autre URL ne lit rien), à
+// défaut ceux appris d'un refus cette session (`reasoningEffortsFromRefusal`).
+// Rend `{efforts, learned}` ou null. Point unique de l'envoi, du menu et de
+// l'inspecteur : une déclaration passe toujours avant un apprentissage.
+function knownReasoningEfforts(url, model) {
+  const srv = typeof activeApiServer === 'function' ? activeApiServer() : null;
+  if (srv && (srv.url || '').trim() === String(url || '').trim()) {
+    const declared = modelPropsFor(srv, String(model || '')).efforts;
+    if (declared) return { efforts: declared, learned: false };
+  }
+  const learned = _reasoningEffortsLearned[reasoningEffortRejectedKey(url, model)];
+  return learned ? { efforts: learned, learned: true } : null;
+}
 function markReasoningEffortRejected(url, model) { _reasoningEffortRejected[reasoningEffortRejectedKey(url, model)] = true; }
+
+// Cache session des NIVEAUX refusés, même clé. Un refus vise le niveau envoyé,
+// pas le paramètre : mesuré le 2026-10-07 sur l'API de Mistral (et sur un vLLM
+// qui sert le même modèle), qui accepte `none` et `high` mais répond 400 à
+// `low` ou `medium` — sans rien déclarer à l'avance, ni sur `/models` ni sur
+// `/models/{id}`. Bloquer le paramètre entier masquait le sélecteur et laissait
+// la conversation sur le niveau refusé, sans retour possible. On ne lit PAS la
+// liste dans le message d'erreur (texte libre, forme propre à chaque pile).
+const _reasoningEffortLevelsRefused = {};
+// Niveaux appris du corps d'un refus, même clé, session seulement : persistés,
+// ils colleraient, aucune relecture de `/models` ne les effaçant chez un
+// backend qui ne déclare rien.
+const _reasoningEffortsLearned = {};
+
+// Pur : niveaux acceptés lus dans le corps BRUT d'un refus du niveau `sent`,
+// ou null. Lecture uniforme, sans parser la forme de chaque pile (une
+// passerelle peut emballer l'erreur en JSON stringifié dans un autre JSON) :
+// les mots de `REASONING_EFFORT_SCALE` en mots entiers et en minuscules (le
+// `None` d'un repr Python n'en est pas un). Deux gardes : le corps doit parler
+// de raisonnement ET citer le niveau envoyé, sinon la 400 a peut-être une
+// autre cause (« max_tokens too high » apprendrait `high`) ; et le niveau
+// envoyé est toujours retiré, le message le citant lui-même. Une erreur qui
+// énumère tout le vocabulaire (valeur hors échelle chez OpenRouter, Ollama ou
+// Mistral) rend un sur-ensemble, aussi permissif que « rien de déclaré ».
+// Forme mesurée le 2026-10-07 (API de Mistral, et vLLM derrière une
+// passerelle) : « reasoning_effort low is not supported for this model,
+// supported values: [<ReasoningEffort.high: 'high'>, <ReasoningEffort.none: 'none'>] ».
+function reasoningEffortsFromRefusal(bodyText, sent) {
+  const t = typeof bodyText === 'string' ? bodyText : '';
+  const word = (w) => new RegExp('(^|[^A-Za-z0-9_])' + w + '(?![A-Za-z0-9_])');
+  if (!/reasoning/i.test(t) || !sent || !word(sent).test(t)) return null;
+  const levels = REASONING_EFFORT_SCALE.filter(l => l !== sent && word(l).test(t));
+  return levels.length ? { levels, default: null } : null;
+}
+function refusedReasoningEfforts(url, model) {
+  return _reasoningEffortLevelsRefused[reasoningEffortRejectedKey(url, model)] || [];
+}
+// Pur : le paramètre entier est-il à tenir pour rejeté, au vu des niveaux
+// refusés ? Oui quand tous ceux que propose la liste statique l'ont été : un
+// backend qui refuse `reasoning_effort` en bloc y arrive niveau par niveau,
+// chaque refus coûtant un rejeu invisible.
+function reasoningEffortRefusalsExhaust(refused) {
+  return REASONING_EFFORT_STATIC_LEVELS.every(l => (refused || []).includes(l));
+}
+// Niveaux de la liste statique du composer et des Paramètres, quand le modèle
+// ne déclare rien. Source unique : le menu en dérive (`REASONING_EFFORT_OPTIONS`).
+const REASONING_EFFORT_STATIC_LEVELS = ['none', 'low', 'medium', 'high'];
+const REASONING_EFFORT_OPTIONS = [{ value: '', label: 'défaut' }]
+  .concat(REASONING_EFFORT_STATIC_LEVELS.map(l => ({ value: l, label: l })));
+function noteReasoningEffortRefused(url, model, value, bodyText) {
+  const k = reasoningEffortRejectedKey(url, model);
+  const learned = reasoningEffortsFromRefusal(bodyText, value);
+  if (learned) _reasoningEffortsLearned[k] = learned;
+  const list = _reasoningEffortLevelsRefused[k] || (_reasoningEffortLevelsRefused[k] = []);
+  if (!list.includes(value)) list.push(value);
+  if (reasoningEffortRefusalsExhaust(list)) markReasoningEffortRejected(url, model);
+}
 
 // Cache session : (endpoint, modèle) ayant rejeté des content parts image_url
 // (brief A lot 2). Même gabarit que _reasoningEffortRejected — clé
@@ -736,8 +807,13 @@ async function streamCompletion(messages, opts) {
   // reasoning_effort : choix explicite de l'utilisateur (composer), '' = défaut =
   // aucun paramètre envoyé. Jamais posé si l'endpoint+modèle l'a déjà rejeté cette
   // session, ou si le serveur le déclare sans raisonnement (reasoningEffortBlocked)
-  // — le sélecteur est alors masqué côté UI.
-  if (o.reasoningEffort && !reasoningEffortBlocked(cfg.url, model)) {
+  // — le sélecteur est alors masqué côté UI. Ni s'il ne figure pas parmi les
+  // niveaux que le modèle déclare (défaut global d'un autre modèle, agent) : le
+  // backend l'accepterait parfois en silence pour en faire autre chose (mesuré).
+  // Ni s'il a déjà été refusé pour ce modèle cette session (rejeu ci-dessous).
+  if (o.reasoningEffort && !reasoningEffortBlocked(cfg.url, model)
+      && reasoningEffortDeclaredOk((knownReasoningEfforts(cfg.url, model) || {}).efforts, o.reasoningEffort)
+      && !refusedReasoningEfforts(cfg.url, model).includes(o.reasoningEffort)) {
     body.reasoning_effort = o.reasoningEffort;
   }
 
@@ -835,13 +911,18 @@ async function streamCompletion(messages, opts) {
     if (!res.ok || !res.body) {
       refused = true;
       // Hypothèse directe (pas de retry de diagnostic) : si reasoning_effort était
-      // posé, on le tient pour responsable de l'échec — marqué pour (endpoint,
-      // modèle), le sélecteur se masque pour la suite de la session, et on rejoue
+      // posé, on tient CE NIVEAU pour responsable de l'échec — refusé pour
+      // (endpoint, modèle) le reste de la session, retiré du menu, et on rejoue
       // LA MÊME requête une fois sans le paramètre (vLLM & co. rejettent en 400
-      // les paramètres inconnus : l'utilisateur ne doit pas voir une erreur pour
-      // ça). Le flag posé garantit que l'appel récursif n'en fait pas un autre.
+      // un niveau ou un paramètre qu'ils ne prennent pas : l'utilisateur ne doit
+      // pas voir une erreur pour ça). Le niveau noté garantit que l'appel
+      // récursif ne le renvoie pas. Le paramètre entier n'est bloqué (sélecteur
+      // masqué) qu'une fois tous les niveaux statiques refusés. Le corps est lu
+      // pour y apprendre les niveaux acceptés (`reasoningEffortsFromRefusal`).
       if (verdict && body.reasoning_effort) {
-        markReasoningEffortRejected(cfg.url, model);
+        let refusalText = '';
+        try { refusalText = await res.text(); } catch (_) { /* corps illisible : refus du seul niveau */ }
+        noteReasoningEffortRefused(cfg.url, model, body.reasoning_effort, refusalText);
         return streamCompletion(messages, opts);
       }
       // Rejet probable des content parts image (400 avec image_url dans
@@ -1590,9 +1671,11 @@ function normalizeModelCaps(raw, positiveOnly) {
 // raisonnement (`reasoning`, `include_reasoning`). Même règle tri-état que
 // `normalizeModelCaps`, appliquée à CHAQUE liste séparément : une liste sans
 // aucun nom connu ne prouve rien, elle rend null pour les capacités qu'elle
-// porte. L'objet `reasoning` de l'entrée n'est pas lu : il existe sur des
-// modèles dont `supported_parameters` ne liste pas `reasoning` (mesuré), et
-// c'est la requête acceptée qui décide de ce que MIAOU peut envoyer.
+// porte. L'objet `reasoning` de l'entrée ne décide PAS de la capacité : il
+// existe sur des modèles dont `supported_parameters` ne liste pas `reasoning`
+// (mesuré), et c'est la requête acceptée qui décide de ce que MIAOU peut
+// envoyer. Il ne sert qu'aux niveaux (`reasoningEffortsFromModelEntry`), qu'un
+// `thinking: false` rend sans objet.
 const MODEL_INPUT_MODALITIES_KNOWN = ['text', 'image', 'file', 'audio', 'video'];
 const MODEL_REQUEST_PARAMS_KNOWN = ['max_tokens', 'temperature', 'top_p', 'stop', 'seed',
   'tools', 'tool_choice', 'reasoning', 'include_reasoning', 'response_format'];
@@ -1616,6 +1699,82 @@ function modelCapsFromAcceptedInputs(entry) {
     out.thinking = params.includes('reasoning') || params.includes('include_reasoning');
   }
   return out;
+}
+
+// ── Niveaux de raisonnement déclarés ────────────────────────────────────────
+// Deux formes mesurées (2026-10-07) :
+//  - OpenRouter, `/models` : `reasoning.supported_efforts` (chaînes, rangées par
+//    intensité DÉCROISSANTE) et `reasoning.default_effort` ;
+//  - Ollama, `/api/show` : `thinking.values` et `thinking.default`, où une
+//    valeur est une chaîne (`gpt-oss` : low, medium, high) ou un booléen
+//    (`qwen3`, `gemma4` : [false, true]), et peut mêler les deux
+//    (`[false, "low", "medium", "xhigh"]`).
+// Rendu normalisé : `{levels, default}`, ou null si rien de lisible n'est
+// déclaré (pas de niveaux connus : la liste statique du composer s'applique).
+// `false` vaut `none`. `true` est gardé tel quel : il dit « réflexion
+// activable » sans niveau, et c'est `reasoningEffortChoices` qui décide de ce
+// qu'on envoie pour lui.
+function normalizeReasoningEfforts(values, def) {
+  if (!Array.isArray(values)) return null;
+  const levels = [];
+  for (const v of values) {
+    const n = v === false ? 'none'
+      : v === true ? true
+      : (typeof v === 'string' && v.trim()) ? v.trim().toLowerCase() : null;
+    if (n !== null && !levels.includes(n)) levels.push(n);
+  }
+  if (!levels.length) return null;
+  // Défaut retenu seulement s'il nomme un niveau déclaré. Un défaut booléen
+  // n'est pas repris : `gemma4` déclare `default: true` et ne raisonne pas
+  // sans paramètre en `/v1` (mesuré), l'annoncer serait faux.
+  const d = typeof def === 'string' ? def.trim().toLowerCase()
+    : def === false ? 'none' : null;
+  return { levels, default: (d && levels.includes(d)) ? d : null };
+}
+
+// Entrée de `/models` (forme d'OpenRouter) : objet `reasoning`.
+function reasoningEffortsFromModelEntry(entry) {
+  const r = entry && typeof entry === 'object' ? entry.reasoning : null;
+  if (!r || typeof r !== 'object') return null;
+  return normalizeReasoningEfforts(r.supported_efforts, r.default_effort);
+}
+
+// Échelle d'affichage, par intensité croissante. Vocabulaire relevé chez
+// OpenRouter (erreur 400 sur valeur inconnue) et Ollama (idem, qui ajoute
+// `ultra`). Un niveau hors échelle se range après, dans l'ordre déclaré.
+const REASONING_EFFORT_SCALE = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'ultra', 'max'];
+// Ce qu'on envoie pour le `true` d'un modèle booléen d'Ollama. Mesuré le
+// 2026-10-07 sur Ollama 0.35 en `/v1` : `high` active la réflexion de `qwen3`
+// et de `gemma4` ; `low` et `medium` la laissent éteinte chez `gemma4`. C'est
+// un comportement observé, pas documenté : à remesurer si Ollama change.
+const REASONING_EFFORT_ON_VALUE = 'high';
+const REASONING_EFFORT_ON_LABEL = 'activé';
+
+// Choix proposés pour des niveaux déclarés : [{value, label}], hors « défaut »,
+// par intensité croissante. null si rien n'est déclaré. `value` est ce que la
+// conversation enregistre ET ce qui part dans `reasoning_effort`.
+function reasoningEffortChoices(efforts) {
+  if (!efforts || !Array.isArray(efforts.levels) || !efforts.levels.length) return null;
+  const strings = efforts.levels.filter(l => typeof l === 'string');
+  const rank = (l) => {
+    const i = REASONING_EFFORT_SCALE.indexOf(l);
+    return i >= 0 ? i : REASONING_EFFORT_SCALE.length + strings.indexOf(l);
+  };
+  const out = strings.slice().sort((a, b) => rank(a) - rank(b)).map(l => ({ value: l, label: l }));
+  // `true` à côté d'un niveau `high` déclaré n'ajoute rien : le niveau nommé gagne.
+  if (efforts.levels.includes(true) && !strings.includes(REASONING_EFFORT_ON_VALUE)) {
+    out.push({ value: REASONING_EFFORT_ON_VALUE, label: REASONING_EFFORT_ON_LABEL });
+  }
+  return out;
+}
+
+// Un niveau peut-il partir pour ces niveaux déclarés ? Oui si rien n'est
+// déclaré (on ne sait pas, on envoie comme avant), sinon seulement s'il figure
+// parmi les choix. Mesuré : OpenRouter accepte en silence un niveau valide mais
+// non déclaré, et `gpt-oss` raisonne malgré un `none` qu'il ne déclare pas.
+function reasoningEffortDeclaredOk(efforts, value) {
+  const choices = reasoningEffortChoices(efforts);
+  return !choices || choices.some(c => c.value === value);
 }
 
 function _positiveInt(v) {
@@ -1652,8 +1811,9 @@ function extractModelContextMax(obj) {
 // que le serveur appliquera au chargement — elle passe avant
 // `OLLAMA_CONTEXT_LENGTH` (mesuré). `served` : `{value, at}`, dernière fenêtre
 // RÉELLEMENT servie lue sur `/api/ps`, datée (ms) pour distinguer une mesure de
-// la session d'une mesure persistée d'une session antérieure.
-function modelPropsRecord(contextMax, contextSource, caps, contextConfigured, served) {
+// la session d'une mesure persistée d'une session antérieure. `efforts` :
+// niveaux de raisonnement déclarés (`normalizeReasoningEfforts`), ou null.
+function modelPropsRecord(contextMax, contextSource, caps, contextConfigured, served, efforts) {
   const sv = served && _positiveInt(served.value) && typeof served.at === 'number'
     ? { value: served.value, at: served.at } : null;
   return {
@@ -1662,6 +1822,8 @@ function modelPropsRecord(contextMax, contextSource, caps, contextConfigured, se
     contextConfigured: contextConfigured || null,
     served: sv,
     caps: caps || unknownModelCaps(),
+    efforts: (efforts && Array.isArray(efforts.levels) && efforts.levels.length)
+      ? { levels: efforts.levels.slice(), default: efforts.default || null } : null,
   };
 }
 
@@ -1678,7 +1840,8 @@ function modelPropsFromOpenAIModels(json) {
     const caps = m.capabilities !== undefined
       ? normalizeModelCaps(m.capabilities, false)
       : modelCapsFromAcceptedInputs(m);
-    out[m.id] = modelPropsRecord(ctx && ctx.value, ctx && ('models:' + ctx.key), caps, null);
+    out[m.id] = modelPropsRecord(ctx && ctx.value, ctx && ('models:' + ctx.key), caps, null, null,
+      reasoningEffortsFromModelEntry(m));
   }
   return out;
 }
@@ -1716,7 +1879,9 @@ function modelPropsFromOllamaShow(json) {
   const j = (json && typeof json === 'object') ? json : {};
   const ctx = extractModelContextMax(j.model_info);
   return modelPropsRecord(ctx && ctx.value, ctx && ('show:' + ctx.key),
-    normalizeModelCaps(j.capabilities, false), _ollamaNumCtx(j.parameters));
+    normalizeModelCaps(j.capabilities, false), _ollamaNumCtx(j.parameters), null,
+    (j.thinking && typeof j.thinking === 'object')
+      ? normalizeReasoningEfforts(j.thinking.values, j.thinking.default) : null);
 }
 
 // `/api/ps` d'Ollama : fenêtre RÉELLEMENT servie, pour les seuls modèles
@@ -1824,7 +1989,8 @@ function mergeModelProps(base, over) {
     useOverCtx ? o.contextSource : b.contextSource,
     caps,
     o.contextConfigured || b.contextConfigured,
-    o.served || b.served);
+    o.served || b.served,
+    o.efforts || b.efforts);
 }
 
 // ── Liste des modèles exposés par l'API ─────────────────────────────────────

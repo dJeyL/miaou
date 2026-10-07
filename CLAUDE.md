@@ -612,7 +612,15 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   enfin la vision déclarée qui prime sur le flag manuel (`resolveModelVision`,
   derrière le prédicat inchangé `serverModelVisionEnabled`), la marque
   appareil photo (l'œil est pris), et `reasoningEffortBlocked`, prédicat
-  unique de l'envoi et du sélecteur de raisonnement ; porte enfin le **chemin
+  unique de l'envoi et du sélecteur de raisonnement ; porte aussi les
+  **niveaux de raisonnement déclarés** (`efforts` : `supported_efforts`
+  d'OpenRouter, `thinking.values` de `/api/show`, `normalizeReasoningEfforts`,
+  `reasoningEffortChoices` et son « activé » mesuré, remise à « défaut »
+  persistée d'un niveau de conversation non déclaré, abstention à l'envoi par
+  `reasoningEffortDeclaredOk`, refus PAR NIVEAU en session
+  (`noteReasoningEffortRefused`), le paramètre entier n'étant bloqué que quand
+  tous les niveaux statiques l'ont été, et niveaux appris du corps du refus
+  (`reasoningEffortsFromRefusal`, lu derrière `knownReasoningEfforts`) ; porte enfin le **chemin
   natif d'Ollama** — racine dérivée en retirant `/v1`, Ollama reconnu à la
   forme de `/api/tags` (état de session `_ollamaNative`), `/api/show` du seul
   modèle actif (`ensureActiveModelShown` en fin de `syncModelUI`), `/api/ps`

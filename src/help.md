@@ -1155,7 +1155,22 @@ Quelques repères pour te déplacer dans MIAOU :
   photo** accompagne le nom d'un modèle, sur le bouton comme dans la liste,
   quand son serveur déclare que ce modèle lit les images. Et le sélecteur de
   niveau de raisonnement s'efface pour un modèle que son serveur déclare sans
-  raisonnement.
+  raisonnement. Quand le serveur déclare les niveaux que le modèle accepte
+  (OpenRouter, Ollama pour le modèle en cours), ce sélecteur ne propose que
+  ceux-là, et « défaut » indique entre parenthèses le niveau que le modèle
+  applique de lui-même s'il est connu ; un modèle qui ne sait que réfléchir ou
+  non propose « none » et « activé ». Si la conversation était réglée sur un
+  niveau que le modèle choisi n'accepte pas, elle repasse à « défaut », et y
+  reste même si tu reviens ensuite à un modèle qui l'accepte. Le niveau par
+  défaut des Paramètres, lui, n'est pas modifié : il n'est simplement pas
+  envoyé à un modèle qui ne l'accepte pas. Quand le serveur ne déclare rien
+  mais refuse un niveau à l'envoi, MIAOU renvoie la demande sans niveau (tu ne
+  vois pas d'erreur), retire ce niveau du sélecteur jusqu'au rechargement de la
+  page et remet la conversation sur « défaut » ; le sélecteur ne disparaît que
+  si tous les niveaux ont été refusés. Si le message de refus énumère les
+  niveaux acceptés, le sélecteur ne propose plus qu'eux, et l'inspecteur les
+  montre comme « appris d'un refus ». Les niveaux déclarés apparaissent
+  aussi dans l'inspecteur de contexte, sur la ligne des capacités.
 - **Modèles d'un serveur** (Paramètres › Connexion › Gérer les serveurs API,
   sur chaque fiche) : un
   tableau repliable « Modèles » liste tous les modèles du serveur, avec ce que

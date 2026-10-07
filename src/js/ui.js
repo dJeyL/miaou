@@ -6166,19 +6166,38 @@ function pickComposerModel(m, serverId) {
 
 // ── Sélecteur de niveau de raisonnement du composer ─────────────────────────
 // Même mécanique que le sélecteur de modèle (bouton pilule + .model-menu
-// générique), mais liste STATIQUE (pas de fetch, pas de cache session) : les 5
-// valeurs possibles sont fixes. Masqué si le réglage est désactivé OU si l'API a
+// générique). Liste statique, sauf si le modèle actif DÉCLARE ses niveaux
+// (`efforts` de ses propriétés, cf. docs/model-props.md) : le menu propose
+// alors ceux-là (`composerReasoningOptions`). Masqué si le réglage est désactivé OU si l'API a
 // déjà rejeté reasoning_effort pour l'endpoint+modèle actifs cette session
 // (isReasoningEffortRejected, api.js), ou si le serveur déclare le modèle sans
 // raisonnement (reasoningEffortBlocked). Le niveau choisi est CONSERVÉ : c'est
 // l'envoi qui s'abstient, pas la conversation qui oublie.
-const REASONING_EFFORT_OPTIONS = [
-  { value: '', label: 'défaut' },
-  { value: 'none', label: 'none' },
-  { value: 'low', label: 'low' },
-  { value: 'medium', label: 'medium' },
-  { value: 'high', label: 'high' },
-];
+// La liste statique (`REASONING_EFFORT_OPTIONS`) vit dans api.js, à côté des
+// niveaux dont elle dérive et que lit le cache des refus.
+
+// Options du menu du composer pour des niveaux déclarés (null = liste
+// statique) et les niveaux refusés cette session, retirés. Pure. La ligne
+// « défaut » nomme le défaut du modèle s'il est déclaré et non refusé. Rend la
+// liste statique ELLE-MÊME quand rien ne la restreint : c'est ce qui dit à
+// `syncReasoningUI` qu'aucun niveau n'est à écarter.
+function composerReasoningOptions(efforts, refused) {
+  const out = (refused || []).length ? (l) => !refused.includes(l) : null;
+  const choices = reasoningEffortChoices(efforts);
+  if (!choices) {
+    return out ? REASONING_EFFORT_OPTIONS.filter(o => !o.value || out(o.value)) : REASONING_EFFORT_OPTIONS;
+  }
+  const kept = out ? choices.filter(c => out(c.value)) : choices;
+  const def = efforts.default;
+  const defChoice = def ? kept.find(c => c.value === def) : null;
+  return [{ value: '', label: defChoice ? 'défaut (' + defChoice.label + ')' : 'défaut' }].concat(kept);
+}
+
+function activeReasoningOptions() {
+  const url = activeApiConfig().url, model = activeModel();
+  return composerReasoningOptions((knownReasoningEfforts(url, model) || {}).efforts,
+    refusedReasoningEfforts(url, model));
+}
 
 function syncReasoningUI() {
   const box = $('composer-reasoning');
@@ -6194,8 +6213,21 @@ function syncReasoningUI() {
   // conversation servie par un modèle bloqué pour écraser son niveau enregistré.
   // Rien ne part pour autant : streamCompletion applique le même prédicat.
   const rejected = reasoningEffortBlocked(activeApiConfig().url, activeModel());
-  const cur = activeReasoningEffort();
-  const opt = REASONING_EFFORT_OPTIONS.find(o => o.value === cur);
+  const options = activeReasoningOptions();
+  // Niveau que le modèle actif ne DÉCLARE pas (liste connue, donc jamais sur
+  // un modèle bloqué ni sur une liste inconnue), ou qu'il a REFUSÉ cette
+  // session (400 sur ce niveau, cf. streamCompletion) : la conversation repasse à
+  // « défaut », persisté — choix assumé, revenir à un modèle qui l'accepte ne
+  // le rend pas. L'appel récursif de setConvReasoningEffort repasse ici avec
+  // '' et s'arrête. Un défaut GLOBAL non déclaré ne se remet pas à zéro (il ne
+  // concerne pas cette conversation) : il s'affiche « défaut », et l'envoi
+  // s'abstient (`reasoningEffortDeclaredOk`, streamCompletion).
+  let cur = activeReasoningEffort();
+  if (!rejected && cur && options !== REASONING_EFFORT_OPTIONS && !options.some(o => o.value === cur)) {
+    if (currentConvReasoningEffort) { setConvReasoningEffort(''); return; }
+    cur = '';
+  }
+  const opt = options.find(o => o.value === cur);
   const label = $('composer-reasoning-label');
   if (label) label.textContent = opt ? opt.label : cur;
   const btn = $('composer-reasoning-btn');
@@ -6214,9 +6246,11 @@ function toggleComposerReasoningMenu() {
 
 function renderComposerReasoningOptions() {
   const menu = $('composer-reasoning-menu');
-  const cur = activeReasoningEffort();
+  const options = activeReasoningOptions();
+  let cur = activeReasoningEffort();
+  if (!options.some(o => o.value === cur)) cur = '';   // défaut global non déclaré (cf. syncReasoningUI)
   menu.innerHTML = '';
-  REASONING_EFFORT_OPTIONS.forEach(o => {
+  options.forEach(o => {
     const el = document.createElement('div');
     el.className = 'model-opt' + (o.value === cur ? ' selected' : '');
     el.innerHTML = `<span>${escHtml(o.label)}</span><span class="check">✓</span>`;
@@ -7362,18 +7396,29 @@ function contextWindowCardHint(model, detected, buildDefault, now) {
 // l'état résolu (resolveModelVision), pour nommer un « Sans vision » manuel.
 // `tools: false` n'empêche rien : les outils partent quand même, et la ligne le
 // dit plutôt que de laisser croire l'inverse.
-function formatModelCapsLine(caps, vision) {
+function formatModelCapsLine(caps, vision, efforts, learned) {
   const c = caps || {};
   const known = ['vision', 'tools', 'thinking'].some(k => c[k] === true || c[k] === false);
   const manual = vision && vision.source === 'manual'
     ? ' Marqué « Sans vision » sur la fiche du serveur : les images partent en descripteur textuel.' : '';
-  if (!known) return 'Capacités du modèle : non déclarées par le serveur.' + manual;
+  // Niveaux appris d'un refus : possibles sans aucune capacité déclarée.
+  const learnedOnly = (!known && learned) ? reasoningEffortChoices(efforts) : null;
+  if (!known) return 'Capacités du modèle : non déclarées par le serveur.'
+    + (learnedOnly ? ' Niveaux de raisonnement appris d\'un refus\u00a0: ' + learnedOnly.map(x => x.label).join(', ') + '.' : '')
+    + manual;
   // Coche / croix pour un déclaré, mot en clair pour l'inconnu : un glyphe
   // de plus (« ? ») se lirait mal à côté des deux autres, et l'inconnu est
   // justement ce que la ligne doit nommer sans ambiguïté.
   const v = (x) => x === true ? '✓' : (x === false ? '✗' : 'inconnu');
+  // Niveaux déclarés à la suite du raisonnement, avec les libellés du menu
+  // (« activé » pour un modèle qui ne pense qu'en booléen). Rien si le
+  // raisonnement est déclaré absent : les niveaux n'y ont plus de sens.
+  // Des niveaux appris d'un refus le disent : ils ne sont pas déclarés.
+  const choices = c.thinking === false ? null : reasoningEffortChoices(efforts);
+  const levels = choices ? ' (niveaux' + (learned ? ' appris d\'un refus' : '') + '\u00a0: '
+    + choices.map(x => x.label).join(', ') + ')' : '';
   return 'Capacités déclarées par le serveur : lecture d\'images ' + v(c.vision) +
-    ', outils ' + v(c.tools) + ', raisonnement ' + v(c.thinking) + '.' +
+    ', outils ' + v(c.tools) + ', raisonnement ' + v(c.thinking) + levels + '.' +
     (c.tools === false ? ' Les outils sont envoyés quand même.' : '') + manual;
 }
 
@@ -7388,7 +7433,9 @@ function renderContextInspector() {
   const capsHint = $('ctx-caps-hint');
   if (capsHint) {
     const srv = activeApiServer(), mdl = activeModel();
-    capsHint.textContent = formatModelCapsLine(modelPropsFor(srv, mdl).caps, modelVisionState(srv, mdl));
+    const known = knownReasoningEfforts(activeApiConfig().url, mdl);
+    capsHint.textContent = formatModelCapsLine(modelPropsFor(srv, mdl).caps, modelVisionState(srv, mdl),
+      known && known.efforts, known && known.learned);
   }
 
   const ud = usageDerived(m.apiUsage);
