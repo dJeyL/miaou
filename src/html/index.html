@@ -206,6 +206,10 @@ if (window.requestAnimationFrame) {
         </div>
       </div>
       <div class="thread" id="thread"></div>
+      <!-- Espace vide sous le fil : garde la bulle envoyée en haut de l'écran
+           (réglage « Garder le message envoyé en haut »). Hauteur posée en JS
+           par syncThreadTailSpace (ui.js), nulle hors de ce réglage. -->
+      <div class="thread-tail-space" id="thread-tail-space" aria-hidden="true"></div>
     </div>
 
     <div class="composer">
@@ -528,6 +532,19 @@ if (window.requestAnimationFrame) {
           </div>
           <label class="toggle">
             <input type="checkbox" id="set-highlight" checked onchange="onToggleHighlight()">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <div class="check-row">
+          <div class="label-col">
+            <label>Garder le message envoyé en haut</label>
+            <span class="hint">À l'envoi, le message se place en haut du fil et la réponse s'écrit dessous sans faire défiler la vue. Le bouton «&nbsp;aller tout en bas&nbsp;» apparaît quand elle dépasse l'écran.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-pin-sent-message" checked onchange="onTogglePinSentMessage()">
             <span class="track"></span>
             <span class="thumb"></span>
           </label>

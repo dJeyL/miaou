@@ -223,6 +223,7 @@ const DEFAULT_SETTINGS = {
   libraryManifestInContext: false,
   exportInteractive: true, // export HTML : inclure le <script> copier/télécharger sur les blocs de code (zéro-JS révisé, brief G)
   motion: 'system', // animations UI : 'normal' | 'reduced' | 'system' (brief N, ticker d'acks)
+  pinSentMessage: true, // à l'envoi, la bulle user se place en haut de l'écran et la réponse s'écrit sans défilement
   wideTables: true, // laisser un grand tableau déborder (centré) de la colonne de lecture ; vaut aussi pour les exports HTML
   earlyTitle: BUILD_EARLY_TITLE, // titrer dès l'envoi, sans attendre la fin de l'échange (lot AA)
   // Retitrer en fin d'échange (niveau 3) même quand le titrage précoce a

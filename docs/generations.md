@@ -507,6 +507,72 @@ Corollaire non évident : une génération détachée ne doit surtout pas appele
 partagé au module**. Le timer repeindrait alors un nœud orphelin — ou pire,
 écraserait le rendu de la génération qui, elle, possède l'écran.
 
+### La bulle envoyée gardée en haut (`pinSentMessage`)
+
+Réglage actif par défaut. Sans lui, l'envoi pose la bulle user en bas de
+l'écran et le suivi monte la vue d'environ un écran jusqu'au plafond
+d'ancrage. Avec lui, la bulle est AU plafond dès l'envoi et la vue ne bouge
+plus jusqu'à ce que la réponse dépasse l'écran.
+
+Le moyen est un espace vide après `#thread` (`#thread-tail-space`) dont la
+hauteur fait **coïncider le fond du défilement avec le plafond**
+(`threadTailSpaceHeight`, pur). Tout le reste en découle sans exception :
+`scrollBottom(true)` et la stabilisation atterrissent sur la bulle,
+`scrollBottomCapped` n'a rien à faire, `isAtBottom()` reste vrai, donc ni
+bouton ni non-vu tant que la réponse tient à l'écran. Un ResizeObserver sur le
+fil et sur `#messages` résorbe l'espace à mesure que la réponse grandit.
+Points à ne pas défaire :
+
+- **Posé dans `runGenerationFromCurrentThread`**, à côté d'`armScrollCap` et
+  pour la même raison : édition et régénération n'appellent pas
+  `appendUserMessage`.
+- **La bulle est menée au plafond par une descente animée**
+  (`scrollToPinnedSentMessage`), la même que celle du bouton
+  (`scrollToBottomAnimated`, qui accepte une cible relue à chaque frame :
+  `pinnedScrollTarget`, plafond borné par le fond). Pendant la descente,
+  `scrollBottomCapped` s'abstient : la naissance de la bulle assistant
+  l'appelle sans condition et coupait la descente d'un saut (mesuré : zéro
+  frame intermédiaire).
+- **Ancre = rang de la bulle user désignée à l'envoi**, pas la dernière : une
+  interjection en ajoute une plus bas, et l'espace recalculé sur elle ferait
+  sauter la vue au `scrollBottom(true)` d'`appendUserMessage`. Le rang, et non
+  le nœud, survit à un re-rendu du fil.
+- **Une bulle user qui arrive pendant le tour ne fait pas sauter la vue** :
+  `appendUserMessage` se contente de resynchroniser l'espace quand il est posé
+  (`threadTailSpacePinned`), au lieu de son `scrollBottom(true)` — qui, dès
+  que l'espace ne suffisait plus à absorber l'interjection, emmenait la vue
+  au-delà du plafond.
+- **L'espace est à jour au moment où le fond se mesure** : `isAtBottom` et
+  `scrollBottom` le resynchronisent avant de lire. Le ResizeObserver ne passe
+  qu'après la mise en page ; entre une écriture du fil et lui, le contenu a
+  grandi sans que l'espace ait fondu, et le bouton « aller tout en bas »
+  clignotait à chaque chunk (observé en usage, puis mesuré).
+- **L'ancre se mesure sans sa translation** (`elementTranslateY`) : une bulle
+  qui naît joue `rise`, que `getBoundingClientRect` compte — l'espace sortait
+  trop haut de 6px.
+- **Le contenu se mesure sur le haut de l'espace, pas sur `scrollHeight`**,
+  qui vaut au moins `clientHeight` et masque le manque d'un fil court (le bas
+  du fil, lui, ignorait 5px de marges). Pour la même
+  raison, `.thread` perd son `flex: 1` pendant que l'espace est posé (classe
+  `tail-space`) : étiré, il ne changerait pas de taille et l'observer ne
+  verrait rien grandir.
+- **Un fond fabriqué ne lève pas l'ancrage doux.** Tant que l'espace a une
+  hauteur, arriver au fond c'est revenir sur la bulle, pas demander à suivre :
+  les deux levées par geste (`onMessagesScroll`,
+  `releaseScrollCapOnPushAtBottom`) s'abstiennent sur `threadTailSpaceShown()`.
+  Sans ça, remonter puis redescendre avant la réponse levait le plafond, et la
+  réponse arrivée en bas d'écran poussait la bulle dehors. Une fois l'espace
+  résorbé, le fond redevient réel et la levée reprend son sens. Le clic du
+  bouton reste une levée explicite (il est d'ailleurs masqué tant que
+  l'espace existe).
+- **L'espace survit à la fin de la génération** (le retirer ferait redescendre
+  la vue d'une réponse courte). Il part au prochain envoi, au changement de
+  conversation (`openConversation`, retour à l'accueil) et quand on décoche le
+  réglage, y compris dans un autre onglet. Un rechargement repart sans lui.
+
+Vérification : section 8 de `.claude/skills/run-miaou/verify-autoscroll.mjs`,
+sur le vrai chemin d'envoi et un flux SSE tenu chunk par chunk.
+
 ### Rebranchement : le même chemin que le reload
 
 `attachGenerationToScreen(gen)` rend l'historique via **`renderThread`** — le

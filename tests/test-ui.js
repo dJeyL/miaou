@@ -669,6 +669,38 @@ describe('brandHtmlFor — lien du dépôt sur le mot MIAOU (footer d\'export)',
   });
 });
 
+describe('threadTailSpaceHeight', function() {
+  // Propriété visée : avec l'espace, le fond du défilement
+  // (contentBottom + h - clientHeight) atteint le plafond (anchorTop - padTop).
+  it('rien sous la bulle envoyée : l\'espace complète un écran depuis son plafond', function() {
+    // ancre 1500, plafond 1472 ; contenu jusqu'à 1600 → fond sans espace 800.
+    var h = threadTailSpaceHeight(1500, 28, 800, 1600);
+    expect(h).toBe(672);
+    expect(1600 + h - 800).toBe(1472);
+  });
+  it('la réponse grandit : l\'espace fond d\'autant, le fond ne bouge pas', function() {
+    expect(threadTailSpaceHeight(1500, 28, 800, 1900)).toBe(372);
+  });
+  it('réponse plus haute que l\'écran : plus d\'espace', function() {
+    expect(threadTailSpaceHeight(1500, 28, 800, 2272)).toBe(0);
+    expect(threadTailSpaceHeight(1500, 28, 800, 5000)).toBe(0);
+  });
+  it('fil plus court que l\'écran : mesuré sur le contenu, pas sur un scrollHeight plancher', function() {
+    // Deuxième message d'une conversation courte : ancre à 300, contenu à 400.
+    // Un calcul sur scrollHeight (= clientHeight ici) aurait rendu 272 et
+    // laissé la bulle à mi-écran.
+    var h = threadTailSpaceHeight(300, 28, 800, 400);
+    expect(h).toBe(672);
+    expect(400 + h - 800).toBe(272);
+  });
+  it('premier message (ancre au-dessus du padding) : plafond borné à 0', function() {
+    expect(threadTailSpaceHeight(10, 28, 800, 100)).toBe(700);
+  });
+  it('position fractionnaire : arrondi AU-DESSUS, jamais un fond trop haut', function() {
+    expect(threadTailSpaceHeight(1500.4, 28, 800, 1600)).toBe(673);
+  });
+});
+
 describe('cappedScrollTop', function() {
   it('ne REMONTE jamais la vue : une position déjà plus basse est conservée', function() {
     // Après une édition/régénération le fil est court et la vue vient d'être

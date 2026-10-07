@@ -13,7 +13,13 @@
 //     streaming éloigne le fond entre l'événement et son traitement, et un
 //     cran vers le bas au fond suffit à lui seul (2026-09-25, cas d'usage réel) ;
 //   - un raisonnement déplié qui grandit fait suivre le fil, pas seulement le
-//     contenu de la réponse (2026-09-25).
+//     contenu de la réponse (2026-09-25) ;
+//   - section 8, réglage « Garder le message envoyé en haut » (2026-10-07) :
+//     bulle menée en haut dès l'envoi par une descente animée, vue immobile
+//     pendant le streaming, bouton au
+//     dépassement, fond fabriqué par l'espace qui ne lève pas le plafond,
+//     espace qui survit à une réponse courte, interjection sans saut,
+//     réglage décoché = comportement d'avant.
 // Ce script assertait avant le plafond « en restant en bas, la vue est au
 // fond » : le plafond l'a rendu faux par construction (la vue s'arrête sur
 // l'énoncé), d'où l'assertion de confinement qui l'a remplacé.
@@ -235,6 +241,254 @@ check('prémisse 7 : le bloc a grandi sans atteindre sa hauteur max (le fil a gr
 check('7 : le raisonnement qui grandit fait suivre le fil', r1.atBottom);
 
 await browser.close();
+
+// ── 8. Bulle envoyée gardée en haut (réglage pinSentMessage, défaut actif) ──
+// Les sections 1-7 appellent appendUserMessage/startAssistantMessage
+// directement : elles ne passent jamais par runGenerationFromCurrentThread,
+// seul point où l'espace de la bulle envoyée est posé, et décrivent donc le
+// comportement réglage DÉCOCHÉ. Celle-ci passe par le VRAI envoi (composer +
+// onSendBtn) sur un flux SSE dont le script tient chaque chunk : le défilement
+// se mesure pendant que la réponse grandit, pas sur une réponse livrée d'un
+// bloc (le flux servi par stub-backend arrive en une fois, d'où `serve: false`).
+// Comme en phase 2, la stabilité de la vue se lit sur la position de la BULLE,
+// jamais sur scrollTop (content-visibility des bulles hors écran).
+const browser2 = await launchIsolated({ headless: !headed }, { serve: false });
+// Plus haut que la page 1 : en 8d, l'espace doit encore absorber l'interjection ET un chunk.
+const page2 = await browser2.newPage({ viewport: { width: 900, height: 800 } });
+page2.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+page2.on('pageerror', (e) => consoleErrors.push(String(e)));
+await page2.addInitScript(() => {
+  const realFetch = window.fetch.bind(window);
+  const enc = new TextEncoder();
+  window.__streamsOpened = 0;
+  window.__streamOpen = false;
+  window.fetch = async function (input, opts) {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (url.indexOf('http://stub.local/') !== 0) return realFetch(input, opts);
+    const json = (b) => new Response(JSON.stringify(b), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (/\/v1\/models$/.test(url)) return json({ object: 'list', data: [{ id: 'stub-model', object: 'model' }] });
+    if (!/\/chat\/completions$/.test(url)) return realFetch(input, opts);
+    let body = {};
+    try { body = JSON.parse((opts && opts.body) || '{}'); } catch (e) { /* illisible */ }
+    // Titrage et résumés : hors flux, réponse immédiate.
+    if (!body.stream) return json({ choices: [{ message: { role: 'assistant', content: 'Titre' }, finish_reason: 'stop' }] });
+    window.__streamsOpened++;
+    const rs = new ReadableStream({ start(ctrl) {
+      const send = (o) => ctrl.enqueue(enc.encode('data: ' + JSON.stringify(o) + '\n\n'));
+      window.__push = (t) => send({ choices: [{ delta: { content: t } }] });
+      window.__end = () => {
+        send({ choices: [{ delta: {}, finish_reason: 'stop' }] });
+        ctrl.enqueue(enc.encode('data: [DONE]\n\n'));
+        ctrl.close();
+        window.__streamOpen = false;
+      };
+      window.__streamOpen = true;
+    } });
+    return new Response(rs, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  };
+});
+await page2.goto('file://' + distPath);
+await page2.waitForSelector('#composer-text', { timeout: 10000 });
+await page2.waitForFunction(() => document.querySelector('.boot-done') !== null, { timeout: 10000 });
+
+// Historique assez long pour que la bulle envoyée naisse loin sous le haut.
+await page2.evaluate(async () => {
+  const messages = [];
+  for (let i = 0; i < 15; i++) {
+    messages.push({ role: 'user', content: 'Question d\'historique ' + i, ts: Date.now() });
+    messages.push({ role: 'assistant', content: 'Réponse d\'historique ' + i + '.\n\nDeuxième paragraphe.', ts: Date.now() });
+  }
+  await saveConversation({ id: 'conv-verify-pin', title: 'Pin', timestamp: Date.now(), messages, spaceId: activeSpaceId });
+  await openConversation('conv-verify-pin', true);
+});
+await page2.waitForFunction(() => document.querySelectorAll('#thread .msg.user').length === 15);
+await page2.waitForTimeout(1000);   // stabilisation du rendu initial (THREAD_SETTLE_MS)
+
+const pin = () => page2.evaluate(() => {
+  const m = document.getElementById('messages');
+  const users = document.querySelectorAll('#thread .msg.user');
+  const sent = users[window.__sentOrdinal != null ? window.__sentOrdinal : users.length - 1];
+  const btn = document.getElementById('scroll-bottom-btn');
+  return {
+    bubbleTop: sent.getBoundingClientRect().top - m.getBoundingClientRect().top,
+    padTop: parseFloat(getComputedStyle(m).paddingTop) || 0,
+    clientHeight: m.clientHeight,
+    spacer: parseFloat(document.getElementById('thread-tail-space').style.height) || 0,
+    atBottom: isAtBottom(),
+    btnShown: !btn.hidden && btn.getClientRects().length > 0,
+    released: scrollCapReleased(currentConvId),
+  };
+});
+const send2 = async (text) => {
+  const opened = await page2.evaluate(() => window.__streamsOpened);
+  await page2.fill('#composer-text', text);
+  await page2.evaluate(() => onSendBtn());
+  await page2.waitForFunction((n) => window.__streamsOpened > n && window.__streamOpen, opened);
+  await page2.evaluate(() => { window.__sentOrdinal = document.querySelectorAll('#thread .msg.user').length - 1; });
+  await page2.waitForTimeout(350);   // animation d'entrée des bulles (rise, translateY 6px, 260ms)
+};
+const push2 = async (t) => {
+  await page2.evaluate((x) => window.__push(x), t);
+  await page2.waitForTimeout(120);   // throttle de rendu du streaming (90ms)
+};
+const end2 = async () => {
+  await page2.evaluate(() => window.__end());
+  await page2.waitForFunction(() => !window.__streamOpen && !isGenerating(currentConvId));
+  await page2.waitForTimeout(200);
+};
+const wheel2 = async (dy, times) => {
+  const b = await page2.evaluate(() => {
+    const r = document.getElementById('messages').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page2.mouse.move(b.x, b.y);
+  for (let k = 0; k < times; k++) await page2.mouse.wheel(0, dy);
+  await page2.waitForTimeout(200);   // rAF de onMessagesScroll
+};
+const atTop = (p) => Math.abs(p.bubbleTop - p.padTop) <= 24;
+// Fait grandir la réponse jusqu'à ce qu'elle dépasse l'écran, en relevant à
+// chaque chunk l'écart MAX de la bulle à sa position initiale et si le bouton
+// s'est montré tant que l'espace n'était pas résorbé.
+const growPastScreen = async (label) => {
+  const p0 = await pin();
+  let maxDrift = 0, btnWhileSpacer = false, i = 0, p = p0;
+  for (; i < 60 && !(p.spacer === 0 && !p.atBottom); i++) {
+    await push2(label + ' ' + i + ', une ligne de réponse qui s\'allonge.\n\n');
+    p = await pin();
+    maxDrift = Math.max(maxDrift, Math.abs(p.bubbleTop - p0.bubbleTop));
+    if (p.spacer > 0 && p.btnShown) btnWhileSpacer = true;
+  }
+  for (let k = 0; k < 4; k++) await push2(label + ' suite ' + k + '.\n\n');   // nettement au-delà
+  p = await pin();
+  maxDrift = Math.max(maxDrift, Math.abs(p.bubbleTop - p0.bubbleTop));
+  console.log('    ' + label + ' : ' + i + ' chunks, bulle ' + Math.round(p0.bubbleTop) + 'px → '
+    + Math.round(p.bubbleTop) + 'px (écart max ' + Math.round(maxDrift) + 'px), espace ' + p0.spacer + 'px → ' + p.spacer + 'px');
+  return { p0, p, maxDrift, btnWhileSpacer };
+};
+
+check('8 prémisse : réglage actif par défaut', await page2.evaluate(() =>
+  loadSettings().pinSentMessage !== false && document.getElementById('set-pin-sent-message').checked));
+
+// 8a. Envoi nominal : bulle menée en haut par une descente animée, vue
+// immobile ensuite, bouton au dépassement. La descente se lit sur un
+// échantillonnage par frame de la bulle envoyée (dernière .msg.user une fois
+// le compte augmenté) : un saut sec ne laisse aucune position intermédiaire.
+await page2.evaluate(() => {
+  const m = document.getElementById('messages');
+  const n0 = document.querySelectorAll('#thread .msg.user').length;
+  window.__frames = [];
+  const t0 = performance.now();
+  const tick = () => {
+    const users = document.querySelectorAll('#thread .msg.user');
+    if (users.length > n0) window.__frames.push(users[users.length - 1].getBoundingClientRect().top - m.getBoundingClientRect().top);
+    if (performance.now() - t0 < 2000) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+});
+await send2('Question épinglée');
+let p8 = await pin();
+const frames = await page2.evaluate(() => window.__frames);
+const between = frames.filter(y => y < frames[0] - 10 && y > p8.bubbleTop + 10).length;
+console.log('    8a descente : ' + Math.round(frames[0]) + 'px → ' + Math.round(p8.bubbleTop) + 'px, ' + between + ' frame(s) intermédiaire(s)');
+check('8a prémisse : la bulle est née loin sous le plafond', frames[0] > p8.padTop + 100);
+check('8a : la bulle est menée en haut par une descente animée (positions intermédiaires)', between >= 3);
+console.log('    8a à l\'envoi : bulle à ' + Math.round(p8.bubbleTop) + 'px (plafond ' + p8.padTop + 'px), espace ' + p8.spacer + 'px');
+check('8a : la bulle envoyée est en haut de l\'écran dès l\'envoi', atTop(p8));
+check('8a : un espace vide la porte (sans lui le navigateur bornerait le défilement)', p8.spacer > 0);
+check('8a : pas de bouton « aller tout en bas » tant que la réponse tient', !p8.btnShown);
+let g = await growPastScreen('8a');
+check('8a prémisse : la réponse a dépassé l\'écran (espace résorbé, vue plus au fond)', g.p.spacer === 0 && !g.p.atBottom);
+check('8a : la vue n\'a pas bougé pendant le streaming (bulle immobile à 4px près)', g.maxDrift <= 4);
+check('8a : la bulle est toujours en haut, dans [0, clientHeight)', atTop(g.p) && g.p.bubbleTop >= 0 && g.p.bubbleTop < g.p.clientHeight);
+check('8a : le bouton n\'est jamais apparu tant que l\'espace restait', !g.btnWhileSpacer);
+check('8a : le bouton apparaît quand la réponse dépasse l\'écran', g.p.btnShown);
+await end2();
+
+// 8b. Le cas signalé : remonter puis redescendre au fond AVANT la réponse.
+// Le fond étant fabriqué par l'espace, y revenir ne doit pas lever le plafond,
+// sans quoi la réponse arrivée en bas d'écran pousse la bulle dehors.
+await send2('Question où je remonte puis redescends');
+await wheel2(-300, 6);
+check('8b prémisse : la vue a bien été remontée', !atTop(await pin()));
+for (let k = 0; k < 5 && !(await pin()).atBottom; k++) await wheel2(600, 6);
+p8 = await pin();
+check('8b prémisse : redescendue au fond, la vue est revenue sur la bulle, espace présent', p8.atBottom && atTop(p8) && p8.spacer > 0);
+check('8b : redescendre sur un fond fabriqué ne lève pas le plafond', !p8.released);
+await wheel2(300, 2);   // insister au fond : aucun scroll émis, levée par geste
+check('8b : insister à la molette sur ce fond ne le lève pas non plus', !(await pin()).released);
+g = await growPastScreen('8b');
+check('8b prémisse : la réponse a dépassé l\'écran', g.p.spacer === 0 && !g.p.atBottom);
+check('8b : la bulle reste en haut quand la réponse dépasse l\'écran', atTop(g.p));
+// Une fois l'espace résorbé, le fond redevient réel : y descendre lève à
+// nouveau le plafond (ancrage doux inchangé).
+for (let k = 0; k < 5 && !(await pin()).atBottom; k++) await wheel2(600, 6);
+check('8b : espace résorbé, redescendre au fond lève le plafond comme avant', (await pin()).released);
+await end2();
+
+// 8c. Réponse courte : l'espace SURVIT à la fin de la génération (le retirer
+// ferait redescendre la vue d'un coup).
+await send2('Question à réponse courte');
+await push2('Réponse brève.');
+await end2();
+p8 = await pin();
+console.log('    8c : après la fin, bulle à ' + Math.round(p8.bubbleTop) + 'px, espace ' + p8.spacer + 'px');
+check('8c : après une réponse courte, l\'espace reste et la bulle avec lui en haut', p8.spacer > 0 && atTop(p8));
+
+// 8d. Une interjection pendant la génération ne fait pas sauter la vue : l'ancre
+// de l'espace est la bulle désignée à l'envoi, pas la dernière bulle user.
+await send2('Question avant interjection');
+await push2('Début de réponse.');
+const before8d = await pin();
+await page2.evaluate(() => appendUserMessage('Interjection', Date.now()));
+await page2.waitForTimeout(200);
+p8 = await pin();
+console.log('    8d : bulle envoyée ' + Math.round(before8d.bubbleTop) + 'px → ' + Math.round(p8.bubbleTop) + 'px après interjection');
+check('8d : une interjection ne déplace pas la bulle envoyée', Math.abs(p8.bubbleTop - before8d.bubbleTop) <= 4);
+// L'ancre reste la bulle ENVOYÉE : recalculé sur l'interjection, l'espace
+// s'agrandirait pour la mener en haut, la vue ne serait plus « au fond » et le
+// bouton s'allumerait sur une réponse qui tient à l'écran.
+await push2(' Suite après interjection.');
+p8 = await pin();
+check('8d prémisse : l\'espace n\'est pas résorbé', p8.spacer > 0);
+check('8d : après l\'interjection, la vue reste au fond et le bouton éteint', p8.atBottom && !p8.btnShown);
+// Interjection plus haute que l'espace RESTANT : c'est là qu'un aller au fond
+// forcé emmènerait la vue au-delà du plafond, l'espace ne l'absorbant plus.
+// Le reste est ramené à ~10px par un bloc de contenu de hauteur connue, plutôt
+// que par une interjection très longue : la hauteur d'une bulle user se fixe
+// après coup (repli des longs messages), APRÈS l'aller au fond — mesuré, elle
+// était alors absorbée et la régression passait au vert.
+await page2.evaluate(() => {
+  const sp = parseFloat(document.getElementById('thread-tail-space').style.height) || 0;
+  const pad = document.createElement('div');
+  pad.style.height = Math.max(0, sp - 10) + 'px';
+  document.getElementById('thread').appendChild(pad);
+  isAtBottom();   // resynchronise l'espace
+});
+p8 = await pin();
+check('8d prémisse : il reste un espace de quelques pixels', p8.spacer > 0 && p8.spacer <= 20 && atTop(p8));
+await page2.evaluate(() => appendUserMessage('Interjection plus haute que le reste', Date.now()));
+await page2.waitForTimeout(350);
+p8 = await pin();
+console.log('    8d : bulle envoyée à ' + Math.round(p8.bubbleTop) + 'px après une interjection qui dépasse l\'espace');
+check('8d : une interjection plus haute que l\'espace restant ne déplace pas la bulle envoyée', Math.abs(p8.bubbleTop - before8d.bubbleTop) <= 4);
+await end2();
+
+// 8e. Changer de conversation retire l'espace.
+await page2.evaluate(async () => { await openConversation('conv-verify-pin', true); });
+await page2.waitForTimeout(300);
+check('8e : rouvrir la conversation repart sans espace', (await pin()).spacer === 0);
+
+// 8f. Réglage décoché : comportement d'avant, la bulle naît en bas de l'écran.
+await page2.evaluate(() => { const cb = document.getElementById('set-pin-sent-message'); cb.checked = false; onTogglePinSentMessage(); });
+check('8f prémisse : réglage décoché et persisté', await page2.evaluate(() => loadSettings().pinSentMessage === false));
+await send2('Question sans épinglage');
+p8 = await pin();
+console.log('    8f : bulle à ' + Math.round(p8.bubbleTop) + 'px sur ' + p8.clientHeight + 'px');
+// La bulle assistant (patienteur) naît sous elle : « en bas » se lit comme
+// « nettement sous le plafond », pas comme une moitié d'écran.
+check('8f : réglage décoché, pas d\'espace et la bulle naît loin sous le plafond', p8.spacer === 0 && p8.bubbleTop > p8.padTop + 60);
+await end2();
+await browser2.close();
 
 console.log('');
 if (consoleErrors.length) {

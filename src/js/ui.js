@@ -1538,6 +1538,13 @@ const AUTOSCROLL_TOLERANCE_PX = 24;
 function isAtBottom() {
   const m = $('messages');
   if (!m) return true;
+  // L'espace de la bulle envoyée fait partie de ce que « le fond » veut dire :
+  // il doit être à jour AU MOMENT où on le mesure. Son ResizeObserver ne passe
+  // qu'après la mise en page ; entre une écriture du fil et lui, le contenu a
+  // grandi sans que l'espace ait fondu, et le fond paraissait s'éloigner — le
+  // bouton « aller tout en bas » clignotait à chaque chunk, et le non-vu se
+  // marquait sur une réponse pourtant entièrement à l'écran.
+  if (_tailSpace.convId != null) syncThreadTailSpace();
   return m.scrollHeight - m.scrollTop - m.clientHeight <= AUTOSCROLL_TOLERANCE_PX;
 }
 
@@ -1548,6 +1555,10 @@ function scrollBottom(force) {
   const m = $('messages');
   if (!m) return;
   if (!force && !isAtBottom()) return;
+  // Même raison que dans isAtBottom : en `force`, celui-ci n'est pas appelé,
+  // et le fond visé doit compter l'espace à jour (une interjection vient
+  // d'allonger le fil — sans ça la vue descendait de sa hauteur).
+  if (_tailSpace.convId != null) syncThreadTailSpace();
   m.scrollTop = m.scrollHeight;
   syncScrollBottomBtn();
 }
@@ -1825,6 +1836,10 @@ function viewAtOrBelowScrollCap(anchorTop, padTop, scrollTop) {
 function scrollBottomCapped(convId) {
   const m = $('messages');
   if (!m) return;
+  // Une descente animée est en cours (bouton, ou bulle envoyée menée en haut) :
+  // elle relit sa cible à chaque frame et y arrivera d'elle-même ; écrire
+  // scrollTop ici la couperait d'un saut.
+  if (_scrollBottomAnimating) return;
   // Une génération écrit : c'est elle qui gouverne le défilement à partir
   // d'ici, plus la phase de stabilisation du rendu initial.
   stopStickToBottom();
@@ -1836,6 +1851,181 @@ function scrollBottomCapped(convId) {
     m.scrollTop = cappedScrollTop(anchorTopInScroll(m, anchor), m.scrollHeight, m.clientHeight, padTop, m.scrollTop);
   }
   syncScrollBottomBtn();
+}
+
+// ── Message envoyé gardé en haut de l'écran ────────────────────────────────
+// Réglage `pinSentMessage` (actif par défaut). Sans lui, l'envoi pose la bulle
+// user EN BAS de l'écran, et le suivi du streaming fait monter la vue d'environ
+// un écran jusqu'au plafond d'ancrage — c'est ce défilement qu'on supprime en
+// plaçant la bulle au plafond DÈS l'envoi.
+//
+// L'obstacle est géométrique : amener la bulle en haut exige un scrollTop de
+// `anchorTop - padTop`, que le navigateur refuse tant que le contenu sous elle
+// ne fait pas un écran — et à l'envoi il n'y a encore rien dessous. D'où un
+// espace vide après le fil (`#thread-tail-space`), juste assez haut pour que
+// le FOND du défilement coïncide avec le plafond. Il fond à mesure que la
+// réponse grandit et tombe à zéro quand elle dépasse l'écran : la vue n'a
+// jamais bougé, et le bouton « aller tout en bas » apparaît de lui-même
+// (isAtBottom devient faux), sans rien changer à son prédicat.
+//
+// Comme le fond coïncide avec le plafond, tout le reste tient sans exception :
+// `scrollBottom(true)` et la stabilisation du rendu atterrissent au plafond,
+// `scrollBottomCapped` n'a rien à faire, le non-vu ne se marque pas tant que
+// la réponse tient à l'écran.
+//
+// L'ancre est la bulle user DÉSIGNÉE à l'envoi, par son rang parmi les
+// `.msg.user` (survit à un re-rendu du fil, qui reconstruit les nœuds), et non
+// la dernière : une interjection insère une bulle plus bas, et l'espace se
+// recalculerait sur elle — le scrollBottom(true) d'appendUserMessage ferait
+// alors sauter la vue pour la coller en haut, pendant qu'on lit la réponse.
+//
+// L'espace RESTE après la génération : le retirer ferait redescendre d'un coup
+// la vue d'une réponse courte, le saut même qu'on évite. Il part au prochain
+// envoi (remplacé), au changement de conversation, ou quand on décoche le
+// réglage. Un rechargement repart sans lui, donc au fond.
+//
+// Pendant qu'il est posé, `.thread` perd son `flex: 1` (classe `tail-space`
+// sur `#messages`) : étiré, il garderait la hauteur du viewport tant que le
+// contenu est plus court, et le ResizeObserver ne verrait jamais la réponse
+// grandir. Rien n'a besoin de l'étirement ici, il sert l'écran d'accueil.
+const _tailSpace = { convId: null, userOrdinal: -1, ro: null };
+
+// Pure : hauteur de l'espace vide pour que le fond du défilement atteigne le
+// plafond de l'ancre. `contentBottom` est le bas du contenu dans le
+// référentiel de défilement (cf. anchorTopInScroll), padding bas compris —
+// mesuré sur la mise en page et non sur `scrollHeight`, qui vaut au moins
+// `clientHeight` et masquerait le manque quand le contenu est plus court.
+// Arrondi au-dessus : un fond un pixel trop bas est absorbé par le plafond de
+// cappedScrollTop, un fond un pixel trop haut laisserait la bulle déborder.
+function threadTailSpaceHeight(anchorTop, padTop, clientHeight, contentBottom) {
+  const h = Math.max(0, anchorTop - (padTop || 0)) + clientHeight - contentBottom;
+  return h > 0 ? Math.ceil(h) : 0;
+}
+
+// Translation verticale courante d'un élément (transform calculé, animation
+// en cours comprise), 0 sans transform.
+function elementTranslateY(el) {
+  const t = getComputedStyle(el).transform;
+  if (!t || t === 'none') return 0;
+  const v = t.match(/^matrix(3d)?\((.+)\)$/);
+  if (!v) return 0;
+  const n = v[2].split(',').map(parseFloat);
+  return (v[1] ? n[13] : n[5]) || 0;
+}
+
+// L'espace est-il posé pour la conversation affichée ?
+function threadTailSpacePinned() {
+  return _tailSpace.convId != null && _tailSpace.convId === currentConvId;
+}
+
+function syncThreadTailSpace() {
+  const m = $('messages');
+  const thread = $('thread');
+  const spacer = $('thread-tail-space');
+  if (!m || !thread || !spacer) return;
+  if (_tailSpace.convId == null || _tailSpace.convId !== currentConvId) { clearThreadTailSpace(); return; }
+  const anchor = thread.querySelectorAll('.msg.user')[_tailSpace.userOrdinal];
+  let h = 0;
+  if (anchor) {
+    const cs = getComputedStyle(m);
+    const padTop = parseFloat(cs.paddingTop) || 0;
+    const padBottom = parseFloat(cs.paddingBottom) || 0;
+    // Le haut de l'espace, et non le bas du fil : c'est la mise en page réelle
+    // de ce qui le précède, marges et débordements compris (mesuré sur le bas
+    // du fil, l'espace sortait trop haut de 5px et la vue bougeait d'autant
+    // quand il se résorbait).
+    const contentBottom = spacer.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop + padBottom;
+    // Position de MISE EN PAGE de l'ancre : sans sa translation. Une bulle qui
+    // vient de naître joue son animation d'entrée (`rise`, translateY), que
+    // getBoundingClientRect compte ; mesurée à ce moment-là, elle laissait un
+    // espace trop haut d'autant, et la bulle finissait 6px au-dessus du
+    // plafond une fois l'animation terminée.
+    const anchorTop = anchorTopInScroll(m, anchor) - elementTranslateY(anchor);
+    h = threadTailSpaceHeight(anchorTop, padTop, m.clientHeight, contentBottom);
+  }
+  spacer.style.height = h + 'px';
+}
+
+// Pose l'espace pour la dernière bulle user du fil affiché. Synchrone : le
+// `scrollBottom(true)` qui suit chez l'appelant doit déjà voir le bon fond.
+function pinSentMessageToTop(convId) {
+  const m = $('messages');
+  const thread = $('thread');
+  if (!m || !thread || convId == null) return;
+  const users = thread.querySelectorAll('.msg.user');
+  if (!users.length) { clearThreadTailSpace(); return; }
+  _tailSpace.convId = convId;
+  _tailSpace.userOrdinal = users.length - 1;
+  m.classList.add('tail-space');
+  if (!_tailSpace.ro && typeof ResizeObserver !== 'undefined') {
+    // Fil (la réponse grandit, une bulle se replie) ET viewport (fenêtre
+    // redimensionnée, composer qui grandit). L'espace lui-même n'est observé
+    // par personne : le modifier ne relance pas la boucle.
+    _tailSpace.ro = new ResizeObserver(syncThreadTailSpace);
+    _tailSpace.ro.observe(thread);
+    _tailSpace.ro.observe(m);
+  }
+  syncThreadTailSpace();
+}
+
+// « Le bas du défilement est-il FABRIQUÉ ? » Tant que l'espace a une hauteur,
+// le fond coïncide avec le plafond : y arriver, c'est revenir sur la bulle
+// envoyée, pas redescendre suivre la réponse. Les deux levées d'ancrage doux
+// par geste (onMessagesScroll, releaseScrollCapOnPushAtBottom) la lisent pour
+// s'abstenir — sans quoi remonter puis redescendre avant la réponse levait le
+// plafond, et la réponse arrivée en bas d'écran poussait la bulle dehors.
+// PAS dans releaseScrollCap : le clic du bouton et openConversation restent
+// des levées explicites. Lu sur le style posé par syncThreadTailSpace, seul
+// écrivain de la hauteur.
+function threadTailSpaceShown() {
+  const spacer = $('thread-tail-space');
+  return !!spacer && (parseFloat(spacer.style.height) || 0) > 0;
+}
+
+// Cible de la descente vers la bulle envoyée : son plafond, borné par le
+// fond. Avec l'espace posé le fond EST le plafond ; la borne explicite sert le
+// cas où la réponse aurait déjà dépassé l'écran pendant la descente — viser le
+// fond emmènerait alors la bulle au-delà du haut.
+function pinnedScrollTarget(m) {
+  if (_tailSpace.convId != null) syncThreadTailSpace();
+  const bottom = Math.max(0, m.scrollHeight - m.clientHeight);
+  const anchor = $('thread').querySelectorAll('.msg.user')[_tailSpace.userOrdinal];
+  if (!anchor) return bottom;
+  const padTop = parseFloat(getComputedStyle(m).paddingTop) || 0;
+  const cap = Math.max(0, anchorTopInScroll(m, anchor) - elementTranslateY(anchor) - padTop);
+  return Math.min(bottom, cap);
+}
+
+// Amène la bulle envoyée en haut de l'écran par une descente animée — la même
+// que le bouton « aller tout en bas » (durée, courbe, réglage Animations,
+// abandon sur geste) : un saut sec faisait disparaître d'un coup le contenu
+// affiché. Pendant la descente, scrollBottomCapped s'abstient (un chunk ou la
+// naissance de la bulle assistant y couperait court), et la stabilisation du
+// rendu qui précède (édition, régénération) est débranchée pour la même raison.
+function scrollToPinnedSentMessage() {
+  const m = $('messages');
+  if (!m) return;
+  stopStickToBottom();
+  scrollToBottomAnimated(m, () => pinnedScrollTarget(m));
+}
+
+function clearThreadTailSpace() {
+  _tailSpace.convId = null;
+  _tailSpace.userOrdinal = -1;
+  if (_tailSpace.ro) { _tailSpace.ro.disconnect(); _tailSpace.ro = null; }
+  const m = $('messages');
+  if (m) m.classList.remove('tail-space');
+  const spacer = $('thread-tail-space');
+  if (spacer) spacer.style.height = '';
+}
+
+// Persisté immédiatement (modèle onToggleWideTables), donc exclu de
+// settingsFormDirty. Décocher retire l'espace en place ; cocher n'a d'effet
+// qu'au prochain envoi.
+function onTogglePinSentMessage() {
+  const on = $('set-pin-sent-message').checked;
+  if (!on) clearThreadTailSpace();
+  saveSettings({ pinSentMessage: on });
 }
 
 // ── Bouton « aller tout en bas » ────────────────────────────────────────────
@@ -1887,10 +2077,13 @@ function onScrollBottomBtn() {
 // Descente animée vers le bas du fil. La cible est relue À CHAQUE FRAME : une
 // génération en cours allonge le fil pendant la descente, et une cible figée au
 // départ arriverait court, en laissant le bouton se rallumer juste après.
-function scrollToBottomAnimated(m) {
+//
+// `targetOf` (facultatif) remplace le fond comme cible, relue elle aussi à
+// chaque frame : c'est la descente vers la bulle envoyée (pinnedScrollTarget).
+function scrollToBottomAnimated(m, targetOf) {
   if (_scrollBottomAnim) { cancelAnimationFrame(_scrollBottomAnim); _scrollBottomAnim = null; }
   if (motionReduced()) {
-    m.scrollTop = m.scrollHeight;
+    m.scrollTop = targetOf ? targetOf() : m.scrollHeight;
     syncScrollBottomBtn();
     return;
   }
@@ -1903,14 +2096,14 @@ function scrollToBottomAnimated(m) {
   const step = (now) => {
     const t = Math.min(1, (now - start) / SCROLL_BOTTOM_DURATION_MS);
     const eased = 1 - Math.pow(1 - t, 3);   // ease-out cubique, accord de --ease
-    const target = m.scrollHeight - m.clientHeight;
+    const target = targetOf ? targetOf() : m.scrollHeight - m.clientHeight;
     m.scrollTop = from + (target - from) * eased;
     if (t < 1) {
       _scrollBottomAnim = requestAnimationFrame(step);
     } else {
       _scrollBottomAnim = null;
       _scrollBottomAnimating = false;
-      m.scrollTop = m.scrollHeight;   // atterrissage exact, à l'abri des arrondis
+      m.scrollTop = targetOf ? targetOf() : m.scrollHeight;   // atterrissage exact, à l'abri des arrondis
       syncScrollBottomBtn();
     }
   };
@@ -1996,7 +2189,7 @@ const SCROLL_DOWN_KEYS = ['End', 'PageDown', 'ArrowDown', ' '];
 
 function releaseScrollCapOnPushAtBottom(e) {
   const down = (e.type === 'wheel') ? e.deltaY > 0 : SCROLL_DOWN_KEYS.includes(e.key);
-  if (down && isAtBottom()) releaseScrollCap(currentConvId);
+  if (down && isAtBottom() && !threadTailSpaceShown()) releaseScrollCap(currentConvId);
 }
 
 // Abandon de la descente animée sur intention explicite de l'utilisateur
@@ -2024,7 +2217,9 @@ function onMessagesScroll() {
   const atBottomNow = isAtBottom();
   requestAnimationFrame(() => {
     _scrollSyncPending = false;
-    if (intent && (atBottomNow || isAtBottom())) releaseScrollCap(currentConvId);
+    // Fond fabriqué par l'espace de la bulle envoyée : on y est revenu sur
+    // elle, on ne demande pas à suivre (cf. threadTailSpaceShown).
+    if (intent && (atBottomNow || isAtBottom()) && !threadTailSpaceShown()) releaseScrollCap(currentConvId);
     syncScrollBottomBtn();
   });
 }
@@ -2685,7 +2880,13 @@ function appendUserMessage(text, ts, attachments, agentResult) {
   const el = buildMsg('user', text, undefined, undefined, ts, undefined, undefined, attachments, agentResult);
   $('thread').appendChild(el);
   highlightUnder(el);
-  scrollBottom(true);   // l'utilisateur vient d'envoyer : toujours suivre
+  // Bulle envoyée gardée en haut : une bulle user qui arrive PENDANT ce tour
+  // (interjection, compte rendu d'agent) ne fait pas sauter la vue — sinon
+  // l'aller au fond l'emmenait d'autant au-delà du plafond dès que l'espace ne
+  // suffisait plus à l'absorber. Le prochain envoi passe par
+  // runGenerationFromCurrentThread, qui repose l'espace et va au fond.
+  if (threadTailSpacePinned()) syncThreadTailSpace();
+  else scrollBottom(true);   // l'utilisateur vient d'envoyer : toujours suivre
   return el;
 }
 
@@ -6472,6 +6673,7 @@ function openSettings() {
   $('set-export-interactive').checked = s.exportInteractive !== false;
   // Auto-persisté et donc modifiable hors du formulaire (autre onglet) : relu à
   // l'ouverture, comme les segments ci-dessus.
+  $('set-pin-sent-message').checked = s.pinSentMessage !== false;
   $('set-wide-tables').checked = s.wideTables !== false;
   const pre = $('root-prompt-pre');
   if (pre && !pre.dataset.loaded) {

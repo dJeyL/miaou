@@ -1774,6 +1774,7 @@ async function openConversation(id, reveal) {
     carryThreadUnseenToBadge(currentConvId);
   }
   currentConvId = id;
+  clearThreadTailSpace();   // espace de la bulle envoyée : propre à la conversation quittée
   // Réchauffe les messages en étage 2 (lot U-1) AVANT la relecture post-await :
   // une conversation froide sort de loadConversation avec `messages: []`. Même
   // bloc await que les ressources — le jeton _openConvSeq couvre les deux.
@@ -1876,6 +1877,7 @@ function resetToEmpty() {
   // (openConversation), ce chemin ne passant pas par lui. Avant la mise à null.
   carryThreadUnseenToBadge(currentConvId);
   currentConvId = null;
+  clearThreadTailSpace();
   // L'accueil ne génère jamais : le composer doit sortir du mode « stop » même
   // si la conversation qu'on quitte, elle, génère encore (symétrique du
   // setSending d'openConversation — sans lui le bouton reste un stop inerte).
@@ -3914,9 +3916,20 @@ function runGenerationFromCurrentThread() {
   // renderThread), et héritaient donc du plafond du tour précédent, levé. Ce
   // point de convergence est le même que celui du piège 12.
   armScrollCap(currentConvId);
-  // Le tour qui démarre gouverne le défilement : la phase de stabilisation du
-  // rendu qui précède (renderThread après troncature) n'a plus à coller au fond.
-  scrollBottom(true);
+  // Bulle envoyée gardée en haut de l'écran (réglage `pinSentMessage`) : posé
+  // ICI pour la même raison que l'armScrollCap — l'édition et la régénération
+  // relancent un tour sans passer par appendUserMessage. L'espace vide fait
+  // coïncider le fond avec le plafond ; la bulle y est menée par une descente
+  // animée (cf. pinSentMessageToTop / scrollToPinnedSentMessage, ui.js).
+  if (loadSettings().pinSentMessage !== false) {
+    pinSentMessageToTop(currentConvId);
+    scrollToPinnedSentMessage();
+  } else {
+    clearThreadTailSpace();
+    // Le tour qui démarre gouverne le défilement : la phase de stabilisation du
+    // rendu qui précède (renderThread après troncature) n'a plus à coller au fond.
+    scrollBottom(true);
+  }
   const lastUser = currentThread.slice().reverse().find(m => m.role === 'user');
   // displayText = littéral tapé (slash-commande skill) ; à défaut, content. La
   // recherche mémoire porte sur le littéral, pas sur le corps de la skill injecté.
@@ -5739,6 +5752,7 @@ async function init() {
   $('set-system').value = s.systemPrompt || '';
   $('set-highlight').checked = s.highlight !== false;
   highlightEnabled = s.highlight !== false;
+  $('set-pin-sent-message').checked = s.pinSentMessage !== false;
   $('set-wide-tables').checked = s.wideTables !== false;
   applyWideTables(s.wideTables !== false);
   $('set-modelselector').checked = !!s.showModelSelector;

@@ -414,6 +414,14 @@ function applySyncedSettings(keys) {
     const cbWide = $('set-wide-tables');
     if (cbWide) cbWide.checked = s.wideTables !== false;
   }
+  // Auto-persisté aussi (onTogglePinSentMessage) : refléter la case, et
+  // retirer l'espace posé si le pair a décoché — même effet qu'ici.
+  if (set.has('pinSentMessage')) {
+    const on = s.pinSentMessage !== false;
+    const cbPin = $('set-pin-sent-message');
+    if (cbPin) cbPin.checked = on;
+    if (!on) clearThreadTailSpace();
+  }
   // Autres clés (systemPrompt, sélecteurs…) : effet au prochain
   // envoi/rendu, rien à ré-appliquer en direct. La pilule de contexte se
   // recalcule au prochain syncContextCounter.

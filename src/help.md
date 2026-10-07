@@ -1046,9 +1046,13 @@ Quelques repères pour te déplacer dans MIAOU :
   (langage, copier, télécharger) restant visible pendant que tu le parcours.
   Le fichier obtenu par le bouton « télécharger », lui, contient toujours le
   bloc entier, et les pages HTML exportées ne coupent rien.
-- **Suivi d'une réponse longue** : pendant que la réponse s'écrit, le fil
-  descend tout seul pour la suivre, mais il s'arrête avant que la question qui
-  l'a provoquée ne sorte par le haut de l'écran — tu gardes ton énoncé sous les
+- **Suivi d'une réponse longue** : par défaut, le message que tu envoies se
+  glisse aussitôt **en haut de l'écran**, et la réponse s'écrit dessous sans que
+  la vue bouge — un espace vide sous le fil lui laisse la place, et se résorbe
+  à mesure qu'elle grandit. Le réglage « Garder le message envoyé en haut »
+  (Paramètres) revient à l'autre comportement : ton message arrive en bas de
+  l'écran, et le fil descend tout seul pour suivre la réponse jusqu'à ce que ta
+  question atteigne le haut. Dans les deux cas, ton énoncé reste sous tes
   yeux pendant que la réponse continue de s'écrire plus bas. Dès que tu n'es
   plus tout en bas du fil, un bouton rond fléché vers le bas apparaît au-dessus
   de la zone de saisie : il ramène au dernier message. Il **pulse** quand quelque chose

@@ -483,6 +483,14 @@
   transition: max-width var(--col-resize) var(--ease);
 }
 
+/* Espace vide sous le fil qui garde la bulle envoyée en haut de l'écran
+   (pinSentMessageToTop, ui.js). Pendant qu'il est posé, .thread perd son
+   étirement : étiré, il garderait la hauteur du viewport et le ResizeObserver
+   ne verrait pas la réponse grandir. L'étirement ne sert que l'accueil, absent
+   dès qu'une bulle user existe. */
+.thread-tail-space { flex: none; }
+.messages.tail-space > .thread { flex: none; }
+
 /* Bouton « aller tout en bas ». Vit dans .composer-inner (position: relative)
    et se remonte au-dessus de lui : `bottom: 100%` le pose au bord HAUT de la
    zone composer, sélecteurs et bannières compris, donc il suit ce bord quand
