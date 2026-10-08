@@ -39,6 +39,15 @@ dismissToast(key)
 - `action` — optionnelle, `{ label, run }`. Le clic sur le corps appelle `run()`
   puis ferme. La ligne de `label` suivie d'un chevron est le signal AU REPOS
   qu'un toast est cliquable ; sans action, ni ligne, ni survol, ni curseur.
+  Un toast qui NOMME un serveur mène à SA carte, pas au seul drawer :
+  `openApiServerCard(serverId)` / `openMcpServerCard(name)` (ui.js) ouvrent le
+  drawer puis `revealServerCard` fait défiler la carte si elle n'est pas
+  visible EN ENTIER (haut aligné si elle dépasse la zone visible) et la signale
+  brièvement (`.cfg-card.is-target`, posée puis retirée par minuterie, donc
+  lisible sous reduced-motion). Côté API la cible est l'id, jamais le nom : deux
+  serveurs peuvent être homonymes — d'où `gen.serverId`, capturé avec
+  `serverName` au début de la génération. Carte introuvable (serveur supprimé ou
+  renommé depuis) : le drawer s'ouvre simplement.
 - `persistent` — erreur de perte de données (P1) : pas d'auto-fermeture.
 
 ## Thèmes et glyphes
@@ -158,7 +167,7 @@ où c'est le seul signal quand la génération tourne hors de l'écran), sur un
 échec que `isApiRefusal` reconnaît comme un 4xx. Clé `api-refused:<serverName>`
 (une rafale de 429 se regroupe), texte `apiRefusalToastText` qui garde le
 message du serveur tel quel — souvent le seul endroit où il dit pourquoi, et
-dans sa langue —, clic vers le drawer des serveurs API. Ce n'est PAS un front de
+dans sa langue —, clic vers la carte du serveur. Ce n'est PAS un front de
 santé : le serveur répond, la pastille reste verte (`failureMeansBackendDown`,
 cf. `docs/backend-health.md`), donc aucun « rétabli » ne suit. Montré même quand
 la bulle en erreur est à l'écran : le doublon est rare, et le toast se voit
@@ -167,8 +176,8 @@ d'où qu'on regarde.
 **Fronts de services** — `syncHealthToasts`, appelé aux deux synchros de santé
 (`syncConnDot`, `syncAuthorizationPending`) et nulle part ailleurs. Le pur
 `healthFronts(prev, next)` décide par diff d'instantanés ; clés
-`backend:<serverId>` et `mcp:<name>`, clic vers le drawer des serveurs API ou
-MCP. Règles, toutes testées : `ok → down` erreur, `down → ok` « rétabli »
+`backend:<serverId>` et `mcp:<name>`, clic vers la carte du serveur (l'`id`
+voyage sur l'événement backend). Règles, toutes testées : `ok → down` erreur, `down → ok` « rétabli »
 (affiché même si l'erreur a été fermée, D5) ; `unconfigured` ne produit rien
 dans aucun sens (`down → unconfigured` retire le toast sans rétablir) ; une
 bascule de serveur actif est un changement de clé, pas un front ; au démarrage

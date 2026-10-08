@@ -308,11 +308,11 @@ function toastWakeFailed(parentId, err) {
 // Clé par serveur : une rafale de 429 se regroupe en un seul toast au lieu de
 // s'empiler. Montré même quand la bulle en erreur est à l'écran — le doublon
 // est rare, et c'est le toast qui se voit d'où qu'on regarde.
-function toastApiRequestRefused(err, serverName) {
+function toastApiRequestRefused(err, serverName, serverId) {
   if (!isApiRefusal(err)) return;
   showToast({ key: 'api-refused:' + String(serverName || ''), level: 'error', theme: 'services',
     text: apiRefusalToastText(serverName, err.message),
-    action: { label: 'Serveurs API', run: openApiServers } });
+    action: { label: 'Serveurs API', run: function() { openApiServerCard(serverId); } } });
 }
 
 function toastExportFailed(convId) {
@@ -381,7 +381,9 @@ function syncHealthToasts() {
     if (ev.level === 'error') {
       showToast({ key: ev.key, level: 'error', theme: 'services',
         text: 'Le ' + what + ' ne répond plus.',
-        action: { label: isBackend ? 'Serveurs API' : 'Serveurs MCP', run: isBackend ? openApiServers : openMcpServers } });
+        action: isBackend
+          ? { label: 'Serveurs API', run: function() { openApiServerCard(ev.id); } }
+          : { label: 'Serveurs MCP', run: function() { openMcpServerCard(ev.name); } } });
     } else {
       showToast({ key: ev.key, level: 'info', theme: 'services',
         text: what.charAt(0).toUpperCase() + what.slice(1) + ' rétabli.' });

@@ -8816,6 +8816,7 @@ function buildMcpCard(server, isNew) {
   const card = document.createElement('div');
   card.className = 'cfg-card mcp-card' + (isNew ? ' is-editing' : '');
   const originalName = server.name || '';
+  card.dataset.serverName = originalName;
 
   // ── SECTION VUE ───────────────────────────────────────────────────────────
   const viewSection = document.createElement('div');
@@ -9403,6 +9404,57 @@ function apiCardEl(serverId) {
   if (!list) return null;
   for (const c of list.querySelectorAll('.api-card')) if (c.dataset.serverId === serverId) return c;
   return null;
+}
+
+function mcpCardEl(name) {
+  const list = $('mcp-list');
+  if (!list) return null;
+  for (const c of list.querySelectorAll('.mcp-card')) if (c.dataset.serverName === name) return c;
+  return null;
+}
+
+// Ouvre le drawer d'un serveur sur SA carte : cible du clic des toasts qui
+// nomment un serveur (refus, panne, skills MCP). Sans carte retrouvée (serveur
+// supprimé ou renommé depuis le toast), le drawer s'ouvre simplement.
+function openApiServerCard(serverId) {
+  openApiServers();
+  revealServerCard(function() { return serverId ? apiCardEl(serverId) : null; });
+}
+function openMcpServerCard(name) {
+  openMcpServers();
+  revealServerCard(function() { return name ? mcpCardEl(name) : null; });
+}
+
+// Délai calé sur la transition d'ouverture des drawers (220 ms, drawers.css),
+// comme openSettingsCategory : le défilement se jouerait sinon hors écran. La
+// carte est cherchée APRÈS le délai, une liste re-rendue entre-temps (statut
+// MCP qui arrive) ayant remplacé ses nœuds.
+const SERVER_CARD_REVEAL_DELAY_MS = 240;
+const SERVER_CARD_FLASH_MS = 1600;
+let _serverCardFlash = null;   // { card, timer } : un seul signal à la fois
+
+function revealServerCard(findCard) {
+  setTimeout(function() {
+    const card = findCard();
+    if (!card) return;
+    // Défile seulement si la carte n'est pas visible EN ENTIER (`nearest`) ;
+    // plus haute que la zone visible, on aligne son haut — `nearest` alignerait
+    // son bas quand elle déborde par le haut. La marge (`scroll-margin-block`,
+    // drawers.css) compte dans « entière » : scrollIntoView l'applique aussi.
+    const scroller = card.closest('.drawer-body');
+    const margin = parseFloat(getComputedStyle(card).scrollMarginTop) || 0;
+    const tall = scroller && card.getBoundingClientRect().height + 2 * margin > scroller.clientHeight;
+    card.scrollIntoView({ block: tall ? 'start' : 'nearest', behavior: motionReduced() ? 'auto' : 'smooth' });
+    if (_serverCardFlash) {
+      clearTimeout(_serverCardFlash.timer);
+      _serverCardFlash.card.classList.remove('is-target');
+    }
+    card.classList.add('is-target');
+    _serverCardFlash = {
+      card: card,
+      timer: setTimeout(function() { card.classList.remove('is-target'); _serverCardFlash = null; }, SERVER_CARD_FLASH_MS),
+    };
+  }, SERVER_CARD_REVEAL_DELAY_MS);
 }
 
 // Focus d'un champ du catalogue : clé portée par `data-cat-focus`, retrouvée

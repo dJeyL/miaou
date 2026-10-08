@@ -5992,7 +5992,8 @@ function toastPlacement(m) {
 // ÉTABLI, sans quoi `error → connecting → ok` ne verrait jamais de front et le
 // « rétabli » ne viendrait pas.
 // Événements : { op: 'show', key, kind: 'backend'|'mcp', name, level:
-// 'error'|'info' } ou { op: 'dismiss', key }.
+// 'error'|'info' } ou { op: 'dismiss', key } ; un `show` backend porte aussi
+// l'`id` du serveur (cible du clic : deux serveurs API peuvent être homonymes).
 //
 // Règles (brief AG §3.5) :
 //   - backend : ok → down = erreur ; down → ok = « rétabli » (D5, même si le
@@ -6016,9 +6017,9 @@ function healthFronts(prev, next) {
     if (pb.health === 'down') events.push({ op: 'dismiss', key: 'backend:' + pb.id });
   } else if (pb && nb) {
     if (pb.health === 'ok' && nb.health === 'down') {
-      events.push({ op: 'show', key: 'backend:' + nb.id, kind: 'backend', name: nb.name, level: 'error' });
+      events.push({ op: 'show', key: 'backend:' + nb.id, kind: 'backend', id: nb.id, name: nb.name, level: 'error' });
     } else if (pb.health === 'down' && nb.health === 'ok') {
-      events.push({ op: 'show', key: 'backend:' + nb.id, kind: 'backend', name: nb.name, level: 'info' });
+      events.push({ op: 'show', key: 'backend:' + nb.id, kind: 'backend', id: nb.id, name: nb.name, level: 'info' });
     } else if (pb.health === 'down' && nb.health === 'unconfigured') {
       events.push({ op: 'dismiss', key: 'backend:' + nb.id });
     }

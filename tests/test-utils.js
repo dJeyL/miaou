@@ -5052,6 +5052,11 @@ describe('healthFronts — fronts de santé des services (lot AG)', function() {
     expect(ops(healthFronts(snap(B('a', 'ok')), snap(B('a', 'unconfigured'))))).toEqual([]);
     expect(ops(healthFronts(snap(B('a', 'down')), snap(B('a', 'unconfigured'))))).toEqual(['dismiss:backend:a']);
   });
+  it('un front backend désigne le serveur par son id (homonymes possibles)', function() {
+    var ev = healthFronts(snap(B('a', 'ok')), snap(B('a', 'down'))).events[0];
+    expect(ev.id).toBe('a');
+    expect(ev.name).toBe('Srv a');
+  });
   it('bascule de serveur actif : changement de clé, pas un front', function() {
     expect(ops(healthFronts(snap(B('a', 'down')), snap(B('b', 'ok'))))).toEqual(['dismiss:backend:a']);
     expect(ops(healthFronts(snap(B('a', 'down')), snap(B('b', 'down'))))).toEqual(['dismiss:backend:a']);

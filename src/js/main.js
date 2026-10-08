@@ -191,6 +191,7 @@ function createGeneration(convId, thread, opts) {
     thread,
     model: o.model || '',
     serverName: o.serverName || '',
+    serverId: o.serverId || '',                     // cible du toast de refus (noms non uniques)
     reasoningEffort: o.reasoningEffort || '',
     convModel: currentConvModel,                    // override de conv, figé (persistGeneration ne lit pas l'écran)
     convReasoningEffort: currentConvReasoningEffort,
@@ -2495,9 +2496,18 @@ function notifyMcpSkillRefused(card, name, state) {
   showToast({
     key: mcpSkillRefusalToastKey(card, name), level: 'warn', theme: 'services', persistent: true,
     text: 'La skill MCP «\u00a0' + name + '\u00a0» (' + card + ') ' + why + '\u00a0: le modèle n\u2019a pas pu la lire.',
-    action: { label: 'Ouvrir les serveurs MCP', run: () => openMcpServers() },
+    action: { label: 'Ouvrir les serveurs MCP', run: () => openMcpServerCard(card) },
   });
   renderMcpServersIfOpen();
+}
+
+// Carte visée par le toast « à approuver » quand plusieurs attendent : la
+// première dans l'ORDRE DU DRAWER (celui des serveurs enregistrés), pas celle
+// du statut, trié par nom — les autres se trouvent en dessous.
+function firstMcpCardOf(waiting) {
+  const cards = new Set(waiting.map(w => w.card));
+  const hit = loadMcpServers().find(s => cards.has(s.name));
+  return hit ? hit.name : (waiting[0] && waiting[0].card) || '';
 }
 
 function mcpSkillRefusalToastKey(card, name) { return 'mcp-skill-refused:' + card + ':' + name; }
@@ -2517,7 +2527,7 @@ function syncMcpSkillApprovalToast(mayShow) {
     : waiting.length + ' skills MCP sont à approuver avant usage.';
   showToast({
     key: MCP_SKILL_APPROVAL_TOAST_KEY, level: 'warn', theme: 'services', text: text, persistent: true,
-    action: { label: 'Ouvrir les serveurs MCP', run: () => openMcpServers() },
+    action: { label: 'Ouvrir les serveurs MCP', run: () => openMcpServerCard(firstMcpCardOf(waiting)) },
   });
 }
 
@@ -4166,7 +4176,7 @@ async function dispatchSend(matches, continuation) {
   // Déclarée AVANT le filet de collapse ci-dessous, qui opère déjà sur
   // `gen.thread` : l'ordre inverse touchait une TDZ (« Cannot access 'gen'
   // before initialization ») qui avortait tout envoi.
-  const gen = createGeneration(currentConvId, currentThread, { model, serverName, reasoningEffort });
+  const gen = createGeneration(currentConvId, currentThread, { model, serverName, serverId, reasoningEffort });
   registerGeneration(gen);
   // Titrage précoce (lot AA, niveau 2). Émis ICI, sans être attendu : c'est le
   // seul point où le modèle est résolu, où `gen` existe, et où le fetch de
@@ -4785,7 +4795,7 @@ async function dispatchSend(matches, continuation) {
     // Rouge seulement si l'échec dit que le serveur ne répond pas : un 4xx
     // (dont le 429 d'une rafale) est une réponse (failureMeansBackendDown).
     if (failureMeansBackendDown(e)) setConnDot('err', serverId);
-    else toastApiRequestRefused(e, serverName);   // 4xx : le serveur répond, mais refuse
+    else toastApiRequestRefused(e, serverName, serverId);   // 4xx : le serveur répond, mais refuse
   } finally {
     // Désenregistrement AVANT setSending : ce dernier dérive `sending` du
     // registre (« la conv AFFICHÉE génère-t-elle ? »), il doit donc voir un

@@ -781,8 +781,9 @@ function createAgentGeneration(convId, thread, opts) {
   // même titre), sinon de l'état résolu au moment du spawn.
   const model = (parentGen && parentGen.model) || activeModel();
   const serverName = (parentGen && parentGen.serverName) || ((activeApiServer() || {}).name || '');
+  const serverId = (parentGen && parentGen.serverName) ? (parentGen.serverId || '') : ((activeApiServer() || {}).id || '');
   const gen = createGeneration(convId, thread, {
-    model: model, serverName: serverName, reasoningEffort: o.reasoningEffort || '',
+    model: model, serverName: serverName, serverId: serverId, reasoningEffort: o.reasoningEffort || '',
   });
   gen.spaceId = o.spaceId || (parent && parent.spaceId) || DEFAULT_SPACE_ID;
   gen.convModel = '';                 // l'agent n'a pas d'override de conversation propre
@@ -985,7 +986,7 @@ async function driveAgentConversation(gen, apiMessages, tools) {
     });
   } catch (e) {
     gen.agentError = true;
-    toastApiRequestRefused(e, gen.serverName);   // 4xx : seul signal hors écran
+    toastApiRequestRefused(e, gen.serverName, gen.serverId);   // 4xx : seul signal hors écran
     // Trace du plantage DANS le fil de l'agent : sans elle, ouvrir son fil
     // montrerait une conversation qui s'arrête sans rien dire, et le parent
     // recevrait un résultat vide sans cause lisible.
@@ -1236,6 +1237,7 @@ function runDetachedGeneration(convId, thread) {
   const gen = createGeneration(convId, thread, {
     model: conv.model || activeModel(),
     serverName: (activeApiServer() || {}).name || '',
+    serverId: (activeApiServer() || {}).id || '',
     reasoningEffort: conv.reasoningEffort || activeReasoningEffort(),
   });
   // Champs figés depuis le RECORD, jamais depuis l'écran (piège 28) : l'écran
@@ -1354,7 +1356,7 @@ async function driveDetachedConversation(gen, apiMessages) {
       onError: () => {},
     });
   } catch (e) {
-    toastApiRequestRefused(e, gen.serverName);   // 4xx : seul signal hors écran
+    toastApiRequestRefused(e, gen.serverName, gen.serverId);   // 4xx : seul signal hors écran
     pushGenMessage(gen, { role: 'assistant', content: 'Erreur : ' + ((e && e.message) || e),
       model: gen.model, ts: Date.now() }, 'final');
     persistGeneration(gen);

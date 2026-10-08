@@ -571,10 +571,13 @@ d'injection. Cf. §2, et `docs/compaction.md` pour le geste qu'elles déclenchen
     - **Toasts.** Au démarrage, une fois la première vague de connexions réglée
       (`syncMcpSkillApprovalToast`) : un toast persistant si une skill
       PRÉSENTE, valide, non dynamique est à (ré)approuver
-      (`mcpSkillsAwaitingApproval`), avec une action qui ouvre les serveurs MCP.
-      Un geste d'approbation le retire quand plus rien n'attend, ne le repose
-      jamais. Au refus d'une lecture (`notifyMcpSkillRefused`) : un toast de
-      même action, clef par (carte, skill).
+      (`mcpSkillsAwaitingApproval`), avec une action qui mène à la carte du
+      serveur — la première dans l'ordre du drawer si plusieurs attendent
+      (`firstMcpCardOf`) ; la carte et non la fiche de la skill, où
+      l'approbation est déjà visible et faisable. Un geste d'approbation le
+      retire quand plus rien n'attend, ne le repose jamais. Au refus d'une
+      lecture (`notifyMcpSkillRefused`) : un toast menant à la carte de son
+      serveur, clef par (carte, skill).
     - **Lecture par le modèle.** `miaou__skills__read` avec `server` et `uri`
       (cf. `docs/tools.md`). Deux espaces de noms distincts : un `slug` lit
       TOUJOURS la skill locale, même si un serveur sert une skill du même nom —
