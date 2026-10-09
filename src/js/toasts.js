@@ -20,6 +20,7 @@
 //   export    — le glyphe du bouton d'export de conversation (index.html)
 //   files     — l'onglet « Fichiers » de la sidebar (index.html)
 //   summary   — la bulle du bandeau de résumés liés (index.html)
+//   update    — les flèches du bouton « Reconnecter » d'une carte MCP (ui.js)
 // Les tracés sont recopiés : ceux d'index.html sont du markup statique, non
 // adressables depuis ici. Retoucher l'un sans l'autre les ferait diverger.
 const TOAST_GLYPHS = {
@@ -30,6 +31,7 @@ const TOAST_GLYPHS = {
   export:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
   files:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7"/></svg>',
   summary:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+  update:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>',
 };
 
 const TOAST_CLOSE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
@@ -48,7 +50,9 @@ let _toastLayoutWired = false;
 
 // Affiche (ou remplace, par sa clé) un toast.
 //   opts = { key, level: 'info'|'warn'|'error', theme, text, action?, persistent? }
-//   action = { label, run } : le clic sur le corps appelle `run()`, puis ferme.
+//   action = { label, run } : le clic sur le corps appelle `run()`, puis ferme
+//   — sauf si `run()` rend exactement `false` : l'action a refusé (elle a dit
+//   pourquoi), le toast reste pour qu'on puisse la retenter.
 // `text` et `action.label` sont posés en textContent, jamais en HTML : ils
 // citent des noms de conversation ou des messages d'erreur venus d'ailleurs.
 // Ne vole JAMAIS le focus (D10) : la frappe dans le composer continue.
@@ -101,8 +105,9 @@ function buildToastEl(item, opts) {
     body.type = 'button';
     el.classList.add('has-action');
     body.addEventListener('click', function() {
-      dismissToast(item.key);
-      try { action.run(); } catch (e) { console.error('[miaou] action de toast', e); }
+      let keep = false;
+      try { keep = action.run() === false; } catch (e) { console.error('[miaou] action de toast', e); }
+      if (!keep) dismissToast(item.key);
     });
   }
   const glyph = document.createElement('span');

@@ -28,6 +28,8 @@ Ce que tu peux faire ici :
 - **Déléguer** : le modèle peut confier une tâche à un agent — une
   sous-conversation autonome qui travaille en parallèle pendant qu'il continue —
   et récupérer son résultat.
+- **Installer** MIAOU comme une application (fenêtre à part, icône), quand il
+  est servi par le proxy MCP plutôt qu'ouvert depuis un fichier.
 
 Pour en savoir plus sur un sujet précis, demande-moi. Les sujets disponibles :
 
@@ -1507,6 +1509,10 @@ Conséquences pratiques :
   (Réglages › Données) est le seul moyen de les emporter.
 - Vider les données de site du navigateur efface aussi MIAOU. Pense à
   sauvegarder ce qui compte.
+- MIAOU ouvert depuis un fichier et MIAOU servi par le proxy MCP (ou installé)
+  ne partagent pas leurs données : pour le navigateur ce sont deux sites
+  distincts. Passer de l'un à l'autre se fait par la sauvegarde complète,
+  exportée d'un côté et importée de l'autre (sujet `installation`).
 - La clef d'API que tu saisis est conservée localement, en clair. C'est adapté à
   un usage personnel ; pour un contexte exposé, mieux vaut passer par un accès
   protégé côté serveur.
@@ -1516,6 +1522,48 @@ vers l'API configurée pour être traité — c'est le principe même d'un clien
 chat. Ce contexte injecté n'est pas gratuit en tokens ; pour savoir ce qu'il
 contient et comment l'alléger, voir le sujet `contexte`. Le reste ne quitte pas
 ton navigateur.
+
+## installation — installer MIAOU comme une application
+
+MIAOU s'ouvre de deux façons : comme un **fichier** (`miaou.html` ouvert
+directement dans le navigateur), ou **servi** par le proxy MCP, qui le publie à
+une adresse du type `http://127.0.0.1:8765/app/` quand sa configuration le
+prévoit (clé `miaou_dist`). Servi, il offre en plus ce qui suit.
+
+**S'installer comme une application** : une fenêtre à part, sans barre
+d'adresse ni onglets, une icône, une entrée dans le menu des applications du
+système. Réglages › Application porte un bouton « Installer MIAOU » quand le
+navigateur le permet (Chrome, Edge). Ailleurs, une ligne dit comment faire :
+dans Chrome et Edge, l'icône d'installation de la barre d'adresse ou le menu ;
+dans Safari sur macOS, Fichier › Ajouter au Dock. Firefox n'installe pas
+d'application web. Une fois installé, MIAOU s'ouvre depuis le menu du système,
+et sa barre de titre prend les couleurs du thème et de la palette choisis.
+L'installation exige une connexion sécurisée : `https`, ou une adresse locale
+(`localhost`, `127.0.0.1`) ; une adresse du réseau local en `http` ne suffit
+pas.
+
+**Démarrer même quand le proxy est arrêté** : la page et les bibliothèques
+qu'elle a déjà chargées une fois sont gardées par le navigateur. Le modèle et
+les serveurs MCP restent bien sûr nécessaires pour travailler.
+
+**Être prévenu d'une nouvelle version** : quand le proxy sert une version plus
+récente que celle affichée, une notification « Nouvelle version de MIAOU
+disponible » reste à l'écran, avec « Recharger ». MIAOU refuse de recharger
+tant qu'un rechargement perdrait quelque chose — une réponse ou un agent en
+cours, des messages en file d'attente, un message en cours de rédaction ou des
+pièces jointes en attente — et dit ce qu'il faut attendre. La vérification se
+fait à l'ouverture et quand tu reviens dans la fenêtre.
+
+Ouvert depuis un fichier, MIAOU ne s'installe pas. S'il trouve un proxy MCP
+configuré qui le sert, il le signale une fois par session et Réglages ›
+Application propose d'ouvrir la version servie.
+
+**Les données ne suivent pas.** Pour le navigateur, le fichier et la version
+servie sont deux sites distincts, chacun avec son propre stockage — tout comme
+`localhost` et `127.0.0.1`, qui désignent pourtant la même machine. Passer de
+l'un à l'autre se fait par la sauvegarde complète (Réglages › Données,
+« Exporter les données »), importée de l'autre côté. Mieux vaut choisir une
+adresse et s'y tenir.
 
 ## genese — genèse du projet
 

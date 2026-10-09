@@ -151,9 +151,9 @@ pas de `fetch` réel sous QuickJS. Les chemins réseau, DOM et la boucle
     conversation déjà titrée (manuellement ou automatiquement) → le titre est
     remplacé par un nouveau titre généré ; le titre devient non éditable pendant
     l'appel puis se déverrouille.
-17. **Drawer réglages — catégories repliables** : ouvrir les réglages → six
+17. **Drawer réglages — catégories repliables** : ouvrir les réglages → les
     catégories (Connexion, Modèle & raisonnement, Prompts système, Apparence,
-    Mémoire, Outils & extensions), seule « Connexion » ouverte au départ.
+    Mémoire, Outils & extensions, Données, Application), seule « Connexion » ouverte au départ.
     Ouvrir une catégorie replie la précédente (accordéon). Dans « Modèle &
     raisonnement », ouvrir le dropdown du champ Modèle et la pilule de
     raisonnement → les menus débordent de la catégorie **sans être coupés**
@@ -1489,3 +1489,29 @@ ce qui suit demande un lecteur d'écran, des préférences système ou l'œil.
 8. **Armement.** Cliquer la poubelle d'une conversation sans bouger : la bulle
    réapparaît aussitôt avec « Cliquer à nouveau pour confirmer », puis revient
    à « Supprimer » au désarmement.
+
+## MIAOU installable (PWA)
+
+Prérequis : proxy MCP qui sert `dist/` (clé `miaou_dist`), MIAOU ouvert à
+`http://127.0.0.1:8765/app/` (ou `localhost`, mais toujours la même adresse).
+
+1. **Installation (Chrome/Edge)** : Réglages › Application → bouton « Installer
+   MIAOU » ; l'accepter → fenêtre à part, icône du chat, entrée dans le menu du
+   système. Rouvrir les réglages dans la fenêtre installée → « MIAOU tourne ici
+   en application installée », plus de bouton.
+2. **Barre de titre** : dans la fenêtre installée, basculer clair/sombre puis
+   changer de palette → la barre de titre suit à chaque fois la couleur de la
+   topbar.
+3. **Proxy coupé** : arrêter le proxy, relancer l'application installée → elle
+   démarre ; un diagramme Mermaid déjà affiché une fois se rend encore.
+4. **Nouvelle version** : rebuild avec un changement de source, proxy relancé,
+   revenir dans la fenêtre → notification « Nouvelle version de MIAOU
+   disponible » ; avec un brouillon dans le composer, « Recharger » refuse et le
+   dit ; composer vidé, « Recharger » recharge. Un rebuild SANS changement ne
+   doit rien annoncer.
+5. **file://** : ouvrir `dist/miaou.html` directement, proxy actif → une
+   notification signale la version servie (une fois par session), Réglages ›
+   Application propose « Ouvrir la version servie ». Proxy arrêté → aucune
+   notification, la catégorie explique comment l'obtenir.
+6. **Navigateur sans installation** (Firefox) : Réglages › Application → ligne
+   qui dit comment faire, aucun bouton.

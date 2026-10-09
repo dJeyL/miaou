@@ -277,3 +277,47 @@ skill système dont le fichier a disparu est supprimée au même démarrage
 (cf. `docs/skills.md`, purge des orphelines). Sous
 QuickJS, `SYSTEM_SKILLS_CONTENT` vaut `{}` (aucune skill système, comportement
 identique à l'absence du dossier).
+
+## Fichiers voisins de `miaou.html` (PWA) et empreinte de build
+
+`dist/` ne contient plus seulement `miaou.html`. Servi par le proxy MCP (clé
+`miaou_dist` de miaou-mcp-servers, sous `/app/`), MIAOU est installable, et le
+build y dépose aussi le manifeste, ses icônes et `version.json`. Tout est
+versionné, comme `miaou.html` : le proxy et l'image Docker servent `dist/` tel
+quel. Le fonctionnement côté navigateur est dans `docs/pwa.md`.
+
+**Manifeste.** `src/pwa/manifest.webmanifest`, copié tel quel. C'est le seul nom
+que le proxy fige. `build_pwa_files` le parse (JSON invalide = échec) et vérifie
+que chaque `icons[].src` est un nom de fichier nu présent dans `src/pwa/` : le
+proxy n'avertirait qu'à son démarrage, le build échoue avant.
+
+**Icônes.** Les PNG ne sont pas rasterisés par `build.py`, qui reste sans
+dépendance. `scripts/make-icons.py` les produit une fois
+(`uv run --with resvg-py python scripts/make-icons.py`) et écrit à côté
+l'empreinte `src/pwa/icons.sha256`. L'empreinte porte sur le SVG **d'icône**
+(`icon_svg` : le logo sans sourcils ni moue soucieuse, les classes que
+`LOGO_DATA_STYLE` neutralise dans le data-URI), pas sur le fichier brut. Le
+script importe `build.py` pour rasteriser exactement ce que la garde empreinte.
+Si `cat.svg` change sans régénération, `check_icon_fingerprint` fait échouer le
+build en nommant la commande. Retoucher un élément retiré de l'icône (un
+sourcil) ne la réveille pas, à dessein.
+
+**Empreinte de build : `__MIAOU_BUILD_ID__`.** La page servie la compare à
+`dist/version.json` pour signaler une nouvelle version. Elle doit donc rester
+la même pour un rebuild sans changement, alors que le fichier réel change à
+chaque build (date en commentaire de tête du JS, `build_ts` de la config, que lit
+le libellé « Build : … » des réglages). `assemble_js` est appelé deux fois :
+une avec `now=None` (date neutre, `build_ts` à 0), une avec l'heure réelle.
+`compute_build_id` hache le HTML assemblé avec le JS neutre et le marqueur
+encore en place, ce qui évite aussi la circularité d'une empreinte qui se
+contiendrait. La config entre dans l'empreinte : une config modifiée est une
+nouvelle version. Le doublement de l'assemblage coûte ~0,2 s.
+
+Le marqueur est à occurrence unique, en position de valeur (`storage.js`,
+`BUILD_ID`, garde `try/catch` comme les autres, chaîne vide hors build). Son
+compte est **vérifié** : absent, la détection de version resterait muette sans
+que rien ne le signale. `version.json` vaut `{"build": "<id>"}`.
+
+Tests dans `run_build_unit_tests` : neutralisation (deux assemblages neutres
+identiques, deux datés différents), config non mutée, marqueur présent, garde
+d'empreinte des icônes, manifeste installable.

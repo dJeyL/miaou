@@ -37,7 +37,11 @@ dismissToast(key)
   conversation ou des messages d'erreur venus d'ailleurs. Espaces insécables
   après « et avant ».
 - `action` — optionnelle, `{ label, run }`. Le clic sur le corps appelle `run()`
-  puis ferme. La ligne de `label` suivie d'un chevron est le signal AU REPOS
+  puis ferme — **sauf si `run()` rend exactement `false`** : l'action a refusé
+  (elle a dit pourquoi, typiquement par un second toast), et le toast reste
+  pour qu'on puisse la retenter. Seul usage à ce jour : « Recharger » du toast
+  de nouvelle version, qui refuse pendant une génération (`docs/pwa.md`).
+  `run()` est donc appelé AVANT la fermeture. La ligne de `label` suivie d'un chevron est le signal AU REPOS
   qu'un toast est cliquable ; sans action, ni ligne, ni survol, ni curseur.
   Un toast qui NOMME un serveur mène à SA carte, pas au seul drawer :
   `openApiServerCard(serverId)` / `openMcpServerCard(name)` (ui.js) ouvrent le
@@ -48,7 +52,9 @@ dismissToast(key)
   serveurs peuvent être homonymes — d'où `gen.serverId`, capturé avec
   `serverName` au début de la génération. Carte introuvable (serveur supprimé ou
   renommé depuis) : le drawer s'ouvre simplement.
-- `persistent` — erreur de perte de données (P1) : pas d'auto-fermeture.
+- `persistent` — erreur de perte de données (P1) : pas d'auto-fermeture. Aussi
+  posé sur l'annonce de nouvelle version, qui n'est pas une erreur mais attend
+  un geste.
 
 ## Thèmes et glyphes
 
@@ -65,6 +71,7 @@ leur source citée dans le commentaire de `TOAST_GLYPHS` — les retoucher ensem
 | `export` | le bouton d'export de conversation |
 | `files` | l'onglet « Fichiers » de la sidebar |
 | `summary` | la bulle du bandeau de résumés liés |
+| `update` | les flèches du bouton « Reconnecter » d'une carte MCP |
 
 Le cylindre et la prise sont des glyphes pleins, les autres au trait : écart
 assumé, la reprise à l'identique primant sur l'homogénéité de graisse.

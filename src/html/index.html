@@ -20,7 +20,13 @@
      matchMedia) : html porte TOUJOURS data-theme=light|dark, le CSS n'a qu'une
      seule variante claire (pas de bloc @media dupliqué). Le suivi live d'un
      changement de préférence OS est câblé dans ui.js (applyTheme + listener). -->
-<script>(function(){var t='dark',p='',f='';try{var s=JSON.parse(localStorage.getItem('miaou-settings')||'{}');t=s.theme;p=s.palette;f=s.fonts;}catch(e){}if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);if(p==='foret'||p==='encre'){document.documentElement.setAttribute('data-palette',p);}if(f==='atelier'||f==='chaleur'){document.documentElement.setAttribute('data-fonts',f);}})();</script>
+<!-- Couleur de la barre de titre d'une fenêtre installée (et de la barre
+     d'adresse mobile). Valeur de départ grossière, posée par le script de tête
+     selon la seule luminosité ; init() la recalcule depuis les jetons de la
+     palette (syncThemeColor, ui.js). Le lien du manifeste, lui, n'est posé
+     qu'en http(s) : en file:// il ne mène nulle part et lève une erreur. -->
+<meta name="theme-color" id="theme-color" content="#0f1013">
+<script>(function(){var t='dark',p='',f='';try{var s=JSON.parse(localStorage.getItem('miaou-settings')||'{}');t=s.theme;p=s.palette;f=s.fonts;}catch(e){}if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);if(p==='foret'||p==='encre'){document.documentElement.setAttribute('data-palette',p);}if(f==='atelier'||f==='chaleur'){document.documentElement.setAttribute('data-fonts',f);}if(t==='light'){document.getElementById('theme-color').setAttribute('content','#f4efe5');}if(location.protocol==='http:'||location.protocol==='https:'){var m=document.createElement('link');m.rel='manifest';m.href='manifest.webmanifest';document.head.appendChild(m);}})();</script>
 <style>
 /* __CSS__ */
 </style>
@@ -737,6 +743,29 @@ if (window.requestAnimationFrame) {
         <input type="file" id="import-data-input" accept=".zip,.json" hidden onchange="onImportFileSelected(this)">
         <div class="cfg-err" id="import-data-err" hidden></div>
         <div class="import-summary" id="import-data-summary" hidden></div>
+      </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Application : installer MIAOU (page servie), ou passer à la version
+           servie (file://). Le contenu varie selon le contexte : posé par
+           syncInstallSurface (pwa.js) à chaque ouverture des réglages et à
+           chaque événement d'installation. -->
+      <div class="set-cat">
+        <div data-cat="application" class="set-cat-head" onclick="toggleSettingsCat(this)">
+          <span class="set-cat-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" fill-rule="evenodd"><path d="M4 3h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 6v10h16V9H4z"/></svg></span>
+          <span class="set-cat-label">Application</span>
+          <span class="set-cat-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+        <div class="set-cat-body">
+          <div class="set-cat-body-inner">
+      <div class="field">
+        <label>Installer MIAOU</label>
+        <span class="hint" id="install-hint"></span>
+        <button class="btn-ghost" id="install-btn" onclick="onInstallClick()" hidden>Installer MIAOU</button>
+        <button class="btn-ghost" id="served-app-btn" onclick="openServedApp()" hidden>Ouvrir la version servie</button>
+        <span class="hint">Fichier ouvert directement et version servie ne partagent pas leurs données&nbsp;: chacun a son propre stockage, de même que deux adresses du même proxy (localhost et 127.0.0.1). Pour passer de l'un à l'autre, exporter puis importer (catégorie Données, «&nbsp;Export / import complet&nbsp;»).</span>
       </div>
           </div>
         </div>

@@ -4212,7 +4212,7 @@ function setTitle(label) {
   // L'onglet reçoit l'extrait BRUT, sans marque de provisoire : il n'a pas
   // d'italique, et distinguer les conversations entre plusieurs onglets prime
   // sur signaler le statut du titre.
-  document.title = documentTitleFor(o.text);
+  document.title = documentTitleFor(o.text, isStandaloneDisplay());
 }
 
 // Titre d'onglet, formule unique (main.js écrit aussi document.title à la
@@ -4220,9 +4220,13 @@ function setTitle(label) {
 // placeholder du bandeau : l'onglet est ce qu'on met en favori, et une entrée
 // nommée d'après une conversation vide est une friction inutile. Le
 // placeholder reste l'affaire de la topbar (son :empty::before).
-function documentTitleFor(text) {
+// Fenêtre installée (`standalone`, cf. isStandaloneDisplay, pwa.js) : le
+// navigateur préfixe déjà la barre de titre du nom de l'application
+// (« MIAOU - … ») ; le suffixe la doublerait, le titre part donc nu.
+function documentTitleFor(text, standalone) {
   const t = (text || '').trim();
-  return t ? t + ' — MIAOU' : 'MIAOU';
+  if (!t) return 'MIAOU';
+  return standalone ? t : t + ' — MIAOU';
 }
 
 // Éditabilité DURABLE du titre, gouvernée par la nature de la conversation
@@ -6687,6 +6691,7 @@ function openSettings() {
       : '';
   }
   refreshStorageReport();  // asynchrone : le bloc se remplit après ouverture
+  syncInstallSurface();    // catégorie Application : dépend du contexte (pwa.js)
   updateSettingsDirty();   // des saisies non enregistrées peuvent survivre à une fermeture
   $('drawer').classList.add('show');
   $('backdrop').classList.add('show');
@@ -6807,6 +6812,57 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', resolved);
   refreshMermaidTheme(resolved);   // hook unique : couvre selectTheme ET le suivi OS
   refreshWelcomeIfPresent();       // coquetterie : re-tire l'accueil si affiché (vierge)
+  syncThemeColor();
+}
+
+// ── Couleur de la barre de titre (<meta name="theme-color">) ────────────────
+// Une fenêtre installée colore sa barre de titre avec cette valeur : elle doit
+// prolonger la topbar. Celle-ci dépend de la luminosité ET de la palette, d'où
+// deux appelants (applyTheme, applyPalette), qui couvrent aussi init, le suivi
+// de la préférence système et la synchro multi-onglets.
+//
+// La couleur se lit sur les JETONS et pas sur la topbar : une transition de
+// fond en cours y rendrait une valeur intermédiaire. Une sonde sans transition
+// convertit les jetons en rgb (une propriété personnalisée se lit telle
+// qu'écrite, `hsl(…)` avec ses var() substitués, jamais convertie). Le fond de
+// la topbar est translucide : il est composé sur celui du body, qui est
+// derrière elle, pour une couleur opaque.
+
+// « rgb(r, g, b) » / « rgba(r, g, b, a) » (forme sérialisée d'une couleur
+// calculée) → {r, g, b, a}, ou null.
+function parseCssRgb(str) {
+  const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(String(str || '').trim());
+  if (!m) return null;
+  let a = m[4] == null ? 1 : parseFloat(m[4]);
+  if (m[4] && m[4].endsWith('%')) a = a / 100;
+  return { r: +m[1], g: +m[2], b: +m[3], a: a };
+}
+
+// Couleur `top` (alpha quelconque) posée sur `bottom` (opaque) → « #rrggbb ».
+function compositeHexColor(top, bottom) {
+  const ch = function (k) {
+    const v = Math.round(top[k] * top.a + bottom[k] * (1 - top.a));
+    return Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0');
+  };
+  return '#' + ch('r') + ch('g') + ch('b');
+}
+
+let _themeColorProbe = null;
+function syncThemeColor() {
+  const meta = document.getElementById('theme-color');
+  if (!meta || typeof getComputedStyle !== 'function' || !document.body) return;
+  if (!_themeColorProbe) {
+    _themeColorProbe = document.createElement('span');
+    _themeColorProbe.setAttribute('aria-hidden', 'true');
+    _themeColorProbe.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;transition:none;'
+      + 'color:var(--topbar-bg);background-color:var(--bg)';
+    document.body.appendChild(_themeColorProbe);
+  }
+  const cs = getComputedStyle(_themeColorProbe);
+  const top = parseCssRgb(cs.color);
+  const bottom = parseCssRgb(cs.backgroundColor);
+  if (!top || !bottom) return;
+  meta.setAttribute('content', compositeHexColor(top, { r: bottom.r, g: bottom.g, b: bottom.b, a: 1 }));
 }
 
 // Réglage « system » : un changement de préférence OS en cours de session
@@ -6854,6 +6910,7 @@ function applyPalette(palette) {
   const p = PALETTES.indexOf(palette) >= 0 ? palette : 'ambre';
   if (p === 'ambre') document.documentElement.removeAttribute('data-palette');
   else document.documentElement.setAttribute('data-palette', p);
+  syncThemeColor();
 }
 
 function setPaletteUI(palette) {

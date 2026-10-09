@@ -4,6 +4,28 @@
 // portée du test (frontière de fichier dans le runner) : on teste donc des
 // propriétés observables sans le référencer.
 
+describe('parseCssRgb / compositeHexColor (theme-color)', function() {
+  it('lit rgb() et rgba() sérialisés, alpha 1 par défaut', function() {
+    var o = parseCssRgb('rgb(11, 12, 14)');
+    expect(o.r === 11 && o.g === 12 && o.b === 14 && o.a === 1).toBeTruthy();
+    expect(parseCssRgb('rgba(20, 21, 25, 0.6)').a).toBe(0.6);
+  });
+  it('lit la forme à barre oblique et un alpha en pourcentage', function() {
+    expect(parseCssRgb('rgb(1 2 3 / 50%)').a).toBe(0.5);
+  });
+  it('rend null hors forme rgb (une propriété personnalisée non convertie)', function() {
+    expect(parseCssRgb('hsl(219 12% 4.9%)')).toBe(null);
+    expect(parseCssRgb('')).toBe(null);
+  });
+  it('compose une couleur translucide sur un fond opaque', function() {
+    // Topbar sombre d'Ambre : surface à 60 % sur le fond.
+    expect(compositeHexColor({ r: 17, g: 19, b: 22, a: 0.6 }, { r: 11, g: 12, b: 14, a: 1 })).toBe('#0f1013');
+  });
+  it('alpha 1 : la couleur du dessus telle quelle', function() {
+    expect(compositeHexColor({ r: 255, g: 0, b: 16, a: 1 }, { r: 0, g: 0, b: 0, a: 1 })).toBe('#ff0010');
+  });
+});
+
 describe('pickWaiterWord', function() {
   it('retourne une chaîne non vide', function() {
     var w = pickWaiterWord();
@@ -110,6 +132,12 @@ describe('buildExportHtml', function() {
     // pour le mettre à jour, le clic changeait l'icône mais pas les couleurs.
     expect(r.indexOf('<html>') >= 0).toBeTruthy();
     expect(r.indexOf('data-theme') >= 0).toBeFalsy();
+  });
+  it('ne porte ni manifeste, ni theme-color, ni service worker (fichier autonome)', function() {
+    var r = buildExportHtml(base);
+    expect(r.indexOf('manifest') >= 0).toBeFalsy();
+    expect(r.indexOf('theme-color') >= 0).toBeFalsy();
+    expect(r.indexOf('serviceWorker') >= 0).toBeFalsy();
   });
   it('thème sombre : case décochée', function() {
     var r = buildExportHtml(base);
@@ -866,5 +894,124 @@ describe('composerBusyPlaceholder', function() {
   it('le texte d\'attente est bien celui d\'avant les phases', function() {
     // Non-régression sur le libellé historique du mode file (lot Q).
     expect(composerBusyPlaceholder('waiting', 0)).toBe('Le modèle travaille — Entrée ajoute à la file…');
+  });
+});
+
+describe('isServedProtocol (pwa)', function() {
+  it('http et https : page servie', function() {
+    expect(isServedProtocol('http:')).toBe(true);
+    expect(isServedProtocol('https:')).toBe(true);
+  });
+  it('file:// et le reste : non', function() {
+    expect(isServedProtocol('file:')).toBe(false);
+    expect(isServedProtocol('')).toBe(false);
+    expect(isServedProtocol(undefined)).toBe(false);
+  });
+});
+
+describe('shouldCheckVersion (pwa)', function() {
+  it('jamais en file:// ni hors build', function() {
+    expect(shouldCheckVersion(false, 'abc', 0, 1000, 120000)).toBe(false);
+    expect(shouldCheckVersion(true, '', 0, 1000, 120000)).toBe(false);
+  });
+  it('première lecture immédiate, puis au plus une par intervalle', function() {
+    expect(shouldCheckVersion(true, 'abc', 0, 1000, 120000)).toBe(true);
+    expect(shouldCheckVersion(true, 'abc', 1000, 1000 + 119999, 120000)).toBe(false);
+    expect(shouldCheckVersion(true, 'abc', 1000, 1000 + 120000, 120000)).toBe(true);
+  });
+});
+
+describe('servedNewerBuild (pwa)', function() {
+  it('empreinte servie différente : nouvelle version', function() {
+    expect(servedNewerBuild('aaa', { build: 'bbb' })).toBe('bbb');
+  });
+  it('même empreinte : rien', function() {
+    expect(servedNewerBuild('aaa', { build: 'aaa' })).toBe('');
+  });
+  it('forme inattendue ou build local inconnu : rien', function() {
+    expect(servedNewerBuild('aaa', null)).toBe('');
+    expect(servedNewerBuild('aaa', { build: 3 })).toBe('');
+    expect(servedNewerBuild('aaa', { build: '  ' })).toBe('');
+    expect(servedNewerBuild('', { build: 'bbb' })).toBe('');
+  });
+});
+
+describe('reloadBlockReason (pwa)', function() {
+  it('rien en cours : rechargement permis', function() {
+    expect(reloadBlockReason({ generating: 0, queued: 0, draft: false, attachments: 0 })).toBe('');
+  });
+  it('génération (réponse, agent ou compaction) : refus qui le dit', function() {
+    expect(reloadBlockReason({ generating: 1, queued: 0, draft: false, attachments: 0 })).toContain('Génération en cours');
+  });
+  it('file d\'interjections : refus qui le dit', function() {
+    expect(reloadBlockReason({ generating: 0, queued: 2, draft: false, attachments: 0 })).toContain('file');
+  });
+  it('brouillon ou pièce jointe en attente : refus qui le dit', function() {
+    expect(reloadBlockReason({ generating: 0, queued: 0, draft: true, attachments: 0 })).toContain('rédaction');
+    expect(reloadBlockReason({ generating: 0, queued: 0, draft: false, attachments: 1 })).toContain('rédaction');
+  });
+});
+
+describe('servedAppCandidates (pwa)', function() {
+  it('origines http(s) des serveurs MCP, suffixées de /app/, dédoublonnées', function() {
+    var c = servedAppCandidates([
+      { url: 'http://127.0.0.1:8765/mcp' }, { url: 'http://127.0.0.1:8765/mcp/' },
+      { url: 'https://mcp.example.net/mcp' }]);
+    expect(c.length).toBe(2);
+    expect(c[0]).toBe('http://127.0.0.1:8765/app/');
+    expect(c[1]).toBe('https://mcp.example.net/app/');
+  });
+  it('URL invalide, absente ou non http(s) : ignorée', function() {
+    expect(servedAppCandidates([{ url: 'pas une url' }, {}, { url: 'file:///x' }, null]).length).toBe(0);
+    expect(servedAppCandidates(undefined).length).toBe(0);
+  });
+});
+
+describe('installSurfaceState (pwa)', function() {
+  var base = { served: true, secure: true, standalone: false, installed: false, canPrompt: false, servedUrl: '' };
+  function st(o) { return installSurfaceState(Object.assign({}, base, o)); }
+  it('servi, invite d\'installation disponible : bouton', function() {
+    var s = st({ canPrompt: true });
+    expect(s.install).toBe(true);
+    expect(s.openServed).toBe(false);
+  });
+  it('servi sans invite : ligne qui dit comment faire, pas de bouton', function() {
+    var s = st({});
+    expect(s.install).toBe(false);
+    expect(s.hint).toContain('Ajouter au Dock');
+  });
+  it('fenêtre installée ou installation faite : bouton masqué', function() {
+    expect(st({ standalone: true, canPrompt: true }).install).toBe(false);
+    expect(st({ installed: true, canPrompt: true }).install).toBe(false);
+  });
+  it('contexte non sécurisé : le dit, pas de bouton', function() {
+    var s = st({ secure: false, canPrompt: true });
+    expect(s.install).toBe(false);
+    expect(s.hint).toContain('connexion sécurisée');
+  });
+  it('file:// avec version servie trouvée : la nomme et propose de l\'ouvrir', function() {
+    var s = st({ served: false, servedUrl: 'http://127.0.0.1:8765/app/' });
+    expect(s.openServed).toBe(true);
+    expect(s.install).toBe(false);
+    expect(s.hint).toContain('http://127.0.0.1:8765/app/');
+  });
+  it('file:// sans version servie : explique, aucun bouton', function() {
+    var s = st({ served: false, canPrompt: true });
+    expect(s.openServed).toBe(false);
+    expect(s.install).toBe(false);
+    expect(s.hint).toContain('miaou_dist');
+  });
+});
+
+describe('documentTitleFor', function() {
+  it('onglet : titre suffixé du nom de l\'appli', function() {
+    expect(documentTitleFor('Migration Postgres', false)).toBe('Migration Postgres — MIAOU');
+  });
+  it('fenêtre installée : titre nu (le navigateur préfixe déjà le nom)', function() {
+    expect(documentTitleFor('Migration Postgres', true)).toBe('Migration Postgres');
+  });
+  it('sans titre : « MIAOU » nu dans les deux cas', function() {
+    expect(documentTitleFor('  ', false)).toBe('MIAOU');
+    expect(documentTitleFor('', true)).toBe('MIAOU');
   });
 });

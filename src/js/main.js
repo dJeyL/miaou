@@ -1138,7 +1138,7 @@ function wireIdleSummaryActivity() {
   // reste vivante, seul l'onglet passe au second plan.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) summarizeIfNeeded(currentConvId);
-    else { recheckMcpServers(); maybeProbeBackend(); }
+    else { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); }
   });
 
   // DEUXIÈME signal de retour, et non un doublon du précédent : `visibilitychange`
@@ -1152,7 +1152,7 @@ function wireIdleSummaryActivity() {
   // ne fait rien quand aucun serveur n'est en défaut, et un double appel
   // rapproché relance au pire un handshake déjà en cours, que `connectMcpServer`
   // absorbe (il réécrit le statut, il n'accumule pas).
-  window.addEventListener('focus', () => { recheckMcpServers(); maybeProbeBackend(); });
+  window.addEventListener('focus', () => { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); });
 }
 
 // Le parcours d'autorisation se déroule entièrement côté proxy, dans un AUTRE
@@ -2266,10 +2266,10 @@ function onTitleBlur(e) {
   const t = el.textContent.trim();
   if (!t) {
     el.textContent = titleBefore;
-    document.title = documentTitleFor(titleBefore);
+    document.title = documentTitleFor(titleBefore, isStandaloneDisplay());
     return;
   }
-  document.title = documentTitleFor(t);
+  document.title = documentTitleFor(t, isStandaloneDisplay());
   if (currentConvId) {
     needTitle = false;   // titre fixé manuellement : on ne le régénère plus
     const conv = loadConversation(currentConvId);
@@ -5923,6 +5923,9 @@ async function init() {
   pruneOrphanSummariesOnInit();   // résidus d'une suppression concurrente à une génération (avant le backfill, sinon liste faussée)
   runBackfill();         // auto-gardé sur la présence d'URL
   armIdleSummaryTimer(); // résumé sur inactivité, réarmé à chaque activité
+  registerServiceWorker();   // page servie seulement (pwa.js)
+  checkForNewVersion();      // idem : une page lancée depuis le cache du SW (proxy lent) peut être en retard
+  probeServedApp();         // file:// seulement : le proxy MCP sert-il MIAOU ?
 
   // L'UI est montée (.booted posée, sidebar décidée, thread rendu) : estompe
   // l'overlay de préchargement, en garantissant un temps d'affichage minimum

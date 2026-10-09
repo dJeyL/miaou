@@ -154,7 +154,8 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   l'inspecteur d'appel, cf. `docs/tools.md` ; `multitab.js` porte la couche
   APPLICATIVE de la synchro multi-onglets — réception, soft-lock, relais
   readonly —, là où `sync.js` garde le noyau pur et l'adaptateur, cf.
-  `docs/multitab-sync.md`).
+  `docs/multitab-sync.md` ; `pwa.js` porte ce qui ne s'active qu'en page
+  servie — enregistrement du service worker, cf. `docs/pwa.md`).
 
   **Les deux listes ne sont recopiées nulle part** — la seule énumération est
   celle de `build.py` (constantes en tête de fichier), à lire là-bas. Elles
@@ -190,6 +191,14 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   l'utilisateur, `enabled`/`autotrigger` figés à `true`, absentes de
   l'autocomplétion du `/` sauf `metadata.user-invocable: true`, cf.
   `docs/skills.md`).
+
+- **`__MIAOU_BUILD_ID__`** ← empreinte du contenu de `miaou.html`, calculée
+  sur un second assemblage à horodatage neutre (un rebuild identique rend le
+  même id) ; injectée dans `storage.js` (`BUILD_ID`, compte vérifié au build)
+  et écrite dans `dist/version.json`. Le build dépose aussi dans `dist/` le
+  manifeste et les icônes PWA de `src/pwa/` ; les PNG viennent de
+  `scripts/make-icons.py` (uv), gardés par une empreinte du logo
+  (cf. `docs/build.md`, `docs/pwa.md`).
 
 Les commentaires sont retirés au passage (`strip_js_comments`/`strip_css_comments`/
 `strip_html_comments`, testés dans `run_build_unit_tests`) : `src/` reste la
@@ -532,7 +541,25 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `about_search`) — dont `{{TOPIC_LIST}}`, la liste des sujets composée depuis
   les sections présentes et leurs libellés (`formatHelpTopicList`) ; porte aussi
   le WARN sur clef inconnue de `config.json` (`warn_unknown_config_keys`, qui
-  lit `config.sample.json` comme référence vivante plutôt qu'une liste recopiée).
+  lit `config.sample.json` comme référence vivante plutôt qu'une liste recopiée) ;
+  porte enfin les fichiers voisins de `miaou.html` dans `dist/` (manifeste,
+  icônes gardées par `check_icon_fingerprint`, `version.json`) et l'empreinte
+  `__MIAOU_BUILD_ID__` (`compute_build_id` sur l'assemblage neutre).
+- **`docs/pwa.md`** — MIAOU installable, servi en http(s) par le proxy MCP sous
+  `/app/` : trois origines donc trois stockages, fichiers servis et
+  revalidation, lien du manifeste posé en http(s) seulement, `theme-color`
+  réécrite par `syncThemeColor` depuis `applyTheme` ET `applyPalette` ;
+  service worker (`src/pwa/sw.js`) : trois familles servies (navigation en
+  réseau d'abord borné par `NAV_TIMEOUT_MS`, CDN versionnés en cache d'abord
+  refaits en `cors`, feuille Google Fonts rafraîchie en arrière-plan), tout le
+  reste laissé au réseau sans `respondWith`, et `verify-pwa-sw.mjs` qui
+  désactive le cache HTTP ; détection de nouvelle version
+  (`checkForNewVersion` sur `version.json`, toast persistant, « Recharger »
+  refusé par `reloadBlockReason` tant qu'une génération, une file
+  d'interjections ou un brouillon serait perdu) ; Réglages › Application
+  (`installSurfaceState`, invite `beforeinstallprompt` différée) et sonde de la
+  version servie depuis file:// (`probeServedApp` sur les origines des serveurs
+  MCP configurés).
 - **`docs/pitfalls-detail.md`** — développement complet des pièges 1-24
   ci-dessus, invariants transverses 16/18/21/24 compris. Les pièges 25 à 29 sont
   développés dans leur doc de domaine (`docs/tools.md` pour 25 et 26,
@@ -1006,7 +1033,8 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   `toastPlacement` (collé au bord droit, à hauteur du champ si la place à sa
   droite suffit, au-dessus sinon ; à côté d'un drawer ou par-dessus ; mesuré), a11y (rôle par niveau,
   jamais de vol de focus, pause au survol/focus, hors pile d'Échap) et jetons à
-  deux étages `--float-*` / `--toast-*`.
+  deux étages `--float-*` / `--toast-*` ; une action dont `run()` rend `false`
+  a refusé et laisse le toast ouvert.
 - **`docs/tooltips.md`** — infobulles MIAOU (lot AH), qui remplacent le `title`
   natif : point d'écriture unique `setTip`/`getTip`, `tipAttrs` pour les
   gabarits, `data-tip` statique repris par `initTooltips`, règle ARIA pure

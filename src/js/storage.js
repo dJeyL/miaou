@@ -29,6 +29,11 @@ const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD
 const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si sources non buildées
+// Empreinte du contenu de miaou.html (build.py, compute_build_id), aussi écrite
+// dans dist/version.json : la page servie la compare à celle du fichier pour
+// signaler une nouvelle version. Vide hors build. Marqueur à occurrence unique,
+// compte vérifié par build.py — même règle de nommage que ci-dessus.
+const BUILD_ID = (function () { try { return __MIAOU_BUILD_ID__; } catch (e) { return ''; } })();
 // Titrage précoce (lot AA) : défaut de build, surchargeable par l'utilisateur
 // dans le panneau. Booléen, donc « absent » ne se distingue pas de « false » à
 // la lecture des réglages : le défaut se résout dans DEFAULT_SETTINGS et non

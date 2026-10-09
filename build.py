@@ -37,6 +37,7 @@ JS_ORDER = [
     'acks.js',
     'export.js',
     'multitab.js',
+    'pwa.js',
     'main.js',
 ]
 
@@ -846,6 +847,109 @@ def inject_logo_html(template: str, svg: str) -> str:
     return template
 
 
+# ── PWA : les fichiers voisins de miaou.html dans dist/ ─────────────────────
+# Servi par le proxy MCP (clé `miaou_dist`, sous `/app/`), MIAOU devient
+# installable. Le contrat côté proxy ne fige qu'un nom : `manifest.webmanifest`
+# à la racine de dist/. Les icônes sont libres, mais le proxy avertit si l'une
+# de celles que cite `icons[].src` manque — d'où la vérification ci-dessous,
+# qui fait échouer le build plutôt que le démarrage du proxy.
+#
+# Les PNG ne sont PAS rasterisés ici : build.py reste sans dépendance. Ils sont
+# produits une fois par `scripts/make-icons.py` (uv, resvg-py) et versionnés
+# dans src/pwa/. La garde d'empreinte rattrape l'oubli : si le logo change sans
+# que les icônes soient régénérées, le build échoue en nommant le script.
+PWA_SRC = SRC / 'pwa'
+PWA_MANIFEST = 'manifest.webmanifest'
+PWA_SW = 'sw.js'   # servi à la racine de la portée (/app/), cf. docs/pwa.md
+PWA_ICON_FINGERPRINT = 'icons.sha256'
+VERSION_FILE = 'version.json'
+BUILD_ID_PLACEHOLDER = '__MIAOU_BUILD_ID__'
+
+# Classes retirées du logo avant rasterisation : ce sont celles que
+# LOGO_DATA_STYLE neutralise dans le data-URI (sourcils et moue soucieuse). Une
+# icône est le chat NORMAL, comme le favicon. Retirées comme éléments plutôt que
+# masquées par une feuille : le rendu ne dépend alors d'aucun support CSS du
+# rasteriseur.
+ICON_HIDDEN_CLASSES = ('brow', 'mouth-worried')
+
+
+def icon_svg(svg: str) -> str:
+    """Le logo tel que rasterisé pour les icônes : chat normal, ids intacts."""
+    def hidden(m):
+        classes = m.group(1).split()
+        return '' if any(c in classes for c in ICON_HIDDEN_CLASSES) else m.group(0)
+    return re.sub(r'<[a-z]+\b[^>]*\sclass="([^"]*)"[^>]*/>', hidden, svg)
+
+
+def icon_fingerprint(svg: str) -> str:
+    """Empreinte du SVG d'icône (pas du fichier brut) : une retouche de la
+    neutralisation compte autant qu'une retouche du dessin."""
+    import hashlib
+    return hashlib.sha256(icon_svg(svg).encode('utf-8')).hexdigest()
+
+
+def check_icon_fingerprint(svg: str, recorded: str) -> None:
+    if recorded.strip() != icon_fingerprint(svg):
+        raise SystemExit(
+            '[build] src/svg/cat.svg a changé depuis la génération des icônes PWA '
+            f'(src/pwa/{PWA_ICON_FINGERPRINT}). Les régénérer : '
+            'uv run --with resvg-py python scripts/make-icons.py')
+
+
+def manifest_icon_files(manifest: dict) -> list:
+    """Les fichiers cités par `icons[].src`, relatifs au manifeste."""
+    out = []
+    for icon in manifest.get('icons') or []:
+        src = icon.get('src') if isinstance(icon, dict) else None
+        if not isinstance(src, str) or not src or '/' in src or src.startswith('.'):
+            raise SystemExit(
+                f'[build] {PWA_MANIFEST} : icons[].src {src!r} invalide '
+                '(nom de fichier nu attendu, voisin du manifeste).')
+        out.append(src)
+    return out
+
+
+def build_pwa_files(svg: str) -> dict:
+    """{nom dans dist/: octets} pour le manifeste et ses icônes, gardes passées."""
+    manifest_path = PWA_SRC / PWA_MANIFEST
+    if not manifest_path.exists():
+        raise FileNotFoundError(f'Manifeste introuvable : {manifest_path}')
+    raw = manifest_path.read_bytes()
+    try:
+        manifest = json.loads(raw.decode('utf-8'))
+    except ValueError as e:
+        raise SystemExit(f'[build] {PWA_MANIFEST} : JSON invalide ({e}).')
+    fp_path = PWA_SRC / PWA_ICON_FINGERPRINT
+    if not fp_path.exists():
+        raise SystemExit(f'[build] src/pwa/{PWA_ICON_FINGERPRINT} absent : '
+                         'uv run --with resvg-py python scripts/make-icons.py')
+    check_icon_fingerprint(svg, fp_path.read_text(encoding='utf-8'))
+    files = {PWA_MANIFEST: raw}
+    for name in manifest_icon_files(manifest):
+        p = PWA_SRC / name
+        if not p.exists():
+            raise SystemExit(f'[build] icône citée par {PWA_MANIFEST} introuvable : {p}')
+        files[name] = p.read_bytes()
+    sw_path = PWA_SRC / PWA_SW
+    if not sw_path.exists():
+        raise FileNotFoundError(f'Service worker introuvable : {sw_path}')
+    files[PWA_SW] = collapse_blank_code_lines(strip_js_comments(read(sw_path))).strip().encode('utf-8') + b'\n'
+    return files
+
+
+def compute_build_id(neutral_output: str) -> str:
+    """Empreinte du CONTENU servi, horodatage neutralisé.
+
+    `neutral_output` est miaou.html assemblé avec un horodatage fixe et le
+    marqueur `__MIAOU_BUILD_ID__` encore en place : un rebuild sans changement
+    de source (ou de config) rend donc le même identifiant, alors que le fichier
+    réel, lui, change à chaque build (date en tête du JS, `build_ts`). Une date
+    de fichier aurait signalé une « nouvelle version » à chaque rebuild.
+    """
+    import hashlib
+    return hashlib.sha256(neutral_output.encode('utf-8')).hexdigest()[:16]
+
+
 def assemble_css() -> str:
     parts = []
     for name in CSS_ORDER:
@@ -858,10 +962,16 @@ def assemble_css() -> str:
 
 
 def assemble_js(cfg_data: dict, help_data: dict, help_labels: dict,
-                system_skills_data: dict, logo_data: str) -> str:
-    now = datetime.now(timezone.utc)
-    build_date = now.strftime('%Y-%m-%d %H:%M UTC')
-    cfg_data['build_ts'] = int(now.timestamp())
+                system_skills_data: dict, logo_data: str, now=None) -> str:
+    """`now=None` : horodatage neutre (date vide, `build_ts` à 0), pour
+    l'assemblage qui sert au calcul de l'empreinte (compute_build_id)."""
+    cfg_data = dict(cfg_data)   # build_ts posé sur une copie : deux assemblages
+    if now is None:
+        build_date = '-'
+        cfg_data['build_ts'] = 0
+    else:
+        build_date = now.strftime('%Y-%m-%d %H:%M UTC')
+        cfg_data['build_ts'] = int(now.timestamp())
     parts = [f'/* miaou — built: {build_date} */\n']
     for name in JS_ORDER:
         path = SRC / 'js' / name
@@ -929,16 +1039,31 @@ def build(use_config: bool = True):
     help_data, help_labels = load_help()
     system_skills_data = load_system_skills()
     logo_svg = read_logo_svg()
+    pwa_files = build_pwa_files(logo_svg)   # gardes AVANT toute écriture
     template = inject_logo_html(template, logo_svg)
     css = assemble_css()
-    js = assemble_js(cfg_data, help_data, help_labels, system_skills_data,
-                     logo_data_uri(logo_svg))
+    js_args = (cfg_data, help_data, help_labels, system_skills_data,
+               logo_data_uri(logo_svg))
+    neutral_js = assemble_js(*js_args, now=None)
+    js = assemble_js(*js_args, now=datetime.now(timezone.utc))
+
+    # Marqueur à occurrence unique, VÉRIFIÉE : absent, la détection de version
+    # resterait muette sans que rien ne le signale.
+    found = js.count(BUILD_ID_PLACEHOLDER)
+    if found != 1:
+        raise SystemExit(f'[build] {BUILD_ID_PLACEHOLDER} attendu 1 fois dans le JS, trouvé {found}.')
+    build_id = compute_build_id(
+        template.replace(CSS_PLACEHOLDER, css).replace(JS_PLACEHOLDER, neutral_js))
+    js = js.replace(BUILD_ID_PLACEHOLDER, json.dumps(build_id))
 
     output = template.replace(CSS_PLACEHOLDER, css).replace(JS_PLACEHOLDER, js)
 
     out_path = DIST / 'miaou.html'
     out_path.write_text(output, encoding='utf-8')
-    print(f'Build OK → {out_path}')
+    for name, data in pwa_files.items():
+        (DIST / name).write_bytes(data)
+    (DIST / VERSION_FILE).write_text(json.dumps({'build': build_id}) + '\n', encoding='utf-8')
+    print(f'Build OK → {out_path} (build {build_id})')
 
 
 

@@ -20,7 +20,7 @@ except ImportError:
 ROOT = Path(__file__).parent
 SRC_JS = ROOT.parent / 'src' / 'js'
 
-JS_ORDER = ['utils.js', 'docs.js', 'sync.js', 'storage.js', 'usage-stats.js', 'agents.js', 'resources.js', 'skills.js', 'mcp-skills.js', 'mcp.js', 'tools.js', 'api.js', 'ui.js', 'toasts.js', 'tooltips.js', 'acks.js', 'export.js', 'multitab.js', 'main.js']
+JS_ORDER = ['utils.js', 'docs.js', 'sync.js', 'storage.js', 'usage-stats.js', 'agents.js', 'resources.js', 'skills.js', 'mcp-skills.js', 'mcp.js', 'tools.js', 'api.js', 'ui.js', 'toasts.js', 'tooltips.js', 'acks.js', 'export.js', 'multitab.js', 'pwa.js', 'main.js']
 
 # ── Stubs navigateur ──────────────────────────────────────────────────────────
 # On simule juste ce qu'il faut pour que le code source charge sans exploser.
@@ -733,6 +733,69 @@ def run_build_unit_tests() -> tuple[int, int]:
                   build.load_system_skills() == {})
         finally:
             build.SRC = orig_src
+
+    # ── PWA : icônes, manifeste, empreinte de build ──────────────────────────
+    real_logo = build.read_logo_svg()
+    icon = build.icon_svg(real_logo)
+    check('pwa : icon_svg retire sourcils et moue soucieuse',
+          'brow' not in icon and 'mouth-worried' not in icon)
+    check('pwa : icon_svg garde les yeux, la bouche normale et le dégradé',
+          icon.count('class="eye"') == 2 and 'mouth-ok' in icon and 'url(#gB)' in icon)
+    check('pwa : l\'empreinte enregistrée correspond au logo actuel',
+          (build.PWA_SRC / build.PWA_ICON_FINGERPRINT).read_text(encoding='utf-8').strip()
+          == build.icon_fingerprint(real_logo))
+
+    def fp_raises(svg, recorded):
+        try:
+            build.check_icon_fingerprint(svg, recorded)
+            return False
+        except SystemExit:
+            return True
+    check('pwa : logo retouché sans régénérer les icônes → build échoue',
+          fp_raises(real_logo.replace('r="3.3"', 'r="3.4"'), build.icon_fingerprint(real_logo)))
+    check('pwa : retoucher un élément retiré de l\'icône (sourcil) ne réveille pas la garde',
+          not fp_raises(real_logo.replace('stroke-width="1.6"', 'stroke-width="1.7"'),
+                        build.icon_fingerprint(real_logo)))
+
+    def icons_raise(manifest):
+        try:
+            build.manifest_icon_files(manifest)
+            return False
+        except SystemExit:
+            return True
+    check('pwa : icons[].src chemin ou relatif → refusé',
+          icons_raise({'icons': [{'src': 'icons/a.png'}]})
+          and icons_raise({'icons': [{'src': '../a.png'}]})
+          and icons_raise({'icons': [{'src': ''}]}))
+    real_manifest = json.loads((build.PWA_SRC / build.PWA_MANIFEST).read_text(encoding='utf-8'))
+    real_icons = build.manifest_icon_files(real_manifest)
+    check('pwa : chaque icône citée par le manifeste existe dans src/pwa/',
+          all((build.PWA_SRC / n).exists() for n in real_icons))
+    sizes = {i.get('sizes') for i in real_manifest['icons'] if i.get('purpose', 'any') == 'any'}
+    check('pwa : manifeste installable (nom, start_url, standalone, icônes 192 et 512)',
+          real_manifest.get('name') and real_manifest.get('start_url')
+          and real_manifest.get('display') == 'standalone'
+          and {'192x192', '512x512'} <= sizes)
+    check('pwa : une icône maskable est déclarée',
+          any(i.get('purpose') == 'maskable' for i in real_manifest['icons']))
+
+    # Empreinte de build : un rebuild sans changement doit rendre le même id,
+    # alors que l'assemblage réel change (date, build_ts). Le test porte sur
+    # l'assemblage NEUTRE, celui que build() empreinte.
+    from datetime import datetime as _dt, timezone as _tz
+    cfg0 = {'max_turns': 3}
+    js_args = (cfg0, {}, {}, {}, 'data:x')
+    n1 = build.assemble_js(*js_args, now=None)
+    n2 = build.assemble_js(*js_args, now=None)
+    r1 = build.assemble_js(*js_args, now=_dt(2026, 1, 1, tzinfo=_tz.utc))
+    r2 = build.assemble_js(*js_args, now=_dt(2026, 1, 2, tzinfo=_tz.utc))
+    check('build-id : deux assemblages neutres sont identiques', n1 == n2)
+    check('build-id : deux assemblages datés diffèrent (la neutralisation est nécessaire)', r1 != r2)
+    check('build-id : assemble_js ne mute pas la config de l\'appelant', cfg0 == {'max_turns': 3})
+    check('build-id : le marqueur est présent une fois dans le JS assemblé',
+          n1.count(build.BUILD_ID_PLACEHOLDER) == 1)
+    check('build-id : une source différente change l\'empreinte',
+          build.compute_build_id(n1) != build.compute_build_id(n1 + ' '))
 
     # ── Caps d'octets (lot V-1) : ancrage sur la SOURCE RÉELLE ────────────────
     # Le cap d'entrée (MAX_INLINE_BYTES, utils.js) et la borne de VM aval

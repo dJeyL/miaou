@@ -10,7 +10,10 @@ demande seulement — Mermaid pour les diagrammes, QuickJS-WASM pour le calcul
 sandboxé, fflate pour les archives zip et les documents Office, pdf.js
 pour les PDF, SheetJS pour les classeurs Excel et mammoth pour les documents
 Word). On l'ouvre dans
-un navigateur, ou on le sert via n'importe quel serveur web statique.
+un navigateur, ou on le sert via n'importe quel serveur web statique. Servi par
+le proxy MCP (miaou-mcp-servers, sous `/app/`), il **s'installe comme une
+application**, démarre proxy coupé et signale une nouvelle version — cf.
+[docs/pwa.md](docs/pwa.md).
 
 L'apparence se règle sur trois axes indépendants : luminosité (sombre, clair ou
 selon le système), palette de couleurs (ambre, encre ou forêt) et lot de fontes
@@ -286,6 +289,12 @@ python3 build.py                    # → dist/miaou.html
 URL/clef/modèle. `dist/miaou.html` est en revanche **versionné intentionnellement**
 pour pouvoir le récupérer directement depuis l'UI web du dépôt sans relancer le
 build.
+
+Le build dépose aussi dans `dist/`, versionnés de même, ce que la version servie
+utilise : manifeste, icônes, service worker et `version.json`. Les icônes PNG
+viennent de `scripts/make-icons.py` (`uv run --with resvg-py python
+scripts/make-icons.py`), à relancer si le logo change : le build échoue sinon —
+cf. [docs/build.md](docs/build.md).
 
 ### Configuration (`config.json`)
 
