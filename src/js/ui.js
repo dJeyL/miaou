@@ -9464,10 +9464,15 @@ function apiCardEl(serverId) {
 }
 
 function mcpCardEl(name) {
+  return mcpCardEls([name])[0] || null;
+}
+// Cartes MCP des serveurs nommés, dans l'ORDRE DU DRAWER : la première est
+// celle qu'on amène en vue, les suivantes sont en dessous.
+function mcpCardEls(names) {
   const list = $('mcp-list');
-  if (!list) return null;
-  for (const c of list.querySelectorAll('.mcp-card')) if (c.dataset.serverName === name) return c;
-  return null;
+  if (!list) return [];
+  const wanted = new Set(names);
+  return Array.from(list.querySelectorAll('.mcp-card')).filter(c => wanted.has(c.dataset.serverName));
 }
 
 // Ouvre le drawer d'un serveur sur SA carte : cible du clic des toasts qui
@@ -9482,18 +9487,32 @@ function openMcpServerCard(name) {
   revealServerCard(function() { return name ? mcpCardEl(name) : null; });
 }
 
+// Clic sur la pastille de topbar (injoignable / à autoriser) : mène aux cartes
+// qu'elle compte, toutes signalées. Les serveurs sont relus AU CLIC et non au
+// rendu de la pastille : la liste a pu changer depuis, et la pastille ne garde
+// aucun état (resolveAuthorizationPending la recalcule à chaque fois).
+function onAuthPendingClick() {
+  const names = resolveAuthorizationPending(mcpStatusSnapshot()).servers;
+  openMcpServers();
+  revealServerCard(function() { return mcpCardEls(names); });
+}
+
 // Délai calé sur la transition d'ouverture des drawers (220 ms, drawers.css),
 // comme openSettingsCategory : le défilement se jouerait sinon hors écran. La
 // carte est cherchée APRÈS le délai, une liste re-rendue entre-temps (statut
 // MCP qui arrive) ayant remplacé ses nœuds.
 const SERVER_CARD_REVEAL_DELAY_MS = 240;
 const SERVER_CARD_FLASH_MS = 1600;
-let _serverCardFlash = null;   // { card, timer } : un seul signal à la fois
+let _serverCardFlash = null;   // { cards, timer } : un seul signal à la fois
 
-function revealServerCard(findCard) {
+// `findCards` rend une carte, une liste de cartes (dans l'ordre du drawer) ou
+// rien. Plusieurs : toutes sont signalées, la PREMIÈRE seule est amenée en vue.
+function revealServerCard(findCards) {
   setTimeout(function() {
-    const card = findCard();
-    if (!card) return;
+    const found = findCards();
+    const cards = Array.isArray(found) ? found : (found ? [found] : []);
+    if (!cards.length) return;
+    const card = cards[0];
     // Défile seulement si la carte n'est pas visible EN ENTIER (`nearest`) ;
     // plus haute que la zone visible, on aligne son haut — `nearest` alignerait
     // son bas quand elle déborde par le haut. La marge (`scroll-margin-block`,
@@ -9504,12 +9523,15 @@ function revealServerCard(findCard) {
     card.scrollIntoView({ block: tall ? 'start' : 'nearest', behavior: motionReduced() ? 'auto' : 'smooth' });
     if (_serverCardFlash) {
       clearTimeout(_serverCardFlash.timer);
-      _serverCardFlash.card.classList.remove('is-target');
+      _serverCardFlash.cards.forEach(c => c.classList.remove('is-target'));
     }
-    card.classList.add('is-target');
+    cards.forEach(c => c.classList.add('is-target'));
     _serverCardFlash = {
-      card: card,
-      timer: setTimeout(function() { card.classList.remove('is-target'); _serverCardFlash = null; }, SERVER_CARD_FLASH_MS),
+      cards: cards,
+      timer: setTimeout(function() {
+        cards.forEach(c => c.classList.remove('is-target'));
+        _serverCardFlash = null;
+      }, SERVER_CARD_FLASH_MS),
     };
   }, SERVER_CARD_REVEAL_DELAY_MS);
 }

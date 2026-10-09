@@ -4852,7 +4852,7 @@ if (window.requestAnimationFrame) {
           <div class="model-menu agent-menu" id="agent-menu"></div>
         </span>
 
-        <button class="agent-count auth-pending" id="auth-pending" hidden onclick="openMcpServers()"><span class="auth-pending-dot"></span><span id="auth-pending-label"></span></button>
+        <button class="agent-count auth-pending" id="auth-pending" hidden onclick="onAuthPendingClick()"><span class="auth-pending-dot"></span><span id="auth-pending-label"></span></button>
         <span class="model-pill"><span class="dot" id="conn-dot"></span><span id="model-label">modèle</span></span>
         <button class="icon-btn" onclick="openSettings()" data-tip="Paramètres">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -5604,7 +5604,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-09 20:23 UTC */
+/* miaou — built: 2026-10-09 20:50 UTC */
 
 /* ── utils.js ── */
 
@@ -11125,7 +11125,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1791577395}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1791579005}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11133,7 +11133,7 @@ const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "068e0c3d8ab5df3c"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "00c91bdc79a0ea04"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -27170,10 +27170,14 @@ function apiCardEl(serverId) {
 }
 
 function mcpCardEl(name) {
+  return mcpCardEls([name])[0] || null;
+}
+
+function mcpCardEls(names) {
   const list = $('mcp-list');
-  if (!list) return null;
-  for (const c of list.querySelectorAll('.mcp-card')) if (c.dataset.serverName === name) return c;
-  return null;
+  if (!list) return [];
+  const wanted = new Set(names);
+  return Array.from(list.querySelectorAll('.mcp-card')).filter(c => wanted.has(c.dataset.serverName));
 }
 
 function openApiServerCard(serverId) {
@@ -27185,14 +27189,22 @@ function openMcpServerCard(name) {
   revealServerCard(function() { return name ? mcpCardEl(name) : null; });
 }
 
+function onAuthPendingClick() {
+  const names = resolveAuthorizationPending(mcpStatusSnapshot()).servers;
+  openMcpServers();
+  revealServerCard(function() { return mcpCardEls(names); });
+}
+
 const SERVER_CARD_REVEAL_DELAY_MS = 240;
 const SERVER_CARD_FLASH_MS = 1600;
 let _serverCardFlash = null;
 
-function revealServerCard(findCard) {
+function revealServerCard(findCards) {
   setTimeout(function() {
-    const card = findCard();
-    if (!card) return;
+    const found = findCards();
+    const cards = Array.isArray(found) ? found : (found ? [found] : []);
+    if (!cards.length) return;
+    const card = cards[0];
 
     const scroller = card.closest('.drawer-body');
     const margin = parseFloat(getComputedStyle(card).scrollMarginTop) || 0;
@@ -27200,12 +27212,15 @@ function revealServerCard(findCard) {
     card.scrollIntoView({ block: tall ? 'start' : 'nearest', behavior: motionReduced() ? 'auto' : 'smooth' });
     if (_serverCardFlash) {
       clearTimeout(_serverCardFlash.timer);
-      _serverCardFlash.card.classList.remove('is-target');
+      _serverCardFlash.cards.forEach(c => c.classList.remove('is-target'));
     }
-    card.classList.add('is-target');
+    cards.forEach(c => c.classList.add('is-target'));
     _serverCardFlash = {
-      card: card,
-      timer: setTimeout(function() { card.classList.remove('is-target'); _serverCardFlash = null; }, SERVER_CARD_FLASH_MS),
+      cards: cards,
+      timer: setTimeout(function() {
+        cards.forEach(c => c.classList.remove('is-target'));
+        _serverCardFlash = null;
+      }, SERVER_CARD_FLASH_MS),
     };
   }, SERVER_CARD_REVEAL_DELAY_MS);
 }

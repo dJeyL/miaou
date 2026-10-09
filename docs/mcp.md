@@ -619,7 +619,11 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       décide de l'apparition et du libellé, `syncAuthorizationPending` (ui.js)
       applique — même séparation que `resolveAgentCount`/`syncAgentCount`. Elle
       compte des **serveurs**, pas des upstreams : elle dit combien de cartes
-      ouvrir, le détail vit dans la carte.
+      ouvrir, le détail vit dans la carte. Son clic (`onAuthPendingClick`, ui.js)
+      mène à ces cartes comme le clic d'un toast qui nomme un serveur
+      (`revealServerCard`, cf. `docs/toasts.md`) : toutes celles qu'elle compte
+      sont signalées, la première dans l'ordre du drawer est amenée en vue. La
+      liste est relue AU CLIC (`pending.servers`), jamais mémorisée au rendu.
     - **Deux compteurs, deux mots.** La pastille dit « 1 **serveur** à
       autoriser » et la carte « 2 **services** à autoriser » : les comptes ne
       portent pas sur la même chose (les cartes à ouvrir d'un côté, les upstreams

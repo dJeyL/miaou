@@ -51,7 +51,10 @@ dismissToast(key)
   lisible sous reduced-motion). Côté API la cible est l'id, jamais le nom : deux
   serveurs peuvent être homonymes — d'où `gen.serverId`, capturé avec
   `serverName` au début de la génération. Carte introuvable (serveur supprimé ou
-  renommé depuis) : le drawer s'ouvre simplement.
+  renommé depuis) : le drawer s'ouvre simplement. `revealServerCard` accepte
+  aussi une liste de cartes (ordre du drawer) : toutes signalées, la première
+  amenée en vue — c'est le cas de la pastille de topbar des serveurs MCP
+  injoignables ou à autoriser (`docs/mcp.md`).
 - `persistent` — erreur de perte de données (P1) : pas d'auto-fermeture. Aussi
   posé sur l'annonce de nouvelle version, qui n'est pas une erreur mais attend
   un geste.
