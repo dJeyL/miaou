@@ -23,12 +23,16 @@ sys.path.insert(0, str(ROOT))
 import build  # noqa: E402
 import resvg_py  # noqa: E402
 
-# Fond de la variante maskable : le --bg du thème sombre (palette ambre), le
-# même que theme_color/background_color du manifeste.
-MASKABLE_BG = '#0b0c0e'
-# Côté du chat dans la variante maskable, en % du canevas : sa boîte (52/64 du
-# viewBox) doit tenir dans le cercle de la zone sûre, diamètre 80 %.
-MASKABLE_LOGO_PCT = 62
+# Fond de la variante maskable : le --sidebar-bg du thème clair, palette ambre
+# (hsl(41 29.5% 87.2%)). Le --bg du sombre, essayé d'abord, contrastait trop
+# dans le Dock de macOS.
+MASKABLE_BG = '#e8e2d5'
+# Côté du chat dans la variante maskable, en % du canevas. Le dessin doit tenir
+# dans le cercle de la zone sûre (diamètre 80 % du canevas). Ce qui compte est
+# le point visible le plus éloigné du centre du viewBox, pas la boîte englobante
+# (dont les coins sont vides) : pointes d'oreilles et de queue, à ~30,4/64 du
+# côté. Plafond 40 / (30,4 / 64) ≈ 84 ; 80 garde une marge.
+MASKABLE_LOGO_PCT = 80
 
 
 def render(svg: str, size: int) -> bytes:
