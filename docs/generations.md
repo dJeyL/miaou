@@ -339,7 +339,7 @@ Les transitions, et elles seules :
 | Événement | Effet | Point de code |
 |---|---|---|
 | contenu arrivé hors de vue | non vu | `markThreadContentUnseen` |
-| le fil atteint le fond | vu | `ackThreadContentSeen`, depuis `syncScrollBottomBtn` |
+| la fin du fil revient à l'écran | vu | `ackThreadContentSeen`, depuis `syncScrollBottomBtn` |
 | une génération FINIT sur un fil à non-vu | reporté sur le badge de sidebar | `unregisterGeneration` |
 | on QUITTE la conversation | reporté sur le badge de sidebar | `carryThreadUnseenToBadge` |
 
@@ -357,6 +357,16 @@ pas encore vu ça » ne survit pas à un rechargement, qui repart du fond.
 Les deux répondent à des questions différentes : « faut-il continuer à dérouler
 le fil ? » regarde ce que l'utilisateur veut, « ce qui vient d'arriver est-il
 visible ? » regarde où est la vue. Seule la seconde décide d'une pulsation.
+
+**Et ce n'est pas non plus `isAtBottom`, mais `threadContentEndInView`** : la
+fin du CONTENU du fil est-elle à l'écran ? Sans espace de bulle envoyée, les
+deux coïncident. Avec lui, le fond est du vide fabriqué : un lecteur un peu
+remonté (fin de la réponse précédente en vue) devant une réponse courte
+entièrement affichée n'était pas au fond, et le bouton pulsait pour faire
+défiler vers rien. Le même prédicat acquitte, sinon voir la fin d'une réponse
+marquée non vue ne suffirait pas tant qu'on ne descend pas dans le vide. Et
+la visibilité du bouton le suit aussi : montré, il disait « fais défiler pour
+voir du rien » ; un bouton masqué ne garde par construction aucun non-vu.
 
 Marquer sur `shouldFollowStream` ne marquait **jamais** tant que le plafond
 d'ancrage était armé, puisque ce prédicat rend `true` quand la vue est posée au
@@ -418,7 +428,7 @@ n'a jamais lieu, et aurait fait croire à une divergence inexistante.
 qui reste : descendre sans avoir quitté la conversation.
 
 Visibilité et pulsation restent deux questions séparées, avec deux écrivains :
-`syncScrollBottomBtn` pour l'attribut `hidden` (position de défilement),
+`syncScrollBottomBtn` pour l'attribut `hidden` (fin du fil hors de l'écran),
 `syncScrollBottomGlow` pour la classe (non-vu). Indépendants, donc la classe
 survit aux passages masqué/visible.
 

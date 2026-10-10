@@ -117,6 +117,18 @@ IndexedDB au lot U — une migration structurelle, sans feature utilisateur
 visible, donc sans déclencheur évident pour relire cette ligne. Le grep ne
 visait alors que `help.md`/`README.md` : étendu à `CLAUDE.md` depuis.
 
+**Nouvel outil ou handler qui ÉCRIT → troisième question : « quelle surface
+affiche cette donnée, et qui la rafraîchit quand c'est le modèle qui écrit ? »**
+Un geste UI re-rend sa propre liste, et c'est pour ça que l'oubli ne se voit
+pas : les handlers de `tools.js` n'ont pas de DOM, donc une écriture du modèle
+laisse la surface ouverte afficher l'ancien état, et un succès annoncé ressemble
+à une écriture qui n'a rien fait. Le rafraîchissement se place au **point
+d'écriture unique** de la donnée (fonction de persistance, garde `typeof` pour
+QuickJS), jamais chez les appelants ; la surface en cours de saisie est
+épargnée. Payé le 2026-10-10 sur les souvenirs (`persistMemories` →
+`refreshVisibleMemoryLists`, `verify-memory-update.mjs`), où l'affichage
+périmé a masqué un `memory__update` qui avait visé le mauvais souvenir.
+
 Python via `uv` exclusivement. `config.json` (copié de `config.sample.json`) est
 local et non versionné ; `dist/miaou.html` est versionné intentionnellement.
 

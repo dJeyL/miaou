@@ -1548,6 +1548,26 @@ function isAtBottom() {
   return m.scrollHeight - m.scrollTop - m.clientHeight <= AUTOSCROLL_TOLERANCE_PX;
 }
 
+// « La FIN DU CONTENU du fil est-elle à l'écran ? » — la question du non-vu,
+// distincte de « la vue est-elle au fond ? » (isAtBottom). Les deux coïncident
+// sans espace de bulle envoyée ; avec lui, le fond est du VIDE fabriqué. Un
+// lecteur légèrement remonté, devant une réponse courte entièrement visible,
+// n'était pas au fond : le bouton pulsait pour « faire défiler vers du rien ».
+//
+// Mesurée sur le haut de l'espace (là où finit le fil, cf. syncThreadTailSpace)
+// contre le bas de la zone utile de `#messages`, padding bas déduit : au fond et
+// sans espace, les deux se confondent, donc même réponse qu'isAtBottom.
+function threadContentEndInView() {
+  const m = $('messages');
+  const spacer = $('thread-tail-space');
+  if (!m || !spacer) return isAtBottom();
+  if (_tailSpace.convId != null) syncThreadTailSpace();
+  const padBottom = parseFloat(getComputedStyle(m).paddingBottom) || 0;
+  const contentEnd = spacer.getBoundingClientRect().top;
+  const viewEnd = m.getBoundingClientRect().bottom - padBottom;
+  return contentEnd - viewEnd <= AUTOSCROLL_TOLERANCE_PX;
+}
+
 // scrollBottom(force) : force=true ramène toujours en bas (nouveau message
 // user, nouvelle bulle assistant, ouverture de conversation). Sans argument,
 // ne scrolle que si l'utilisateur était déjà en bas — cf. isAtBottom.
@@ -1650,7 +1670,7 @@ const _threadUnseen = new Set();   // Set<convId> — du contenu est arrivé hor
 // placeToolBlocks, finalizeAssistant). Les appelants passent par ici plutôt que
 // d'écrire dans le Set — un seul écrivain, une seule fois la condition.
 //
-// La condition est la POSITION (`isAtBottom`), pas l'intention de suivi
+// La condition est la POSITION (`threadContentEndInView`), pas l'intention de suivi
 // (`shouldFollowStream`). Les deux questions sont distinctes : « faut-il
 // continuer à dérouler le fil ? » regarde ce que l'utilisateur veut, « ce qui
 // vient d'arriver est-il visible ? » regarde où est la vue.
@@ -1665,10 +1685,14 @@ const _threadUnseen = new Set();   // Set<convId> — du contenu est arrivé hor
 // briller, sinon le glow rate sa seule occasion utile.
 //
 // Pas de risque de glow permanent pendant une génération réellement suivie :
-// l'ancrage doux (plafond levé, vue au fond) garde `isAtBottom()` vrai, et
-// `syncScrollBottomBtn` acquitte à chaque `scroll` dès que le fond est atteint.
+// l'ancrage doux (plafond levé, vue au fond) garde la fin du fil à l'écran, et
+// `syncScrollBottomBtn` acquitte à chaque `scroll` dès qu'elle y revient.
+//
+// Pas `isAtBottom` : sous l'espace de la bulle envoyée, le fond est du vide, et
+// une réponse courte écrite sous les yeux d'un lecteur un peu remonté se
+// marquait non vue (cf. threadContentEndInView).
 function markThreadContentUnseen() {
-  if (currentConvId == null || isAtBottom()) return;
+  if (currentConvId == null || threadContentEndInView()) return;
   _threadUnseen.add(currentConvId);
   syncScrollBottomGlow();
 }
@@ -1865,8 +1889,8 @@ function scrollBottomCapped(convId) {
 // espace vide après le fil (`#thread-tail-space`), juste assez haut pour que
 // le FOND du défilement coïncide avec le plafond. Il fond à mesure que la
 // réponse grandit et tombe à zéro quand elle dépasse l'écran : la vue n'a
-// jamais bougé, et le bouton « aller tout en bas » apparaît de lui-même
-// (isAtBottom devient faux), sans rien changer à son prédicat.
+// jamais bougé, et le bouton « aller tout en bas » apparaît de lui-même (la
+// fin du fil passe sous le bord, cf. threadContentEndInView).
 //
 // Comme le fond coïncide avec le plafond, tout le reste tient sans exception :
 // `scrollBottom(true)` et la stabilisation du rendu atterrissent au plafond,
@@ -2039,8 +2063,12 @@ let _scrollBottomAnim = null;    // handle rAF de la frame en attente
 let _scrollBottomAnimating = false;   // descente en cours (drapeau de visibilité)
 
 // PRÉDICAT UNIQUE de visibilité du bouton, et SEUL écrivain de son `hidden`.
-// Visible dès que le fil n'est pas au fond — génération en cours ou simple
-// relecture d'une conversation ancienne — SAUF pendant la descente animée
+// Visible dès que la FIN DU CONTENU du fil est sous le bord de l'écran
+// (threadContentEndInView) — génération en cours ou simple relecture d'une
+// conversation ancienne. Pas « dès que la vue n'est pas au fond » : sous
+// l'espace de la bulle envoyée, le fond est du vide, et un lecteur un peu
+// remonté devant une réponse courte se voyait proposer de faire défiler vers
+// rien. Sans espace, les deux critères coïncident. SAUF pendant la descente animée
 // qu'il a lui-même déclenchée : le bouton est alors la cible qu'on vient de
 // cliquer, et le laisser sous le curseur pendant tout le trajet le fait
 // survivre à son propre effet.
@@ -2053,14 +2081,15 @@ let _scrollBottomAnimating = false;   // descente en cours (drapeau de visibilit
 function syncScrollBottomBtn() {
   const btn = $('scroll-bottom-btn');
   if (!btn) return;
-  const atBottom = isAtBottom();
-  // Arriver au fond vaut « j'ai vu » — que ce soit par le clic (dernière frame
-  // de la descente animée) ou à la main. Acquitter ICI plutôt qu'au clic : le
-  // scroll manuel jusqu'en bas est le MÊME geste du point de vue de
-  // l'utilisateur, et n'a pas de handler propre à décorer.
-  if (atBottom) ackThreadContentSeen();
+  const endInView = threadContentEndInView();
+  // Voir la fin du fil vaut « j'ai vu » — que ce soit par le clic (dernière
+  // frame de la descente animée) ou à la main. Acquitter ICI plutôt qu'au clic :
+  // le scroll manuel est le MÊME geste du point de vue de l'utilisateur, et n'a
+  // pas de handler propre à décorer. Même prédicat que le marquage et que la
+  // visibilité : un bouton masqué ne doit jamais garder du non-vu à signaler.
+  if (endInView) ackThreadContentSeen();
   syncScrollBottomGlow();
-  if (_scrollBottomAnimating || atBottom) btn.setAttribute('hidden', '');
+  if (_scrollBottomAnimating || endInView) btn.setAttribute('hidden', '');
   else btn.removeAttribute('hidden');
 }
 

@@ -19,7 +19,8 @@
 //     pendant le streaming, bouton au
 //     dépassement, fond fabriqué par l'espace qui ne lève pas le plafond,
 //     espace qui survit à une réponse courte, interjection sans saut,
-//     réglage décoché = comportement d'avant.
+//     réglage décoché = comportement d'avant. 8g (2026-10-11) : bouton et
+//     pulsation suivent la fin du CONTENU à l'écran, pas le fond fabriqué.
 // Ce script assertait avant le plafond « en restant en bas, la vue est au
 // fond » : le plafond l'a rendu faux par construction (la vue s'arrête sur
 // l'énoncé), d'où l'assertion de confinement qui l'a remplacé.
@@ -473,8 +474,57 @@ console.log('    8d : bulle envoyée à ' + Math.round(p8.bubbleTop) + 'px aprè
 check('8d : une interjection plus haute que l\'espace restant ne déplace pas la bulle envoyée', Math.abs(p8.bubbleTop - before8d.bubbleTop) <= 4);
 await end2();
 
-// 8e. Changer de conversation retire l'espace.
-await page2.evaluate(async () => { await openConversation('conv-verify-pin', true); });
+// 8g. Sous l'espace, le fond est du VIDE : bouton et pulsation se décident sur
+// la fin du CONTENU à l'écran, pas sur la vue au fond (2026-10-11). Cas signalé :
+// un peu remonté (fin de la réponse précédente en vue), une réponse courte
+// arrive sous les yeux — ni bouton, ni non-vu (« faire défiler vers du rien »).
+// La fin du contenu est mesurée ici sur la dernière bulle assistant, pas par le
+// prédicat de l'appli. Témoin sur le même montage : remonté assez pour que la
+// réponse tombe sous le bord, bouton et pulsation doivent venir, puis
+// s'éteindre dès que sa fin revient à l'écran — sans atteindre le fond.
+const tail = () => page2.evaluate(() => {
+  const m = document.getElementById('messages');
+  const as = document.querySelectorAll('#thread .msg.assistant');
+  const mr = m.getBoundingClientRect();
+  return {
+    replyBottom: as[as.length - 1].getBoundingClientRect().bottom - mr.top,
+    viewBottom: mr.height - (parseFloat(getComputedStyle(m).paddingBottom) || 0),
+    unseen: document.getElementById('scroll-bottom-btn').classList.contains('has-unseen'),
+  };
+});
+await send2('Question où je remonte un peu');
+await wheel2(-120, 1);
+await push2('Réponse brève, écrite sous les yeux.');
+await end2();
+p8 = await pin();
+let t8 = await tail();
+console.log('    8g : espace ' + p8.spacer + 'px, fin de réponse à ' + Math.round(t8.replyBottom) + 'px / bas utile ' + Math.round(t8.viewBottom) + 'px');
+check('8g prémisse : un peu remonté, la vue n\'est pas au fond, espace présent', !p8.atBottom && p8.spacer > 0);
+check('8g prémisse : la fin de la réponse est à l\'écran', t8.replyBottom > 0 && t8.replyBottom <= t8.viewBottom);
+check('8g : pas de bouton pour faire défiler vers le vide', !p8.btnShown);
+check('8g : pas de pulsation de non-vu', !t8.unseen);
+
+await send2('Question où je remonte franchement');
+await wheel2(-150, 4);
+await push2('Réponse brève, écrite hors de vue.');
+await end2();
+p8 = await pin();
+t8 = await tail();
+console.log('    8g témoin : fin de réponse à ' + Math.round(t8.replyBottom) + 'px / bas utile ' + Math.round(t8.viewBottom) + 'px');
+check('8g témoin prémisse : la fin de la réponse est sous le bord', t8.replyBottom > t8.viewBottom);
+check('8g témoin : bouton montré', p8.btnShown);
+check('8g témoin : pulsation de non-vu', t8.unseen);
+for (let k = 0; k < 20 && (await tail()).replyBottom > (await tail()).viewBottom; k++) await wheel2(40, 1);
+p8 = await pin();
+t8 = await tail();
+check('8g témoin prémisse : fin de réponse revenue à l\'écran sans atteindre le fond', t8.replyBottom <= t8.viewBottom && !p8.atBottom);
+check('8g témoin : voir la fin acquitte la pulsation', !t8.unseen);
+check('8g témoin : et masque le bouton', !p8.btnShown);
+
+// 8e. Changer de conversation retire l'espace. Rang de bulle oublié : les
+// interjections de 8d passent par appendUserMessage, en DOM seul, et le fil
+// relu de la base en compte deux de moins — le rang mémorisé n'y existe plus.
+await page2.evaluate(async () => { window.__sentOrdinal = null; await openConversation('conv-verify-pin', true); });
 await page2.waitForTimeout(300);
 check('8e : rouvrir la conversation repart sans espace', (await pin()).spacer === 0);
 
