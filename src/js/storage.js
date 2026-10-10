@@ -2232,8 +2232,15 @@ function loadMemories() {
   catch (e) { return []; }
 }
 
+// Point d'écriture unique des souvenirs : le rafraîchissement des listes
+// affichées vit ici, pas chez les appelants. Les gestes UI re-rendaient déjà
+// leur propre liste, mais les outils memory__* (tools.js, sans DOM) n'avaient
+// personne pour le faire — la liste de l'Espace, ouverte à côté du fil, montrait
+// l'ancien contenu après un memory__update réussi. Garde typeof : le runner
+// QuickJS charge storage.js sans ui.js.
 function persistMemories(arr) {
   writeLocalStorage(MEMORIES_KEY, JSON.stringify(arr));
+  if (typeof refreshVisibleMemoryLists === 'function') refreshVisibleMemoryLists();
 }
 
 // Entrées actives : non-supprimées. `scopes` optionnel (tableau de scopes

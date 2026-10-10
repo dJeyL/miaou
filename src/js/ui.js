@@ -11009,6 +11009,27 @@ function renderMemoryList(containerId, scope) {
   }
 }
 
+// Re-rendu des deux listes de souvenirs après une écriture, appelé par
+// `persistMemories` (storage.js) quel que soit l'écrivain — outil du modèle
+// compris. Une liste où l'utilisateur est en train de saisir (focus dedans,
+// édition ouverte, brouillon d'ajout) est laissée telle quelle : le re-rendu
+// détruirait sa saisie, et le geste qui la conclura re-rend de toute façon.
+// Les listes masquées sont re-rendues aussi : c'est peu coûteux, et rien ne les
+// rafraîchit quand la barre latérale repliée se rouvre.
+function refreshVisibleMemoryLists() {
+  const lists = [['memory-list', 'profile'], ['space-memory-list', activeSpaceId]];
+  for (const [containerId, scope] of lists) {
+    const wrap = $(containerId);
+    if (!wrap || !wrap.childElementCount) continue;   // jamais rendue : celui qui l'ouvre la rendra
+    if (wrap.contains(document.activeElement)) continue;
+    if (wrap.querySelector('.mem-edit-wrap:not(.hidden)')) continue;
+    const draft = $('mem-add-input-' + containerId);
+    if (draft && draft.value.trim()) continue;
+    renderMemoryList(containerId, scope);
+  }
+  if (_spaceScreenId) syncSpaceDeleteLabel(_spaceScreenId);
+}
+
 function addMemoryEntry(containerId, scope) {
   containerId = containerId || 'memory-list';
   scope = scope || 'profile';

@@ -175,6 +175,15 @@ montre jamais un fil hors du Space actif. Décision Julien, S5 du lot AG — cf.
   de suppression du drawer Space si celui-ci est ouvert sur le même Space
   (`_spaceScreenId === scope` → `syncSpaceDeleteLabel`), pour ne pas afficher
   un compte périmé si les deux surfaces sont ouvertes en même temps.
+- **Rafraîchissement au point d'écriture** : `persistMemories` (storage.js)
+  appelle `refreshVisibleMemoryLists` (ui.js), qui re-rend les deux listes
+  déjà rendues et resynchronise le libellé de suppression du drawer Space —
+  quel que soit l'écrivain, outils `memory__*` du modèle compris (sans DOM,
+  ils n'avaient personne pour le faire : la liste ouverte à côté du fil
+  gardait l'ancien contenu). Une liste en cours de saisie (focus dedans,
+  édition ouverte, brouillon d'ajout) est laissée telle quelle ; le geste qui
+  conclut la saisie re-rend de toute façon. Vérifié de bout en bout, appel
+  par un modèle stubé compris, par `verify-memory-update.mjs`.
 - **Drawer réglages « Souvenirs »** devient l'onglet **Profil** (libellé
   renommé côté HTML et bouton d'ouverture) : gère exclusivement le scope
   `'profile'` (appel `renderMemoryList()` sans argument = défaut) — pas de
