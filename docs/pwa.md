@@ -171,10 +171,10 @@ ne parvient pas à la page et le prédicat l'écarte de toute façon ; sur macOS
 Ctrl+N reste à l'édition de texte.
 
 `openNewAppWindow` ouvre l'adresse de l'appli (sans requête ni ancre) en
-`window.open` avec la fonctionnalité `popup`, à la taille de la fenêtre
-courante : un `window.open` nu peut être envoyé par Chromium dans un onglet du
-navigateur. `_newAppWindowMode` (`'popup'` ou `'tab'`) se change depuis la
-console pour comparer les deux. Vérification à la main seulement
+`window.open` nu : depuis une fenêtre d'application, Chrome ouvre une fenêtre
+de l'appli, agrandie si la courante l'est. La fonctionnalité `popup` donne
+aussi une fenêtre de l'appli, mais à taille fixe, jamais agrandie : écartée
+après essai des deux sous Windows. Vérification à la main seulement
 (`docs/manual-tests.md`, « MIAOU installable ») : la réception de la touche
 dépend de la fenêtre d'application, qu'aucun navigateur piloté ne reproduit.
 

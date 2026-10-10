@@ -558,7 +558,7 @@ structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
   refusé par `reloadBlockReason` tant qu'une génération, une file
   d'interjections ou un brouillon serait perdu) ; Ctrl+N qui ouvre une fenêtre
   de l'appli hors macOS (`isNewAppWindowShortcut`, fenêtre installée seulement,
-  `window.open` en `popup`) ; Réglages › Application
+  `window.open` nu, pas `popup`) ; Réglages › Application
   (`installSurfaceState`, invite `beforeinstallprompt` différée) et sonde de la
   version servie depuis file:// (`probeServedApp` sur les origines des serveurs
   MCP configurés).

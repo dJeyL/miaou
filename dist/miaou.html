@@ -5604,7 +5604,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-10 15:12 UTC */
+/* miaou — built: 2026-10-10 15:17 UTC */
 
 /* ── utils.js ── */
 
@@ -11125,7 +11125,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1791645142}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1791645433}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11133,7 +11133,7 @@ const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "458b7b85c5dbcfd9"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "99da9b94a40cfb1e"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -32411,17 +32411,8 @@ function isNewAppWindowShortcut(e, standalone, isMac) {
   return e.key === 'n' || e.key === 'N';
 }
 
-let _newAppWindowMode = 'popup';
-
 function openNewAppWindow() {
-  const url = location.origin + location.pathname;
-  if (_newAppWindowMode === 'tab') {
-    window.open(url, '_blank', 'noopener');
-    return;
-  }
-  const w = window.outerWidth || 1200;
-  const h = window.outerHeight || 800;
-  window.open(url, '_blank', 'popup,noopener,width=' + w + ',height=' + h);
+  window.open(location.origin + location.pathname, '_blank', 'noopener');
 }
 
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {

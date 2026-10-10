@@ -159,20 +159,12 @@ function isNewAppWindowShortcut(e, standalone, isMac) {
   return e.key === 'n' || e.key === 'N';
 }
 
-// Comment ouvrir la fenêtre : 'popup' (fenêtre d'application, à la taille de
-// la fenêtre courante) ou 'tab' (window.open nu, que Chromium peut envoyer
-// dans un onglet du navigateur). Modifiable depuis la console pour comparer.
-let _newAppWindowMode = 'popup';
-
+// window.open nu : depuis une fenêtre d'application, Chrome ouvre une fenêtre
+// de l'appli, agrandie si la courante l'est. La fonctionnalité `popup` ouvre
+// aussi une fenêtre de l'appli, mais à taille fixe, jamais agrandie (essayé
+// sous Windows).
 function openNewAppWindow() {
-  const url = location.origin + location.pathname;
-  if (_newAppWindowMode === 'tab') {
-    window.open(url, '_blank', 'noopener');
-    return;
-  }
-  const w = window.outerWidth || 1200;
-  const h = window.outerHeight || 800;
-  window.open(url, '_blank', 'popup,noopener,width=' + w + ',height=' + h);
+  window.open(location.origin + location.pathname, '_blank', 'noopener');
 }
 
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
