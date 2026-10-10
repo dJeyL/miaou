@@ -110,7 +110,9 @@ suit la génération en vol.
   A sur la conversation qu'il a sous les yeux. L'état étant partagé, B ne peut
   pas décider « vu » à la place de A (B est peut-être un onglet que personne ne
   regarde). Rouvrir X dans B, ou descendre au fond d'un fil à non-vu, l'efface
-  partout.
+  partout. Depuis le 2026-10-10, revenir dans la fenêtre B (focus) l'efface
+  aussi si la vue y montre la fin du fil : c'est le geste qui dit que quelqu'un
+  regarde.
 
 - **Marquage** : deux producteurs, et le second n'est pas une génération.
   (1) `unregisterGeneration`, si `!genOwnsScreen(gen)` — **ou** si l'écran
@@ -119,7 +121,13 @@ suit la génération en vol.
   réponse : le plafond d'ancrage arrête le suivi dès qu'elle dépasse l'écran, et
   la suite s'écrit sous le fold. La formulation d'origine (« une réponse qu'on a
   regardée arriver n'est pas non lue ») confondait les deux ; renversé le
-  2026-09-13, après usage. (2) `carryThreadUnseenToBadge` au **départ** d'une conversation dont le
+  2026-09-13, après usage. **Ni sans le focus** (2026-10-10) : la conversation
+  n'est « sous les yeux » que si la fenêtre a le focus (`windowHasFocus`, main.js
+  — `document.hasFocus()`, pas `document.hidden`, aveugle à une fenêtre
+  recouverte par une autre application). Une fin de génération pendant qu'on
+  est ailleurs pose donc le non-lu même sur la conversation affichée et suivie
+  jusqu'au fond par l'autoscroll — c'est le cas que sert la pastille d'icône
+  d'application. (2) `carryThreadUnseenToBadge` au **départ** d'une conversation dont le
   fil a du contenu non vu (on était remonté, la réponse s'est écrite sous le
   fold, on part sans être redescendu) : la surface qui le disait — le bouton
   « aller tout en bas » — n'existe plus une fois qu'on est ailleurs, le badge
@@ -134,7 +142,12 @@ suit la génération en vol.
 - **Effacement** : `markConvRead(id)` dans `openConversation`. **Ouvrir la
   conversation suffit** (décision de lot) — pas de sémantique de lecture par message
   ni de « bas du fil atteint » : MIAOU n'en a nulle part ailleurs, en introduire
-  une ici serait disproportionné.
+  une ici serait disproportionné. Deux compléments sans réouverture :
+  `ackThreadContentSeen` (on descend au fond d'un fil à non-vu) et
+  `ackDisplayedConvOnReturn` (main.js), au retour dans la fenêtre (`focus` et
+  `visibilitychange`) : la conversation affichée redevient lue si
+  `hasThreadUnseen` est faux, c'est-à-dire si la vue en montre déjà la fin. Si
+  le plafond d'ancrage avait arrêté le suivi, le non-lu tient jusqu'au fond.
 
 ### Marquer suppose pouvoir effacer — le non-lu est réservé aux racines
 
@@ -182,7 +195,7 @@ qu'aucune surface de détail ne puisse expliquer.** Dès que deux surfaces
 appliquent des filtres différents à la même donnée, celle qui filtre le moins
 finit par afficher un état que l'autre ne peut pas justifier.
 
-## Quatre surfaces
+## Surfaces
 
 | Surface | Porteur | Portée | Synchronisation |
 |---------|---------|--------|-----------------|
@@ -190,17 +203,25 @@ finit par afficher un état que l'autre ne peut pas justifier.
 | Ligne d'Espace (menu déplié) | `renderSpaceMenu` (ui.js) | cet Espace | reconstruit à chaque ouverture |
 | Sélecteur replié | `#space-select-btn` | **hors** Espace actif | `syncActivityBadges()` |
 | Hamburger | `#sidebar-toggle` | **tout**, Espace actif compris | `syncActivityBadges()` |
+| Icône d'application (PWA) | `syncAppBadge` (pwa.js, Badging API) | **tout**, sans exclusion, `unread` seul | `syncActivityBadges()` |
 
 Les deux premières sont reconstruites intégralement à chaque rendu : aucun état
-DOM à préserver. Les deux dernières vivent en permanence dans le DOM, d'où
-`syncActivityBadges()`, appelée par `syncSpaceUI()`.
+DOM à préserver. Le sélecteur et le hamburger vivent en permanence dans le DOM,
+d'où `syncActivityBadges()`, appelée par `syncSpaceUI()`. L'icône d'application
+est hors du DOM : un point (`navigator.setAppBadge()` sans nombre, comme la
+pastille `unread` qui ne compte rien), allumé si
+`aggregateBadgeState(null, null) === 'unread'` — l'agrégat et non
+`_unreadConvs`, qui peut porter un id mort jusqu'au prochain démarrage. Pas de
+`working` : la pastille d'appli dit « une réponse t'attend », pas « ça
+travaille ». Détail et limites (permission, clignotement impossible) dans
+`docs/pwa.md`.
 
 Points d'appel : `registerGeneration` et `unregisterGeneration` (main.js)
 appellent `renderConvList()` **et** `syncSpaceUI()` ; `openConversation` aussi,
 après `markConvRead`.
 
 `applyActivityBadge(el, state)` (ui.js) est **le seul point d'écriture DOM** des
-quatre surfaces : l'apparence est entièrement portée par le CSS, ce qui garantit
+surfaces du DOM : l'apparence est entièrement portée par le CSS, ce qui garantit
 qu'aucune surface ne dérive. Ne jamais concaténer les classes dans une template
 string — ce serait un deuxième chemin.
 

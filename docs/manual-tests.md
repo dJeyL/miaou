@@ -1519,3 +1519,11 @@ Prérequis : proxy MCP qui sert `dist/` (clé `miaou_dist`), MIAOU ouvert à
    navigateur comme d'habitude.
 7. **Navigateur sans installation** (Firefox) : Réglages › Application → ligne
    qui dit comment faire, aucun bouton.
+8. **Pastille de l'icône** : dans la fenêtre installée, lancer une question
+   longue puis passer dans une autre application avant la fin → à la fin, un
+   point sur l'icône du Dock (barre des tâches sous Windows). Revenir dans la
+   fenêtre, vue au fond → le point s'éteint, la conversation n'est pas marquée
+   non lue. Refaire avec une réponse qui dépasse l'écran (suivi arrêté par le
+   plafond d'ancrage) → au retour, la pastille de sidebar et le point restent
+   jusqu'à ce qu'on descende au fond. Une réponse finie dans une autre
+   conversation allume le point jusqu'à son ouverture.

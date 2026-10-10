@@ -593,8 +593,14 @@ function unregisterGeneration(gen) {
   // scrollé au fond, sans rien de non vu. La pastille ne s'effaçait alors qu'en
   // partant puis revenant. Le test est donc l'écran lui-même ; `hasThreadUnseen`
   // garde son rôle de second motif quand l'écran est bien là.
+  //
+  // « Sous les yeux » exige aussi que la fenêtre ait le FOCUS (2026-10-10, avec
+  // la pastille d'icône d'appli) : une fin de génération pendant qu'on est dans
+  // une autre application n'a été vue par personne, même suivie jusqu'au fond
+  // par l'autoscroll. Le retour efface ce non-lu si la vue montre déjà le bas
+  // (`ackDisplayedConvOnReturn`) ; s'il reste du non-vu, il tient jusqu'au fond.
   const genConv = loadConversation(gen.convId);
-  const onScreen = gen.convId === currentConvId;
+  const onScreen = gen.convId === currentConvId && windowHasFocus();
   if ((!onScreen || hasThreadUnseen(gen.convId)) && genConv && isRootConversation(genConv)) {
     markConvUnread(gen.convId);
   }
@@ -800,6 +806,26 @@ function markConvRead(convId) {
   }
   refreshUnreadConvs(ids);
   return had;
+}
+
+// La fenêtre a-t-elle le focus ? `document.hidden` ne suffit pas : il ne voit
+// que l'onglet changé ou la fenêtre réduite, pas une fenêtre recouverte par une
+// autre application. Sans `hasFocus` (harnais de test), on suppose le focus —
+// c'est le comportement d'avant.
+function windowHasFocus() {
+  return typeof document === 'undefined' || typeof document.hasFocus !== 'function'
+    || document.hasFocus();
+}
+
+// Retour dans la fenêtre : la conversation affichée, marquée non lue pendant
+// l'absence (`unregisterGeneration`), redevient lue si la vue en montre déjà la
+// fin — autoscroll resté actif. Si le plafond d'ancrage a arrêté le suivi,
+// `hasThreadUnseen` est vrai et le non-lu tient jusqu'à ce qu'on atteigne le
+// fond (`ackThreadContentSeen`). Appelé sur `focus` ET `visibilitychange` : le
+// recouvrement est sans effet, `markConvRead` n'écrit que s'il y a à retirer.
+function ackDisplayedConvOnReturn() {
+  if (currentConvId == null || hasThreadUnseen(currentConvId)) return;
+  if (markConvRead(currentConvId)) { renderConvList(); syncSpaceUI(); }
 }
 
 // LE prédicat d'état de badge d'une conversation. Un seul, jamais réécrit
@@ -1138,7 +1164,7 @@ function wireIdleSummaryActivity() {
   // reste vivante, seul l'onglet passe au second plan.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) summarizeIfNeeded(currentConvId);
-    else { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); }
+    else { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); ackDisplayedConvOnReturn(); }
   });
 
   // DEUXIÈME signal de retour, et non un doublon du précédent : `visibilitychange`
@@ -1152,7 +1178,7 @@ function wireIdleSummaryActivity() {
   // ne fait rien quand aucun serveur n'est en défaut, et un double appel
   // rapproché relance au pire un handshake déjà en cours, que `connectMcpServer`
   // absorbe (il réécrit le statut, il n'accumule pas).
-  window.addEventListener('focus', () => { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); });
+  window.addEventListener('focus', () => { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); ackDisplayedConvOnReturn(); });
 }
 
 // Le parcours d'autorisation se déroule entièrement côté proxy, dans un AUTRE

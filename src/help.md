@@ -1299,7 +1299,12 @@ sans perdre ta place.
     qu'elle rédige une réponse, soit qu'un agent qu'elle a lancé travaille pour
     elle (voir le sujet `agents`).
   - **Point fixe, un peu plus gros** : la réponse est terminée et tu ne l'as pas
-    encore vue. Ouvrir la conversation suffit à l'éteindre.
+    encore vue. Ouvrir la conversation suffit à l'éteindre. Une réponse qui
+    finit pendant que tu es dans une autre fenêtre ou application compte aussi
+    comme non vue, même dans la conversation affichée : revenir l'éteint si la
+    fin de la réponse est à l'écran, sinon il faut descendre jusqu'au bout.
+    Dans l'application installée, l'icône du Dock porte alors aussi un point
+    (voir le sujet `installation`).
   - Le point apparaît sur la conversation dans la barre latérale, et aussi sur
     le **sélecteur d'Espace** quand l'activité se passe dans un autre Espace
     (déplie-le : chaque Espace concerné porte alors son propre point). Barre
@@ -1543,6 +1548,14 @@ Une nouvelle fenêtre MIAOU s'ouvre par Cmd+N sur macOS, par Ctrl+N ailleurs
 L'installation exige une connexion sécurisée : `https`, ou une adresse locale
 (`localhost`, `127.0.0.1`) ; une adresse du réseau local en `http` ne suffit
 pas.
+
+**Un point sur l'icône quand une réponse t'attend** : dans l'application
+installée, l'icône du Dock (ou de la barre des tâches) porte un point tant
+qu'une réponse terminée n'a pas été lue, quel que soit l'Espace. Une réponse
+qui finit pendant que tu es dans une autre application compte comme non lue,
+même dans la conversation affichée ; en revenant dans la fenêtre, elle passe
+en lue si la fin de la réponse est déjà à l'écran — sinon en descendant
+jusqu'au bout. L'icône ne clignote pas : le navigateur ne le permet pas.
 
 **Démarrer même quand le proxy est arrêté** : la page et les bibliothèques
 qu'elle a déjà chargées une fois sont gardées par le navigateur. Le modèle et

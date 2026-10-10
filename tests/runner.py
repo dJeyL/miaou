@@ -69,6 +69,13 @@ function _fakeEl() {
     addEventListener: function() {},
     disabled: false,
     focus: function() {},
+    // Ajouté avec la pastille d'icône d'appli : effacer un non-lu au retour
+    // dans la fenêtre repeint les badges (syncSpaceUI), donc la pilule
+    // d'agents, dont la fermeture du popover pose aria-expanded. Le trio
+    // complet, pas setAttribute seul : setTip le détecte et lit/retire ensuite.
+    setAttribute: function() {},
+    getAttribute: function() { return null; },
+    removeAttribute: function() {},
     rows: 1,
   };
 }

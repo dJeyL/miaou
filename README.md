@@ -12,7 +12,8 @@ pour les PDF, SheetJS pour les classeurs Excel et mammoth pour les documents
 Word). On l'ouvre dans
 un navigateur, ou on le sert via n'importe quel serveur web statique. Servi par
 le proxy MCP (miaou-mcp-servers, sous `/app/`), il **s'installe comme une
-application**, démarre proxy coupé et signale une nouvelle version — cf.
+application**, démarre proxy coupé, signale une nouvelle version et pose un
+point sur son icône quand une réponse attend d'être lue — cf.
 [docs/pwa.md](docs/pwa.md).
 
 L'apparence se règle sur trois axes indépendants : luminosité (sombre, clair ou

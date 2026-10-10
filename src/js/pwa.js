@@ -31,6 +31,39 @@ function registerServiceWorker() {
   });
 }
 
+// ── Pastille de l'icône d'application (Badging API) ──────────────────────────
+// Un point sur l'icône du Dock / de la barre des tâches tant qu'une réponse
+// terminée attend d'être lue, tous Espaces confondus. Un point et pas un
+// nombre : la pastille `unread` de la sidebar ne compte rien non plus. Dérivé
+// de `aggregateBadgeState` sans exclusion — jamais de `_unreadConvs` lu ici :
+// l'agrégat ne retient que les racines existantes, le Set peut porter un id
+// mort jusqu'au prochain démarrage. Appelé depuis `syncActivityBadges`, donc à
+// chaque repeinture des pastilles, synchro multi-onglets comprise : chaque
+// fenêtre pose la même valeur, tirée du même état partagé.
+//
+// API absente (Firefox, file://) : rien. Hors appli installée, le navigateur
+// ignore l'appel. Pas de clignotement possible : le web n'expose ni le rebond
+// du Dock ni le flash de la barre des tâches.
+let _appBadgeLit = null;   // dernier état posé ; null = inconnu
+
+// Pur : 'set', 'clear', ou '' s'il n'y a rien à changer.
+function appBadgeAction(lit, shown) {
+  if (lit === shown) return '';
+  return lit ? 'set' : 'clear';
+}
+
+function syncAppBadge() {
+  if (typeof navigator === 'undefined' || typeof navigator.setAppBadge !== 'function') return;
+  const lit = aggregateBadgeState(null, null) === 'unread';
+  const action = appBadgeAction(lit, _appBadgeLit);
+  if (!action) return;
+  _appBadgeLit = lit;
+  const p = action === 'set' ? navigator.setAppBadge() : navigator.clearAppBadge();
+  // Refus (permission, contexte) : oublier l'état posé, pour réessayer au
+  // prochain changement plutôt que croire la pastille à jour.
+  if (p && typeof p.catch === 'function') p.catch(function () { _appBadgeLit = null; });
+}
+
 // ── Détection de nouvelle version ────────────────────────────────────────────
 // build.py écrit dans dist/version.json l'empreinte du contenu de miaou.html,
 // la même que BUILD_ID (storage.js). Relu sans cache aux signaux de retour

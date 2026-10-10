@@ -8318,6 +8318,8 @@ function syncActivityBadges() {
     if (!dot) { dot = activityBadgeEl(null); burger.appendChild(dot); }
     applyActivityBadge(dot, aggregateBadgeState(null, currentConvId));
   }
+  // Icône d'application (PWA) : même repeinture, sans aucune exclusion.
+  syncAppBadge();
 }
 
 // ── Onglets sidebar « Conversations / Fichiers / Souvenirs » (remplace le

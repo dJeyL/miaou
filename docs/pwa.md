@@ -178,6 +178,32 @@ après essai des deux sous Windows. Vérification à la main seulement
 (`docs/manual-tests.md`, « MIAOU installable ») : la réception de la touche
 dépend de la fenêtre d'application, qu'aucun navigateur piloté ne reproduit.
 
+## Pastille de l'icône d'application
+
+Un point sur l'icône du Dock (barre des tâches sous Windows) tant qu'une
+réponse terminée attend d'être lue, tous Espaces confondus : Badging API,
+`navigator.setAppBadge()` sans nombre / `clearAppBadge()`, posés par
+`syncAppBadge` (pwa.js) depuis `syncActivityBadges` — donc à chaque repeinture
+des pastilles, synchro multi-onglets comprise ; chaque fenêtre pose la même
+valeur, tirée du même état partagé. `appBadgeAction` (pur) n'appelle l'API
+qu'au changement d'état ; un refus oublie l'état posé pour réessayer. Ce qui
+allume, et pourquoi c'est l'agrégat plutôt que `_unreadConvs` : cf.
+`docs/badges.md`, qui porte aussi la règle de focus (une fin de génération
+fenêtre sans focus est non lue, même sur la conversation affichée) et
+l'effacement au retour.
+
+API absente (Firefox, file://) : rien. Dans un onglet, le navigateur ignore
+l'appel ou l'applique à l'appli installée du même site. Aucune permission
+requise : constaté le 2026-10-10 sur macOS avec Chrome, appli installée sans
+autorisation de notification, la pastille s'affiche. Chrome la dessine en rouge
+avec un petit point blanc au centre (le « • » qu'il transmet au Dock pour une
+pastille sans nombre) ; seul un nombre (`setAppBadge(n)`) l'éviterait, écarté.
+
+**Pas de clignotement** : le web n'expose ni le rebond de l'icône du Dock ni le
+flash de la barre des tâches, et une notification système ne fait ni l'un ni
+l'autre — écartée pour cette raison (l'appli de bureau Claude ne fait pas
+mieux).
+
 ## Installer, ou passer à la version servie (Réglages › Application)
 
 La catégorie « Application » des réglages varie selon le contexte ; son état est

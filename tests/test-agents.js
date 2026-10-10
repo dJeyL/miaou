@@ -2008,4 +2008,107 @@ describe('non-lus persistés (miaou-unread)', function() {
     expect(_unreadConvs.has('gone')).toBe(false);
     expect(_unreadConvs.has('a1')).toBe(false);
   });
+  // Fenêtre sans focus : la fin d'une génération sur la conversation AFFICHÉE,
+  // suivie jusqu'au fond, n'a été vue par personne.
+  function withFocus(focused, fn) {
+    const savedId = currentConvId;
+    const savedHasFocus = document.hasFocus;
+    document.hasFocus = function() { return focused; };
+    try { fn(); } finally { document.hasFocus = savedHasFocus; currentConvId = savedId; _threadUnseen.clear(); }
+  }
+  it('fin de génération affichée, fenêtre sans focus : non lue', function() {
+    setup();
+    withFocus(false, function() {
+      currentConvId = 'p1';
+      unregisterGeneration({ convId: 'p1' });
+      expect(convBadgeState('p1')).toBe('unread');
+    });
+  });
+  it('fin de génération affichée, fenêtre au focus, rien hors de vue : lue', function() {
+    setup();
+    withFocus(true, function() {
+      currentConvId = 'p1';
+      unregisterGeneration({ convId: 'p1' });
+      expect(convBadgeState('p1')).toBe(null);
+    });
+  });
+  it('retour dans la fenêtre : lue si la vue montre la fin, non lue s\'il reste du non-vu', function() {
+    setup();
+    withFocus(true, function() {
+      currentConvId = 'p1';
+      markConvUnread('p1');
+      _threadUnseen.add('p1');
+      ackDisplayedConvOnReturn();
+      expect(convBadgeState('p1')).toBe('unread');
+      _threadUnseen.delete('p1');
+      ackDisplayedConvOnReturn();
+      expect(convBadgeState('p1')).toBe(null);
+    });
+  });
+  it('retour : ne touche pas aux autres conversations non lues', function() {
+    setup();
+    withFocus(true, function() {
+      currentConvId = 'p1';
+      markConvUnread('p2');
+      ackDisplayedConvOnReturn();
+      expect(convBadgeState('p2')).toBe('unread');
+    });
+  });
+});
+
+describe('syncAppBadge (pwa)', function() {
+  function setup() {
+    localStorage.clear();
+    _activeGenerations.clear();
+    _unreadConvs.clear();
+    saveConversation({ id: 'p1', title: 'un', timestamp: 1, updatedAt: 1, messages: [], spaceId: 'sA' });
+    saveConversation({ id: 'a1', title: '', timestamp: 3, updatedAt: 3, messages: [], spaceId: 'sA', parentConvId: 'p1' });
+  }
+  function withBadgeApi(fn) {
+    const calls = [];
+    const saved = { set: navigator.setAppBadge, clear: navigator.clearAppBadge, lit: _appBadgeLit };
+    navigator.setAppBadge = function() { calls.push('set'); return Promise.resolve(); };
+    navigator.clearAppBadge = function() { calls.push('clear'); return Promise.resolve(); };
+    _appBadgeLit = null;
+    try { fn(calls); } finally {
+      navigator.setAppBadge = saved.set; navigator.clearAppBadge = saved.clear; _appBadgeLit = saved.lit;
+    }
+  }
+  it('appBadgeAction : rien à faire si l\'état posé est déjà le bon', function() {
+    expect(appBadgeAction(true, null)).toBe('set');
+    expect(appBadgeAction(false, null)).toBe('clear');
+    expect(appBadgeAction(true, true)).toBe('');
+    expect(appBadgeAction(false, false)).toBe('');
+    expect(appBadgeAction(false, true)).toBe('clear');
+  });
+  it('un non-lu allume, une seule fois ; le lire éteint', function() {
+    setup();
+    withBadgeApi(function(calls) {
+      syncAppBadge();
+      markConvUnread('p1');
+      syncAppBadge();
+      syncAppBadge();
+      markConvRead('p1');
+      syncAppBadge();
+      expect(calls).toEqual(['clear', 'set', 'clear']);
+    });
+  });
+  it('un id mort ou d\'agent dans le miroir n\'allume rien', function() {
+    setup();
+    withBadgeApi(function(calls) {
+      _unreadConvs.add('gone');
+      _unreadConvs.add('a1');
+      syncAppBadge();
+      expect(calls).toEqual(['clear']);
+    });
+  });
+  it('API absente : aucun appel, aucune erreur', function() {
+    setup();
+    const saved = navigator.setAppBadge;
+    delete navigator.setAppBadge;
+    markConvUnread('p1');
+    syncAppBadge();
+    navigator.setAppBadge = saved;
+    expect(true).toBe(true);
+  });
 });
