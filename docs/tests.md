@@ -60,7 +60,9 @@ description absente, cartouche/`name`/corps manquant → `ValueError`, lecture
 réelle de `src/system-skills/*.md`, dossier absent → `{}` via un `SRC` de test
 temporaire), comptés dans le même total. S'y ajoutent les **contrôles
 source-à-source** (QuickJS n'a ni système de fichiers ni IndexedDB) :
-`run_docs_index_check` (tout `docs/*.md` figure dans l'index de `CLAUDE.md`),
+`run_docs_index_check` (tout `docs/*.md` figure dans l'index de `CLAUDE.md`,
+et chaque entrée y tient sous le plafond `ENTRY_MAX_LINES`, dans l'ordre des
+noms de doc),
 `run_help_enumerations_check` (les énumérations de formats de `src/help.md`
 citent tous les lecteurs de `DOC_READERS`, et chacun y est nommé — angle mort
 payé **six fois**, cf. la question `help.md` de `CLAUDE.md` : le paragraphe de

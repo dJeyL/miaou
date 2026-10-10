@@ -524,563 +524,127 @@ geste ; le développement est dans la doc pointée.
 
 À lire à la demande, selon la zone touchée — pas systématiquement.
 
-**Toute modification d'un `docs/*.md` déclenche la question : « la ligne
-d'index ci-dessous le décrit-elle encore correctement ? »** La ligne résume en
-quelques mots-clés/décomptes/noms de fonctions le contenu du fichier ; si le
-lot change un fait qu'elle cite (clé renommée/déplacée, décompte fermé,
-fonction renommée), la relire et la corriger dans le même lot. Piège payé le
-2026-08-31, cf. plus haut (§ énumérations fermées) : une migration
-structurelle (lot U, `localStorage` → IndexedDB) a laissé la ligne d'index de
-`docs/storage.md` fausse pendant plusieurs lots, faute de déclencheur évident.
+**Une ligne d'index dit QUAND ouvrir la doc, jamais CE QU'ELLE CONTIENT** : le
+domaine, les zones de code et les gestes qui doivent la faire lire, et quelques
+noms pivots qui servent de mots de reconnaissance. **Plafond de lignes par
+entrée** : `ENTRY_MAX_LINES`, vérifié par `run_docs_index_check` (runner.py),
+qui exige aussi le tri par nom de doc. Tout ce qui ne tient pas dedans va dans
+la doc elle-même. Une interdiction qui doit arrêter le geste SANS qu'on ouvre la
+doc n'a pas sa place ici : c'est un piège, à monter dans la section précédente.
 
-- **`docs/build.md`** — pipeline de build en détail : concaténation/strip,
-  marqueurs `__MIAOU_CONFIG__`/`__MIAOU_HELP__`/`__MIAOU_SYSTEM_SKILLS__`,
-  points d'injection et gardes `try/catch`, et les jetons `{{NOM}}` de
-  `help.md` résolus au runtime depuis les constantes vivantes
-  (`helpPlaceholderValues`/`resolveHelpPlaceholders`, servis à `about` ET
-  `about_search`) — dont `{{TOPIC_LIST}}`, la liste des sujets composée depuis
-  les sections présentes et leurs libellés (`formatHelpTopicList`) ; porte aussi
-  le WARN sur clef inconnue de `config.json` (`warn_unknown_config_keys`, qui
-  lit `config.sample.json` comme référence vivante plutôt qu'une liste recopiée) ;
-  porte enfin les fichiers voisins de `miaou.html` dans `dist/` (manifeste,
-  icônes gardées par `check_icon_fingerprint`, `version.json`) et l'empreinte
-  `__MIAOU_BUILD_ID__` (`compute_build_id` sur l'assemblage neutre).
-- **`docs/pwa.md`** — MIAOU installable, servi en http(s) par le proxy MCP sous
-  `/app/` : trois origines donc trois stockages, fichiers servis et
-  revalidation, lien du manifeste posé en http(s) seulement, `theme-color`
-  réécrite par `syncThemeColor` depuis `applyTheme` ET `applyPalette` ;
-  service worker (`src/pwa/sw.js`) : trois familles servies (navigation en
-  réseau d'abord borné par `NAV_TIMEOUT_MS`, CDN versionnés en cache d'abord
-  refaits en `cors`, feuille Google Fonts rafraîchie en arrière-plan), tout le
-  reste laissé au réseau sans `respondWith`, et `verify-pwa-sw.mjs` qui
-  désactive le cache HTTP ; détection de nouvelle version
-  (`checkForNewVersion` sur `version.json`, toast persistant, « Recharger »
-  refusé par `reloadBlockReason` tant qu'une génération, une file
-  d'interjections ou un brouillon serait perdu) ; Ctrl+N qui ouvre une fenêtre
-  de l'appli hors macOS (`isNewAppWindowShortcut`, fenêtre installée seulement,
-  `window.open` nu, pas `popup`) ; Réglages › Application
-  (`installSurfaceState`, invite `beforeinstallprompt` différée) et sonde de la
-  version servie depuis file:// (`probeServedApp` sur les origines des serveurs
-  MCP configurés).
-- **`docs/pitfalls-detail.md`** — développement complet des pièges 1-24
-  ci-dessus, invariants transverses 16/18/21/24 compris. Les pièges 25 à 29 sont
-  développés dans leur doc de domaine (`docs/tools.md` pour 25 et 26,
-  `docs/interjections.md` pour 27, `docs/generations.md` pour 28,
-  `docs/agents.md` et `docs/storage.md` pour 29).
-- **`docs/storage.md`** — schéma `localStorage` (`miaou-settings`,
-  `miaou-memories`, `miaou-mcp-servers` (+ sa sentinelle de seed de build
-  `miaou-mcp-seeded`), `miaou-api-servers` (dont `modelVisibility` et
-  `handcraftedModels`, écrits par gestes immédiats et repris de l'enregistrement
-  frais par le formulaire, et l'élagage des props qui épargne les modèles
-  ajoutés à la main), `miaou-model-props` (cache
-  des propriétés déclarées, hors export),
-  `miaou-active-api-server`, `miaou-spaces`, `miaou-active-space`,
-  `miaou-unread` (non-lus des badges, hors export), `miaou-mcp-skill-approvals`
-  (approbations des skills MCP, clé dédiée plutôt qu'un champ de carte,
-  exportée, jamais élaguée contre `skills/list`)) et
-  IndexedDB (`skills`, `resources`, `conversations`, `summaries` — ces deux
-  derniers migrés depuis localStorage au lot U —, et `usage_stats`, base v5,
-  cf. `docs/usage-stats.md`), champs de méta `snippet`
-  (extrait de secours, lot AA) et `autoTitled` (titre écrit par la machine, qui
-  autorise le retitrage de fin d'échange), plus le format d'export/import complet
-  (`.zip` depuis le lot V-3) ; porte aussi la recherche plein-texte
-  (`collectContentSearchHits`, qui rend une `Map` id → extrait) et le moteur
-  d'extraits surlignés commun à la sidebar, à la palette et à `conv__list`
-  (`buildExcerpt`/`findMatchRanges`, offsets et jamais de markup) ; porte enfin
-  le contrat « froide = `messages: []` » et ses trois conséquences, dont
-  `conversationMessageCount` (compte porté par l'étage 1, seul moyen de
-  distinguer « vide » de « pas chargée ») ; et la fermeture de chaque connexion
-  IDB sur `versionchange` (`releaseSupersededDb`) — sans elle, un onglet resté
-  sur l'ancien bundle bloque le démarrage du nouveau au prochain bump de
-  `MIAOU_DB_VERSION` ; porte enfin le point unique d'échec d'écriture
-  (`noteStorageWriteFailure`, appelé DANS chaque `tx.onabort` — `putResource`
-  résout avant le commit, son rejet de quota n'atteignait personne), la
-  classification pure `classifyStorageError` (sur `err.name`), l'état de
-  session « stockage plein » (`setStorageFull`, levé par une suppression
-  commitée et jamais par une écriture réussie) et l'écriture localStorage
-  protégée `writeLocalStorage` (lot AG).
-- **`docs/backend-health.md`** — santé des services et ce qu'on en montre :
-  pastille de connexion de la pilule modèle, prédicat pur `resolveBackendHealth`
-  et ses TROIS états (`unconfigured` distinct de `down` — deux rouges, deux
-  gestes opposés), écrivain unique `syncConnDot` (le second écrivain,
-  `syncConfigured`, effaçait un rouge légitime), reprise active par sonde
-  `/models` réutilisant `loadServerModels(s, true)` (le `force` est impératif :
-  sans lui le cache de session répond « ok » depuis une entrée d'avant la panne),
-  éligibilité par le pur `shouldProbeBackend` et câblage sur les DEUX signaux de
-  retour comme son homologue MCP, verdict « joignable » posé dès le premier chunk
-  streamé et sur tout succès de `silentCompletion`, et rattaché au serveur
-  INTERROGÉ (`backendVerdictApplies`) et non au serveur devenu actif pendant
-  l'await ; rouge réservé aux pannes (`failureMeansBackendDown` : transport ou
-  5xx), un 4xx levant son propre toast de refus (`toastApiRequestRefused`) ; porte aussi le **chat soucieux** — source SVG
-  unique `src/svg/cat.svg` injectée inline aux trois surfaces (ids suffixés par
-  instance, compte d'instances vérifié au build) avec `LOGO_SRC` dérivé du même
-  fichier pour favicon/glyphe/export, prédicat pur `resolveLogoExpression`
-  (normal, froncement, et sourcils horizontaux du stockage plein, prioritaires
-  — lot AG, CSS seul sur les tracés existants ; `unconfigured` ne fronce pas,
-  `pending` MCP non plus), écrivain unique `syncWorriedLogo` accroché aux deux
-  synchros existantes et au front de l'état de stockage, report d'un échec
-  d'appel MCP sur le statut du serveur (`noteMcpCallFailure` et sa réciproque,
-  ligne de partage transport/applicatif), et la règle « lisible sans
-  animation ». Le versant MCP reste dans `docs/mcp.md`.
-- **`docs/model-props.md`** — propriétés déclarées des modèles (lot AF) :
-  fenêtre de contexte et capacités lues dans la réponse du backend, jamais
-  devinées depuis son identité. Formes mesurées : l'objet de booléens
-  du schéma Mistral sur `/v1/models`, celui d'OpenRouter qui n'a pas de
-  `capabilities` (lues dans `input_modalities` et `supported_parameters` par
-  `modelCapsFromAcceptedInputs`), `/api/tags` d'Ollama lu en positif
-  seulement parce qu'il sous-déclare, et `/api/show`, qui fait autorité ;
-  `/api/ps` donne la fenêtre servie. Capacités TRI-ÉTAT, avec `false`
-  seulement sur une forme reconnue. Les purs sont `normalizeModelCaps`,
-  `extractModelContextMax`, les `modelPropsFrom*` et `mergeModelProps`.
-  Persistance par (serveur, modèle) dans `miaou-model-props`, écrite au même
-  appel `/models` (`fetchModelList`), lue par `modelPropsFor`. Porte aussi la
-  chaîne de précédence de la fenêtre de contexte (`resolveContextWindow` : une
-  mesure prime sur une saisie, une saisie sur un maximum déclaré), la saisie
-  par modèle sur la fiche serveur (`server.contextWindows`, qui remplace le
-  champ global supprimé) et les libellés de source de l'inspecteur ; porte
-  enfin la vision déclarée qui prime sur le flag manuel (`resolveModelVision`,
-  derrière le prédicat inchangé `serverModelVisionEnabled`), la marque
-  appareil photo (l'œil est pris), et `reasoningEffortBlocked`, prédicat
-  unique de l'envoi et du sélecteur de raisonnement ; porte aussi les
-  **niveaux de raisonnement déclarés** (`efforts` : `supported_efforts`
-  d'OpenRouter, `thinking.values` de `/api/show`, `normalizeReasoningEfforts`,
-  `reasoningEffortChoices` et son « activé » mesuré, remise à « défaut »
-  persistée d'un niveau de conversation non déclaré, abstention à l'envoi par
-  `reasoningEffortDeclaredOk`, refus PAR NIVEAU en session
-  (`noteReasoningEffortRefused`), le paramètre entier n'étant bloqué que quand
-  tous les niveaux statiques l'ont été, et niveaux appris du corps du refus
-  (`reasoningEffortsFromRefusal`, lu derrière `knownReasoningEfforts`) ; porte enfin le **chemin
-  natif d'Ollama** — racine dérivée en retirant `/v1`, Ollama reconnu à la
-  forme de `/api/tags` (état de session `_ollamaNative`), `/api/show` du seul
-  modèle actif (`ensureActiveModelShown` en fin de `syncModelUI`), `/api/ps`
-  relu après un appel par `noteModelCalled`, accrochée aux deux seuls points
-  réseau `silentCompletion`/`streamCompletion`, appariement sur la forme
-  `:latest`, et le glyphe de relecture de la fiche serveur ; porte enfin le
-  **catalogue de modèles** (tableau repliable de la partie vue de la fiche,
-  `buildApiCatalogue`) — gestes immédiats par `applyApiServerModelsPatch`
-  (relecture fraîche, écriture sans await) sur les purs `toggleModelVisibility`,
-  `addHandcraftedModel`, `removeHandcraftedModel`, `setModelVisionOff`,
-  `setModelContextWindow` ; fenêtre du tableau arrêtée avant le défaut de build ; marque « actif » du
-  modèle de la conversation affichée, resynchronisée par `syncApiCatalogueActiveModel` ;
-  panneau de ligne (vision, fenêtre appliquée au bouton ou à Entrée et JAMAIS au
-  blur, `/api/show` d'une ligne par `readOllamaShowOnDemand`) ; état de vue hors
-  du DOM (`_apiCatalogueView`, focus et curseur restaurés après re-rendu) ; et le
-  pur `modelMenuChoices`, point de passage commun du menu du composer (filtre
-  hors de la liste qui défile, ↑ ↓ Entrée, Échap en deux temps) et de la palette.
-- **`docs/tools.md`** — registre d'outils (`tools.js`), lecture de skill
-  imposée avant un outil (`requiresSkill` sur `agent__spawn`, `docs__*` et
-  `js__eval` : prédicat pur `skillReadSince` sur une identité — slug local ou
-  `{ server, uri }` d'une skill MCP, qui ne se croisent jamais —, lecture du même lot acceptée,
-  garde `refuseUnlessSkillRead` dans le handler et pas au dispatch, test sur tout
-  le registre, `skills__read` ajouté d'office à la trousse d'un agent par
-  `withSkillReaderIfGated`, outils distants compris ; garde DISTANTE dans la
-  branche serveur de `callTool`, `mcpRemoteSkillGateRefusal`, ouverte quand
-  personne ne peut corriger depuis MIAOU), mécanisme d'acks
-  (`tool-ack`), inspecteur d'appel d'outil (lot Z : loupe par ack,
-  `ackHasInspectableDetail`, drawer de détail non tronqué ; Z-2 : note de
-  présentation détachée du résultat par `splitToolResultNote`, ressources
-  désignées par `ackInspectResourceTargets` — y compris les `[resource_ref:…]`
-  d'un `mcp_call`, que `ackDownloadTarget` ne voit pas ; appel EN VOL
-  inspectable par le drapeau volatil `pending`, posé aux trois `onEarlyAcks`
-  par `markEarlyAckPending` et retiré par `settleEarlyAckPending` — dont un
-  point de retrait inconditionnel en fin de tour —, drawer ouvert recomplété
-  par `refreshToolInspectorIfOpen`), références dans le texte du modèle
-  (lot AI : `conv_ref` et `file_ref` résolus par le point unique
-  `resolveRefMarkers`, qui tolère le marqueur emballé en lien Markdown
-  (`normalizeRefLinkForms`), clic de fichier par `openFileRef` avec le filtre
-  `fileRefRecordInScope` — le cache de ressources n'est PAS scopé —,
-  `neutralizeRefMarkers` pour copie, `.md` et résumé, `maskOpenRefMarker` en
-  streaming ; `web_ref` en pastilles par `resolveWebRefMarkers`, état lu dans
-  `webSourceRegistry` — consultée = `args.url` d'un ack non en erreur, JAMAIS
-  `result` que l'évacuation réécrit —, relayée par un agent, groupe replié
-  derrière « +N » ; marqueur tout prêt en queue d'une page lue
-  (`webCiteNoteFor`, note MIAOU détachée par les deux `splitToolResultNote*`),
-  son pendant en queue d'un résultat de recherche (`webSearchNoteFor`), et URL nue collée à un deux-points ramenée au marqueur si la page est lue
-  (`convertColonUrlCitations`) ; liste finale de sources réduite à une rangée
-  de pastilles (`reduceSourceLines`)), lien d'autorisation
-  d'un ack refusé (campagne AB : `ackAuthorizationTarget`, seule affordance
-  de fin d'ack rendue en texte, absente des exports), lien vers la page visée
-  par tout appel à `args.url` http(s) (`ackPageLink`, domaine de
-  `webRefDomain` et favicon de `webMeta` ou, à défaut, du registre pour la même page, en queue de la ligne technique,
-  `refreshAckTail` rappelée à l'enrichissement, qui pose aussi ` · moteur : <nom>`
-  depuis le `searchEngine` d'une recherche MCP), et **microcompaction des tool
-  results** (lot AE : `microcompactToolResults`, seuil uniforme
-  `TOOL_RESULT_EVACUATION_MIN_CHARS` jamais une liste de kinds, descripteur
-  statique et jamais `_makeResourceRef`, réentrance par identité d'objet sur N
-  awaits, note de queue préservée par `splitToolResultNoteRaw` — variante BRUTE
-  de `splitToolResultNote`, qui elle démaquille pour l'affichage —, et ack
-  `resource_stored` parasite hors tour d'outils jamais écrit (`_storeBlock`
-  `opts.noAck`, plutôt qu'une troncature de la file globale)).
-- **`docs/documents.md`** — documents natifs (lot V, `docs__*`) : les cinq
-  formats ouverts sans serveur (zip, PDF, Excel, Word, PowerPoint), artefacts
-  CDN et versions gelées, selectors par format, caps de lecture (dont
-  `PPTX_MAX_IMAGE_ANCHORS`, ancres d'images par slide), la ligne de
-  partage `docs.js` / `utils.js` (lot V-7), les ancres d'images PowerPoint
-  (lot AC-1 : blocs typés `{type, text}`, chemin de la pièce comme seule ancre),
-  le rendu structuré d'une feuille Excel (lot AC-3 : tableau pipe,
-  formules annotées, fusions signalées par `↳` + note de plages, `w` avant `v`
-  comme non-régression sur les dates), et les ancres d'images Excel (lot AC-4 :
-  chaîne `workbook`→`rels`→`drawing`→`media` par fflate, rattachement lu dans
-  les rels et jamais déduit de la numérotation, filtrage par la plage servie
-  avec compte du hors-plage, description de bibliothèque explicitement exclue) ;
-  porte enfin le **parsing hors thread principal** (lot AD : `xlsx` et `docx` en
-  Web Worker jetable, `pptx` laissé en main thread avec sa mesure et son motif,
-  matrice bornée renvoyée et jamais le workbook, purs injectés depuis leur source
-  vive par `toString()` et la précondition de **graphe clos** que ça impose, les
-  cinq points d'entrée dont `describeXlsxForLibrary` qui tourne au dépôt du
-  fichier, buffer copié et jamais transféré) ; porte enfin le **chargement
-  borné des bibliothèques CDN** (`loadCdnScript`, point unique de tous les
-  loaders de page, Mermaid et QuickJS compris : un CDN muet rejette au lieu de
-  pendre, et la tentative suivante change d'URL parce que le navigateur la
-  rattacherait sinon à la requête pendue).
-- **`docs/context-inspector.md`** — inspecteur de contexte (brief B) : manifeste
-  par bloc logique du contexte envoyé au modèle (`buildContextManifest`, pur) et
-  totaux chars/tokens, rendu dans le drawer (`renderContextInspector`). **Le
-  manifeste doit rester représentatif de l'ORDRE RÉEL d'envoi** — c'est ce qui
-  donne son sens à la barre (cachabilité décroissante) et ce qui fait de cet
-  écran un instrument de diagnostic : une entrée dont la place surprend accuse
-  le payload, pas l'affichage. Cet ordre réel **dépend du backend** : la position
-  des définitions d'outils (avant ou après le message système) est une propriété
-  MESURÉE, portée par chaque serveur API (`promptOrder`, défaut réglable au build
-  par `prompt_order`) et passée à `buildContextManifest` — deux ordres mesurés à
-  ce jour, Ollama et vLLM, et un troisième backend se mesure au lieu de se
-  deviner (la détection par en-tête a été tentée puis écartée). À lire avant de
-  toucher au manifeste **et avant de toucher à l'ordre du join de
-  `buildSystemMessage()`**, que ce fichier documente et dont deux gardes de
-  position dépendent. À lire AUSSI avant d'ajouter un contenu CONDITIONNEL à
-  un bloc existant de `systemMessageParts()` (une famille de plus listée, une
-  section qui n'apparaît que si…) : le geste ne touche ni le manifeste ni
-  `CTX_EXPLAIN`, donc rien ne signale que libellé et tooltip décrivent
-  désormais un sur-ensemble — ils doivent dire ce que le bloc porte DANS CET
-  ÉTAT (métadonnée de forme reportée sur le manifeste, une variante par état,
-  modèle `libraryForm` / `skillsContextForm`). Payé sur « Contexte skills
-  (autotrigger, MCP approuvées) », affiché sans aucune skill MCP. Le drawer héberge depuis le lot AE l'affordance de
-  compaction, et la pilule son glyphe de seuil (`docs/compaction.md`) : le
-  réglage de fenêtre de contexte n'y est plus un pur dénominateur d'affichage.
-- **`docs/spaces.md`** — Spaces / « Espaces » (lot C) : herméticité (piège 18,
-  `spaceConvIds`), default Space, scope `profile` des souvenirs, description de
-  Space concaténée au prompt système, bibliothèque de fichiers par Space.
-- **`docs/mcp.md`** — agrégation MCP distante (V2) : préfixage, routage,
-  transport, timeout, dégradation gracieuse, D5–D10, les deux contrats
-  d'erreur machine portés par `error.data.code` — `REF_UNKNOWN` (éphémère,
-  décide d'un rejeu) et `AUTHORIZATION_REQUIRED` (campagne AB : persisté sur
-  l'ack, garde d'URL `authorizationUrlOrigin` appliquée à l'affichage) — et la
-  surface `_meta` de `tools/list` qui signale les upstreams à autoriser AVANT
-  tout échec (AB-5 : garde de composition distincte, pill dégradée, pastille
-  de topbar, revérification au retour de focus) — pastille devenue **unique pour
-  deux sévérités** (`severity`, l'erreur masquant l'attente) et reprise élargie
-  aux serveurs injoignables sur DEUX signaux (`visibilitychange` ET `focus` de
-  fenêtre, un serveur se démarrant en console), éligibilité tranchée par le pur
-  `shouldRecheckMcpServer` (défaut sans délai, sain throttlé par serveur via
-  `_mcpLastAttempt` et `MCP_RECHECK_MIN_INTERVAL_MS`), plus un glyphe de
-  reconnexion par carte qui sert aussi à relire la liste d'outils ; porte aussi les consignes de
-  portée serveur du champ standard `instructions` de l'InitializeResult ou du
-  DiscoverResult (`buildMcpInstructionsBlock`, injectées dans le message SYSTÈME depuis la
-  campagne cache — décision inversée, le motif d'origine confondait « varier »
-  et « varier à chaque tour » ; rattachées au préfixe d'outil réel
-  `<slug>__<serveur>` que MIAOU est le seul à connaître) ; dit en tête où vit le code, `mcp.js` (distant) contre
-  `tools.js` (composition et routage) ; porte enfin le `_meta` d'un
-  `tools/call` (lot AI : `_meta["miaou/web"]` de `fetch_url`, lu par
-  `webMetaFromResult`, posé sur l'ack en `webMeta` par les trois
-  `onEnrichLastAck` via la liste unique `ackEnrichmentFields`) ; porte enfin la
-  **révision 2026-07-28** (lot AM) : sonde `server/discover` par `mcpRpc` et
-  verdict pur `mcpProbeVerdict` en liste d'exclusion (repli sur `initialize`
-  sauf délai dépassé, 401/403 et `-32022` disjoint ; repli aussi sur échec
-  réseau, CORS oblige), ère par serveur en mémoire (`_remoteStatus[name].era`),
-  en-têtes et enveloppe `_meta` construits en un point (`mcpRequestShape`,
-  `encodeMcpHeaderValue`), aucun en-tête de version en legacy, corps des
-  réponses non 2xx lu dans les deux ères (`mcpHttpFailure`, session morte
-  tranchée AVANT), révision parlée dans l'infobulle de la pill de carte ; porte
-  enfin les **skills servies** par l'extension `io.modelcontextprotocol/skills`
-  (point 21) : déclaration lue par présence de clé, catalogue `skills/list`
-  (métadonnées seulement, `null` sur échec sans jamais faire échouer la
-  connexion), `requiresSkill` gardé sur `_remoteTools`, repli de lecture masqué
-  à sa marque et seulement si l'extension est déclarée, lecture réseau
-  `fetchMcpSkillEntry` / `readVerifiedMcpSkillFile` (entrée fraîche, rien
-  d'approuvé ici), et la réécriture des préfixes d'outils entre accents graves
-  dans les sections d'un agrégateur (`rewriteMcpUpstreamToolPrefixes`).
-- **`docs/skills.md`** — skills stage 1 (CRUD, invocation slash, drawer) et
-  stage 2 (autotrigger, doctrine de déclenchement, confirmation) ; porte aussi,
-  depuis le lot AE, la **seconde famille derrière le `/`** — les commandes MIAOU
-  (`MIAOU_COMMANDS`, registre en liste), qui ne sont PAS des skills : prédicat
-  pur `matchMiaouCommand` (« le littéral trimé vaut EXACTEMENT `/<slug>` »,
-  plus serré que l'`atStart` de `findSlashTriggers`), posé dans `sendMessage` et
-  jamais dans `resolveSend` (six appelants, dont deux drains d'interjection —
-  y placer le prédicat rendrait `/compact` exécutable pendant une génération,
-  qu'AE-7 refuse), réservation du slug par `validateSkillSlug` avant le test
-  d'unicité (AE-9) avec signalement d'une skill homonyme déjà en base sur sa
-  card, discriminant d'autocomplétion `commands: true` porté par le seul état
-  composer (les deux états ont la même forme), `matchCommandCompletions` tenue
-  distincte de `matchSkillCompletions`, et la légende « / » du composer devenue
-  INCONDITIONNELLE (c'est son libellé qui varie) ; porte enfin la **géométrie du
-  panneau d'autocomplétion** — hauteur max MESURÉE à l'ouverture
-  (`fitSkillAutocompleteHeight`, style inline, jamais les pixels fixes du CSS :
-  ancré en absolu, il ne connaît pas en CSS la place libre au-dessus de lui) et
-  densité de LISTE et non de contenu ; porte enfin les **skills servies par un
-  serveur MCP** (point 10, `mcp-skills.js`) : intégrité (SHA-256 en JS pur,
-  frontmatter strict distinct de `parseSkillFrontmatter`, scalaires
-  normalisés), approbation par skill dans la fiche liée au manifeste (session
-  seulement pour une skill `dynamic`), lecteur avant approbation, toasts de
-  démarrage et de refus, lecture par `miaou__skills__read` (`server`, `uri`)
-  avec étiquette d'origine et annexes sous liste blanche (ack
-  `skill_file_read` distinct), slug qui lit toujours la locale, et leur
-  rappel dans le circuit des skills locales (mention du drawer Skills, entrées
-  `source: 'mcp'` de `skills__list`, et listing des APPROUVÉES dans
-  `<miaou_skills_context>`, `mcpSkillContextEntries`).
-- **`docs/tests.md`** — ce qui est couvert par `tests/runner.py` (QuickJS) et
-  ce qui doit être vérifié à la main (`docs/manual-tests.md`) ; porte aussi les
-  fixtures des verify Playwright et leur serveur factice commun
-  (`stub-backend.js`, `launchIsolated`, qui isole de la config locale embarquée),
-  et `assumeSkillsRead` (`skill-reads.js`) pour les appels directs à un outil
-  qui exige la lecture d'une skill.
+Pourquoi cette forme : l'index a d'abord résumé le contenu de chaque doc, et la
+règle « le lot qui modifie une doc relit sa ligne » s'appliquait en ajoutant à
+chaque fois une clause « porte aussi… ». La section a doublé en un mois (383 →
+562 lignes, la moitié du fichier, une entrée à 97 lignes). Une ligne qui dit
+quand lire ne périme qu'avec le PÉRIMÈTRE de la doc (domaine scindé ou fusionné,
+nouveau fichier source, fonction pivot renommée) — c'est le seul cas où la
+relire. Piège d'origine payé le 2026-08-31 (cf. § énumérations fermées) : une
+ligne qui énumérait des clés `localStorage` migrées depuis vers IndexedDB.
+
+- **`docs/agents.md`** — agents (sous-conversations lancées par le modèle) :
+  `isRootConversation`, outils `agent__*`, réveil du parent (piège 29),
+  gardes de cycle de vie (`hasWorkingAgent`, `agentBusyRewriteRefusal`),
+  lecture seule d'un agent terminé, `convLabel`, inventaire (`agentInventory`).
+- **`docs/backend-health.md`** — santé du backend API et ce qu'on en montre :
+  pastille de la pilule modèle (`resolveBackendHealth`, `syncConnDot`), sonde
+  de reprise, verdicts posés par les appels, et le chat soucieux (`cat.svg`
+  inline, `resolveLogoExpression`, `syncWorriedLogo`). Le versant MCP est dans
+  `docs/mcp.md`.
+- **`docs/badges.md`** — badges d'activité working/unread : prédicat unique
+  `convBadgeState`, agrégation cross-Space, surfaces et points de synchro,
+  persistance du non-lu (`miaou-unread`) et sa portée (racines seulement).
+- **`docs/build.md`** — avant de toucher `build.py`, un point d'injection
+  `__MIAOU_*`, les strips de commentaires, les jetons `{{NOM}}` de `help.md`
+  (`resolveHelpPlaceholders`), le WARN de clef de `config.json`, les fichiers
+  voisins de `dist/` ou l'empreinte `__MIAOU_BUILD_ID__`.
+- **`docs/command-palette.md`** — palette Ctrl/Cmd+K : registre déclaratif,
+  sous-modes, clavier, recherche cross-Space assumée, item à deux étages et
+  surlignage (`applyHighlight`).
+- **`docs/compaction.md`** — compaction du contexte et évacuation des tool
+  results : frontière `role: 'compaction'` et ses projections, gestes du drawer
+  et `/compact`, gardes d'occupation, occupation par le `kind` `'compaction'` et ses
+  exemptions. À lire avant de toucher `expandThread`, `projectThreadFor*`,
+  `compactCurrentConversation` ou `evacuateToolResults`.
+- **`docs/context-inspector.md`** — avant de toucher `buildContextManifest`,
+  l'ordre du join de `buildSystemMessage()` (gardes de position), `promptOrder`,
+  ou d'ajouter un contenu CONDITIONNEL à un bloc de `systemMessageParts()` —
+  libellé et tooltip doivent décrire le bloc DANS CET ÉTAT.
+- **`docs/documents.md`** — documents natifs `docs__*` (formats de
+  `DOC_READERS`), artefacts CDN et `loadCdnScript`, selectors et caps de
+  lecture, ancres d'images PowerPoint/Excel, rendu des feuilles Excel, parsing
+  en Web Worker (graphe clos des purs injectés), partage `docs.js` / `utils.js`.
 - **`docs/exports.md`** — export Markdown et export HTML standalone des
-  conversations/messages (incluant traces d'outils) et fonctions d'horodatage.
-- **`docs/palettes.md`** — palettes de couleurs (lot S-a) : deux axes
-  orthogonaux (luminosité × palette), dérivation HSL des tokens, exceptions
-  hors palette (logotype, code inline, sémantiques), condition de gratuité à
-  l'export, et le scope local des paliers — un sous-arbre peut redéfinir son
-  échelle (`html[data-theme="light"] .sidebar`), auquel cas c'est l'échelle
-  ENTIÈRE qui bouge, jamais le seul fond.
-- **`docs/fonts.md`** — lots de fontes appairés (lot S-b) : troisième axe de
-  présentation, `@import` unique préchargeant les six familles, contraintes
+  conversations et messages (traces d'outils comprises), `EXPORT_CSS` et
+  `EXPORT_SCRIPT` (pièges 21 et 22), fonctions d'horodatage.
+- **`docs/fonts.md`** — lots de fontes appairés : `@import` unique, contraintes
   d'une mono (tabular-nums de l'inspecteur), export en statu quo.
-- **`docs/rendering.md`** — rendu enrichi des blocs de code : diagrammes
-  Mermaid (lazy-load, cycle de rendu, toggle, thème, posture de sécurité) et
-  hauteur bornée des blocs du fil (borne sur le `<code>` pour épingler
-  `.code-head`, export non borné) ; porte aussi le débordement centré des grands
-  tableaux — porteur `.table-bleed`/`wrapWideTables` et scission des deux étages,
-  levier unique `--table-bleed` et ses trois consommateurs (réglage « Élargir les
-  grands tableaux » via `data-wide-tables`, bulles utilisateur et comptes rendus
-  d'agent inconditionnels), figeage du réglage à l'export par `buildExportHtml`.
-  Porte aussi le **rendu par blocs pendant le streaming** (`renderStreamBlocks` :
-  blocs gardés tant que leur `raw` est inchangé, `streamBlockKeepCount`, rendu
-  différé tant qu'une sélection touche un bloc à remplacer, défilement interne
-  reporté, options marked fusionnées explicitement, finalisation par le même
-  chemin sauf bloc HTML brut).
-- **`docs/command-palette.md`** — palette Ctrl/Cmd+K (lot F) : registre
-  déclaratif, sous-modes, intégration clavier, recherche cross-Space assumée,
-  item à deux étages (`.cmdk-item-row` toujours posée, `.cmdk-item-excerpt` pour
-  un match de contenu) et surlignage par `applyHighlight`.
-- **`docs/multitab-sync.md`** — synchro multi-onglets (lot J, BroadcastChannel) :
-  protocole d'enveloppe, liste fermée de types, émetteurs/récepteurs, file
-  d'attente pendant génération, soft-lock, readonly/heartbeat/TTL, doctrine
-  broadcast post-commit + relecture post-await (piège 24), et la relecture sur
-  événement `storage` (`storageEventDecision`) pour les types adossés à
-  localStorage, dont le message peut précéder la visibilité de l'écriture ;
-  plus `storage-state` (lot AG), pose au front et levée à chaque suppression,
-  et `usage-updated`, relecture du drawer des statistiques s'il est affiché ;
-  et la clé `mcp-skill-approvals` de `settings-updated` (relue aussi sur
-  l'événement `storage`).
-- **`docs/interjections.md`** — interjections mid-génération (lot Q) : file
-  locale de messages tapés pendant une génération, clefée PAR CONVERSATION
-  (X-1e) et drainée à la frontière de tour (réaiguillage mid-boucle) ou en fin
-  d'échange nominale ; composer en mode file, puces annulables/éditables/
-  copiables, bulle assistant matérialisée (`_acksOnly`, piège 27), reflux sur
-  fin non-nominale, file échouée quand ni drain ni reflux ne s'appliquent
-  (fil d'agent en lecture seule, X-1f).
-- **`docs/badges.md`** — badges d'activité (lot T-2) : deux états (working
-  pulsant / unread statique), prédicat unique `convBadgeState`, agrégation
-  cross-Space assumée, quatre surfaces et leurs points de synchronisation,
-  persistance du non-lu (`miaou-unread`, miroir `_unreadConvs`, propagé aux
-  onglets par `unread-updated`) et sa portée (racines seulement : marquer suppose
-  pouvoir effacer, et un agrégat ne remonte rien que le détail ne puisse
-  expliquer).
-- **`docs/agents.md`** — agents (lot X) : sous-conversations lancées par le
-  modèle, prédicat de racine `isRootConversation` et ses sites d'exclusion,
-  outils `agent__*` et garde de parenté, lecture préalable de la skill `agents`
-  imposée au spawn (`requiresSkill`, cf. `docs/tools.md`), `agent__result` qui ne redonne pas un
-  résultat déjà reçu (`agentResultDelivery`), note « encore en cours » sur un
-  résultat remis pendant que ses frères travaillent, chemin d'exécution dédié, réveil du
-  parent accroché au `finally` — et la **précondition de chaleur** de
-  `parentThreadFor` : un parent froid rend un thread vide, qu'y pousser puis
-  persister ÉCRASE son historique (payé le 2026-09-07) —, extension et
-  alignement des badges, lecture
-  seule d'un agent terminé (`isFinishedAgentConv`) et interjections reçues
-  pendant son travail (X-1f) ; prédicat de libellé `convLabel`, qui rend
-  `{text, provisional}` depuis le lot AA (`title` > `agentIntent` > `snippet`) ;
-  gardes de cycle de vie sur `hasWorkingAgent` — suppression, déplacement, et
-  réécriture d'historique (édition/régénération refusées tant qu'un enfant
-  tourne, `agentBusyRewriteRefusal`, glyphes grisés par `body.agent-busy`) ;
-  inventaire de ce qui travaille (lot T-3) — prédicat pur `agentInventory`
-  (arbre racine → agents, cross-Space), aplati par `agentInventoryRows`, servi
-  au popover de topbar ET au sous-mode `agent` de la palette, avec la scission
-  « se montrer » (`resolveAgentCount`) / « afficher quoi »
-  (`agentInventoryCount`).
-- **`docs/compaction.md`** — compaction du contexte (lot AE) : pourquoi le geste
-  n'est PAS calé sur la saturation (context rot, lost in the middle — d'où une
-  affordance à 50 % distincte du seuil d'alerte à 80 %), frontière portée par une
-  entrée `role: 'compaction'` du thread et les purs qui la servent
-  (`isCompactionEntry`, `lastCompactionIndex`, `formatCompactionMessage`),
-  troisième élagage à
-  l'ÉMISSION d'`expandThread` (rien n'est détruit, décision AE-2), message émis
-  `_synthetic` obligatoire, indexation ABSOLUE des groupes d'acks comme garde du
-  ciblage `findAckByCallId` (les ids `solo:N` des acks legacy sont positionnels —
-  mesuré), byte-stabilité du rejeu, et « seule la dernière frontière est émise »
-  — d'où un nouveau résumé qui INTÈGRE le précédent (recompaction qui perdait la
-  première, corrigée en revue le 2026-09-22) ;
-  porte les DEUX projections qui consomment la frontière et la ligne de partage
-  entre elles — `projectThreadForCompaction` part APRÈS, précédée du seul résumé
-  antérieur (continuer à travailler, appels d'outils inclus et bornés),
-  `projectThreadForRecap` part de
-  la frontière INCLUSE (retrouver/titrer, couverture depuis le début), cette
-  dernière partagée par `generateSummary` et `generateTitle` qui reprojetaient
-  le thread brut jusqu'au 2026-09-22 ;
-  porte aussi l'**évacuation des tool results**, geste AUTONOME depuis
-  l'annulation d'AE-5 le 2026-09-22 (`evacuateToolResults`, main.js) : couplée à
-  la compaction elle n'avait AUCUN effet observable, la frontière étant posée en
-  fin de thread et tout l'amont élagué à l'émission — défaut invisible aux purs,
-  qui vérifiaient chacun leur moitié, et logé dans le JOINT ; population bornée
-  à l'aval de la dernière frontière (`evacuationTargets`, seul émis) et bilans
-  mesurés sur `emittedHistoryCharCount` ; seuil 2 000 caractères
-  appliqué uniformément et jamais par liste de kinds, `ackIsExpandable` comme
-  première condition avant toute question de taille, descripteur STATIQUE contre
-  le `resource_ref` à expansion, note MIAOU de queue recollée derrière le handle
-  via `splitToolResultNoteRaw`, réentrance par identité d'objet sur N awaits, et
-  le geste qui ne persiste rien — l'appelant possède la conversation et son
-  `syncPost`) ; porte la RELECTURE de ce qui a été évacué, moitié sans laquelle
-  le geste n'a pas de sens (`recall_attachment` sur le `res_…` du handle rend le
-  texte en clair — chemin qui marchait mais que RIEN n'annonçait : exclusivité
-  implicite entre `RESOURCE_DOCTRINE`, qui ne cite que `js__eval`, et
-  `ATTACHMENT_DOCTRINE`, qui ne citait `res_<id>` que pour les images ; mesuré en
-  prod le 2026-09-22, corrigé dans le message SYSTÈME et non dans le handle, plus
-  le refus de `resource__from_result` qui NOMME désormais la ressource via
-  `inlineHandleResourceId`) ; porte les DEUX affordances du drawer rangées par COÛT CROISSANT
-  (évacuation d'abord, elle n'appelle pas le modèle et ne coupe rien), leur
-  mécanique d'appel partagée `runReclaimGesture`, leurs bornes AE-7 relayées par
-  le MÊME `compactionRefusal` dont l'argument `gesture` nomme le geste refusé, et
-  le **bilan rendu APRÈS coup et jamais promis avant** (`formatReclaimSummary` sur
-  une mesure avant/après, gain nul dit explicitement, posé PAR LE GESTE avant son
-  `syncContextCounter` — un poseur placé après n'aurait aucun effet, et les deux
-  voies de déclenchement auraient sinon chacune à s'en charger ; `_reclaimReports`
-  est un état de VUE volatil, purgé à l'ouverture du drawer et au changement de
-  conversation), la compaction PERSISTANT le sien sur l'entrée de frontière
-  (champ `reclaimed`, affiché par le séparateur du fil, d'où sa ligne dans les
-  DEUX whitelists de projection et le pur `formatCompactionReclaimSuffix` qui
-  refuse tout ce qui n'est pas un entier — sortie interpolée vers `innerHTML`,
-  piège 21) ; porte enfin le **geste utilisateur complet**
-  (`compactCurrentConversation`, main.js) : périmètre limité à la conversation
-  AFFICHÉE (ce qui neutralise les pièges 28 et 29, au prix d'une relecture après
-  chaque await), DEUX gardes AE-7 distinctes et nommant leur borne
-  (`isGenerating` — jamais `sending`, reflet d'écran — et
-  `agentBusyRewriteRefusal` relayé tel quel), posées au point de mutation et non
-  sur le bouton, plancher de matière en CARACTÈRES (`COMPACTION_MIN_CHARS`,
-  `compactableCharCount` comptant les `result` d'acks autant que les `content`),
-  résumé STRUCTURÉ PAR CONTRAT (`COMPACTION_PROMPT`, distinct de
-  `SUMMARY_PROMPT` — retrouver plus tard ≠ continuer à travailler) rédigé par
-  `activeModel()` (AE-3) avec les gardes des résumés automatiques (timeout,
-  parsing défensif, `runBackgroundTask` chez l'appelant), échec de rédaction →
-  AUCUNE frontière, persistance UNIQUE dont le `syncPost` post-commit est hérité
-  de `persistConversation`, et l'affordance du drawer d'inspecteur — visible
-  quel que soit le remplissage et saillante au-delà de
-  `CONTEXT_COMPACTION_HINT_RATIO`, grisée sur la SEULE borne d'absence de
-  matière (les deux bornes AE-7 sont des attentes, donc restent cliquables et
-  leur refus nomme la sienne), seuil signalé sur la pilule par la FORME (glyphe)
-  — qui porte l'accent de la palette et REDESCEND à `currentColor` sous
-  saturation, le registre chromatique des deux seuils gardant la priorité ; le
-  glyphe écrit sa visibilité sur l'ATTRIBUT `hidden` et jamais sur la propriété
-  (`SVGElement` n'a pas `hidden` : l'affectation ment et laisse l'attribut,
-  défaut payé) ; porte enfin les **deux voies de
-  déclenchement** du même geste (bouton du drawer, commande `/compact`) et les
-  trois points où la commande le touche — pas de `runBackgroundTask` imbriqué,
-  verrou `_commandRunning` distinct du `btn.disabled`, refus si des pièces
-  jointes attendent —, le mécanisme du `/` lui-même restant dans
-  `docs/skills.md` ; porte enfin l'**occupation de la conversation pendant le
-  geste** (étape 8) — entrée au registre des générations par un `kind`
-  `'compaction'` plutôt qu'un second verrou, d'où relais readonly
-  multi-onglets, gardes AE-7 refermées sur elles-mêmes et badge « working »
-  gratuits ; les trois exemptions nommées que ce `kind` impose
-  (`genOwnsScreen` faux, `streamGenerationFor` qui écarte du rebranchement
-  d'écran, `abortStream` qui sort) et le **sens asymétrique** de leurs tests,
-  choisi sur le côté où tombe le défaut ; la garde post-await qui teste
-  l'IDENTITÉ (`generationFor(convId) !== gen`) et non la présence, sans quoi le
-  geste se refuse à lui-même ; le verrou LOCAL, que le relais ne couvre pas
-  (`applyReadonlyState` ne lit que les pairs, et une compaction n'appelle pas
-  `setSending`) ; l'aboutissement **même si l'écran est parti** — écriture dans
-  `gen.thread` et `persistGeneration`, référentiel décidé sur l'IDENTITÉ du
-  tableau et jamais sur l'égalité des ids (mesuré : partir puis revenir perd
-  sinon la frontière) ; l'invalidation de `_lastContextManifest` avant
-  `syncContextCounter` dans les DEUX gestes d'allègement, sans quoi pilule et
-  inspecteur restent figés sur la photo du dernier envoi ; et l'arbitrage des
-  **deux surfaces d'annonce** (`syncCompactionActivitySurface` /
-  `setBgActivitySuppressed`), chacune parlant là où l'autre se tait.
-- **`docs/usage-stats.md`** — statistiques de consommation de tokens (lot AJ) :
-  collecte aux deux seuls points réseau (`streamCompletion`, `silentCompletion`)
-  et jamais chez les appelants, qui ne passent que leur nature (`purpose`, sans
-  liste fermée, `'other'` par défaut) ; un tour = un appel, à l'inverse de
-  l'inspecteur ; prédicat unique `modelCallCounts` (réponse OU abort, jamais un
-  refus HTTP ni une erreur réseau) ; serveur capturé AU DÉBUT de l'appel ; store
-  `usage_stats` en agrégat (jour local, serveur, modèle, nature), incrément
-  `get`+`put` dans une transaction, `cachedKnownCalls` qui distingue un cache
-  inconnu d'un cache nul, diffusion `usage-updated` aux autres onglets ; consultation par un
-  drawer relu à chaque ouverture et, affiché, après chaque écriture de n'importe
-  quel onglet (`scheduleUsageStatsRefresh`) (entrées dont le glyphe « barres » d'une fiche
-  serveur et de chaque ligne de son tableau des modèles), échelles GLISSANTES calculées sur des dates civiles
-  (`usageScaleWindow`, repli du quantième par `usageAddMonths`), échelles
-  proposées selon la donnée la plus ancienne (`availableUsageScales`), totaux
-  par couple (serveur, modèle), serveur affiché sur les seuls homonymes et
-  filtre modèle par nom, et état du cache (`usageTotals`, `usageCacheState` :
-  « n/d », astérisque) ; porte enfin le graphe — bacs glissants calculés
-  depuis aujourd'hui et jamais en chaînant (`usageBins`), repères calendaires
-  en fraction au prorata du jour dans son bac (`calendarMarkers`), agrégation
-  par bac qui classe le cache par ENREGISTREMENT (`usageBinTotals`, dont la
-  somme égale le total du tableau), panneaux entrée, sortie et requêtes sur un même axe du
-  temps plutôt qu'un axe double, couleurs dérivées de l'accent, infobulle par colonne
-  de bac et nom accessible qui résume, sans arrêt de tabulation par bac.
-- **`docs/toasts.md`** — toasts (lot AG) : critère « l'état sur la surface
-  passive, le front en toast », API `showToast`/`dismissToast` (clé de cause,
-  niveau, thème, texte en `textContent`, action, `persistent`), table fermée
-  thème → glyphe `TOAST_GLYPHS` (glyphes repris, aucun dessiné), purs
-  `toastQueueUpsert` (le plus récent en bas, remplacé redescendu, plafond
-  `TOAST_MAX_VISIBLE`, non-erreurs évincés d'abord), `toastDurationMs` et
-  `toastPlacement` (collé au bord droit, à hauteur du champ si la place à sa
-  droite suffit, au-dessus sinon ; à côté d'un drawer ou par-dessus ; mesuré), a11y (rôle par niveau,
-  jamais de vol de focus, pause au survol/focus, hors pile d'Échap) et jetons à
-  deux étages `--float-*` / `--toast-*` ; une action dont `run()` rend `false`
-  a refusé et laisse le toast ouvert.
-- **`docs/tooltips.md`** — infobulles MIAOU (lot AH), qui remplacent le `title`
-  natif : point d'écriture unique `setTip`/`getTip`, `tipAttrs` pour les
-  gabarits, `data-tip` statique repris par `initTooltips`, règle ARIA pure
-  `tipAriaRule` (nom pour un bouton-icône, description sinon, marque
-  `data-tip-aria` qui protège l'`aria-label` d'auteur, `alt` d'une image compté
-  comme texte, `refreshTipAria` pour un texte rempli après coup), deux étages
-  et une icône facultative (lot AI : champ `icon`, data-URL matricielle validée
-  par `isSafeIconSrc` ou globe générique, SVG exclu),
-  délais purs (`tipShowDelay`), masquage (frappe en capture sauf touche de
-  modification seule — `tipKeyHides` —, Échap consommé, défilement du seul
-  conteneur du porteur, porteur détruit), réaffichage sous le pointeur quand le
-  texte change (armement), infobulle d'export qui suit Shift si affichée
-  (`wireExportShiftTip`), placement pur (`tipPlacement`), exclusions (export
-  natif via `exportNativeTip`, `title` d'origine modèle, tactile), filet
-  `run_native_title_check` et `verify-tooltips.mjs`.
-- **`docs/generations.md`** — générations en vol / multitâche (lot T) : objet
-  génération et registre `_activeGenerations` (clé `convId`), deux chemins de
-  persistance (`persistCurrent` écran vs `persistGeneration`), projection pure
-  partagée `projectThreadToMessages`, rebranchement des données dans
-  `openConversation`, `sending` reflet d'écran, abort ciblé par conversation ;
-  prédicat unique `genOwnsScreen` et scission des hooks (muter le thread
-  toujours / refléter dans le DOM si l'écran est possédé), attache/détache et
-  `splitTrailingAcks`, `rerenderCurrentThread` obligatoire pour tout re-rendu ;
-  points d'écriture partagés par les générations qui DÉMARRENT sans écran
-  (`setGenPartialContent`, `pushGenToolAck`, `pushGenMessage` et ses trois
-  `kind`, `clearGenLiveBubble`, registre d'acks anticipés) — ouvrir un fil
-  d'agent ou revenir sur un parent réveillé pendant son travail rend
-  `genOwnsScreen` vrai, ce que le lot X avait supposé impossible ; et la garde
-  anti-troncature de `persistGeneration` (`generationWouldTruncate`), qui refuse
-  d'écraser un historique par un thread construit sur une lecture froide.
-  Porte aussi l'étape annoncée par le composer (`gen.phase`, écrite par le seul
-  `setGenPhase`, libellés dans `COMPOSER_PHASE_LABELS`, posée par
-  `setComposerStreaming`/`setComposerPhase`) et, distincte d'elle, la pulsation
-  du bouton « aller tout en bas » : `.has-unseen` dit « du contenu est arrivé
-  pendant que tu regardais ailleurs », jamais « ça génère » — état `_threadUnseen`
-  (Set par conv), marqué sur `isAtBottom` et NON `shouldFollowStream` (qui rend
-  `true` quand la vue est posée au plafond d'ancrage, donc ne marquait jamais le
-  cas le plus fréquent : la réponse qui passe sous le fold),
-  acquitté en atteignant le fond — et **reporté sur le badge de sidebar** à deux
-  moments : quand une génération FINIT sur un fil à non-vu, **même si la
-  conversation est affichée** (`unregisterGeneration` ; posséder l'écran ne vaut
-  pas « vu »), et quand on **quitte** la conversation sans être redescendu
-  (`carryThreadUnseenToBadge`) ; tokens
-  `--jump-shadow` et `--jump-glow-a`.
+- **`docs/generations.md`** — générations en vol (piège 28) : registre
+  `_activeGenerations`, `persistCurrent` contre `persistGeneration` et sa garde
+  anti-troncature, `genOwnsScreen`, points d'écriture partagés
+  (`pushGenToolAck`…), étape annoncée (`setGenPhase`), et le non-vu du bouton
+  « aller tout en bas » reporté sur le badge.
+- **`docs/interjections.md`** — messages tapés pendant une génération : file
+  par conversation, drain à la frontière de tour ou en fin d'échange, puces du
+  composer, bulle `_acksOnly` (piège 27), reflux et file échouée.
+- **`docs/mcp.md`** — agrégation MCP distante (`mcp.js` contre `tools.js`) :
+  transport, handshake et révision 2026-07-28 (`server/discover`,
+  `mcpProbeVerdict`), contrats d'erreur `REF_UNKNOWN` et
+  `AUTHORIZATION_REQUIRED`, `_meta`, consignes `instructions`, pastille et
+  reprise, skills servies (`skills/list`).
+- **`docs/model-props.md`** — propriétés déclarées des modèles (fenêtre,
+  capacités, niveaux de raisonnement) lues dans les réponses `/models`,
+  `/api/tags`, `/api/show`, `/api/ps` ; `resolveContextWindow`,
+  `resolveModelVision`, `reasoningEffortBlocked` ; chemin natif d'Ollama ;
+  catalogue de modèles de la fiche serveur et menu de modèle du composer.
+- **`docs/multitab-sync.md`** — synchro multi-onglets (BroadcastChannel) :
+  avant d'ajouter un type de message, un émetteur ou un récepteur ; liste
+  fermée de types, soft-lock, readonly/heartbeat, doctrine du piège 24, relecture
+  sur événement `storage` (`storageEventDecision`).
+- **`docs/palettes.md`** — palettes de couleurs : deux axes (luminosité ×
+  palette), dérivation HSL des tokens, exceptions hors palette, gratuité à
+  l'export, et échelle de paliers redéfinie par sous-arbre.
+- **`docs/pitfalls-detail.md`** — développement complet des pièges 1-24, à lire
+  avant d'entrer dans leur domaine. Les pièges 25 à 29 sont développés dans leur
+  doc de domaine (`docs/tools.md` pour 25 et 26, `docs/interjections.md` pour
+  27, `docs/generations.md` pour 28, `docs/agents.md` et `docs/storage.md` 29).
+- **`docs/pwa.md`** — MIAOU installable et servi sous `/app/` par le proxy MCP :
+  manifeste, service worker (`src/pwa/sw.js`), détection de nouvelle version
+  (`checkForNewVersion`, `reloadBlockReason`), Réglages › Application, Ctrl+N
+  dans l'appli installée, `theme-color` (`syncThemeColor`).
+- **`docs/rendering.md`** — rendu des blocs de code (Mermaid, hauteur bornée),
+  débordement des grands tableaux (`--table-bleed`, `wrapWideTables`), rendu
+  par blocs pendant le streaming (`renderStreamBlocks`).
+- **`docs/skills.md`** — skills locales (CRUD, slash, drawer, autotrigger),
+  skills système, commandes MIAOU derrière le `/` (`MIAOU_COMMANDS`,
+  `matchMiaouCommand`, posé dans `sendMessage` et jamais `resolveSend`),
+  autocomplétion, skills servies par MCP (`mcp-skills.js` : intégrité,
+  approbation, lecture).
+- **`docs/spaces.md`** — Espaces : herméticité (piège 18, `spaceConvIds`),
+  Space par défaut, scope `profile` des souvenirs, description de Space
+  concaténée au prompt système, bibliothèque de fichiers par Space.
+- **`docs/storage.md`** — avant de toucher une clé `localStorage`, un store
+  IndexedDB (schéma, version, `releaseSupersededDb`), l'export/import `.zip`, la
+  recherche plein-texte et ses extraits (`buildExcerpt`), le cache à deux étages
+  (froide = `messages: []`, `conversationMessageCount`) ou un échec d'écriture
+  (`noteStorageWriteFailure`, stockage plein).
+- **`docs/tests.md`** — ce que couvre `tests/runner.py` (QuickJS) et ce qui se
+  vérifie à la main (`docs/manual-tests.md`) ; fixtures et serveur factice des
+  verify Playwright (`stub-backend.js`, `launchIsolated`), `assumeSkillsRead`.
+- **`docs/toasts.md`** — toasts : critère « état sur la surface passive, front
+  en toast », API `showToast`/`dismissToast`, `TOAST_GLYPHS`, file et placement
+  purs (`toastQueueUpsert`, `toastPlacement`), a11y.
+- **`docs/tools.md`** — avant de toucher le registre `TOOLS`, un handler, la
+  lecture de skill imposée (`requiresSkill`), les acks et l'inspecteur d'appel,
+  les marqueurs de référence (`resolveRefMarkers`, `web_ref`), `js__eval`
+  (piège 25), `resource__from_result` (piège 26) ou la microcompaction des tool
+  results.
+- **`docs/tooltips.md`** — infobulles MIAOU qui remplacent `title` :
+  `setTip`/`getTip`/`tipAttrs`, règle ARIA (`tipAriaRule`), délais, masquage,
+  placement, exclusions (export natif, tactile), filet `run_native_title_check`.
+- **`docs/usage-stats.md`** — statistiques de tokens : collecte aux deux seuls
+  points réseau (`purpose` chez l'appelant), `modelCallCounts`, store
+  `usage_stats` en agrégat, drawer et échelles glissantes, graphe par bacs
+  (`usageBins`, `usageBinTotals`).
 
 ## Règle d'or
 

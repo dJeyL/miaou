@@ -610,6 +610,16 @@ Le `unread` qui en découle est **accepté** (décision Julien, 2026-09-22) :
 l'écran. Une conversation compactée pendant qu'on regardait ailleurs portera sa
 pastille, et c'est voulu — rien à filtrer, rien à conditionner.
 
+**Le relais ne couvre pas l'onglet LOCAL.** Le relais verrouille les pairs, et
+une compaction n'appelle jamais `setSending` (qui borde une génération
+ordinaire) : sans rappel explicite, l'onglet qui compacte resterait éditable.
+`applyReadonlyState` (multitab.js) compte donc aussi `historyRewriteKind` de la
+conversation affichée, et le registre l'appelle à l'entrée comme à la sortie
+pour les `kind` de réécriture d'historique (`isHistoryRewriteKind`) — au cycle
+de vie du registre, seul endroit qui voie les deux bornes, et jamais
+inconditionnellement : une génération d'agent passe aussi par là, et l'appel
+touche l'UI.
+
 ### La « génération dégénérée » : un `kind`, et trois exemptions nommées
 
 L'objet génération a un contrat (`thread`, `abort`, `partial*`, `wrap`) qu'une

@@ -926,6 +926,44 @@ def run_docs_index_check() -> tuple[int, int]:
             failed += 1
             print(f'  FAIL  {rel} absent de l\'index « Domaines détaillés »')
 
+    # Plafond par entrée. Une ligne d'index dit QUAND ouvrir la doc, pas ce
+    # qu'elle contient : sans borne, chaque lot qui enrichit une doc y ajoutait
+    # une clause « porte aussi… », et la section a doublé en un mois (383 → 562
+    # lignes, une entrée à 97). Une entrée court de son « - **`docs/ » jusqu'à
+    # la suivante, la ligne vide ou la fin de section.
+    ENTRY_MAX_LINES = 5
+    entries: list[tuple[str, int]] = []
+    for ln in lines[start + 1:end]:
+        m = re.match(r'- \*\*`(docs/[^`]+)`', ln)
+        if m:
+            entries.append((m.group(1), 1))
+        elif entries and ln.strip() and ln.startswith('  '):
+            name, n = entries[-1]
+            entries[-1] = (name, n + 1)
+        elif entries and not ln.strip():
+            entries.append(('', 0))   # coupe : la ligne vide clôt l'entrée
+    entries = [e for e in entries if e[0]]
+    over = [f'{name} ({n} l.)' for name, n in entries if n > ENTRY_MAX_LINES]
+    label = f'chaque entrée de l\'index tient en {ENTRY_MAX_LINES} lignes'
+    if entries and not over:
+        passed += 1
+        print(f'  PASS  {label}')
+    else:
+        failed += 1
+        print(f'  FAIL  {label}' + (f' — trop longues : {", ".join(over)}'
+                                    if over else ' — aucune entrée trouvée'))
+
+    # Tri par nom de doc : sans garde, une doc nouvelle s'ajoute en fin de liste.
+    names = [name for name, _ in entries]
+    label = 'les entrées de l\'index sont triées par nom de doc'
+    if names == sorted(names):
+        passed += 1
+        print(f'  PASS  {label}')
+    else:
+        misplaced = [n for n, s in zip(names, sorted(names)) if n != s]
+        failed += 1
+        print(f'  FAIL  {label} — premier écart : {misplaced[0]}')
+
     return passed, failed
 
 
