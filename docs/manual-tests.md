@@ -1513,5 +1513,9 @@ Prérequis : proxy MCP qui sert `dist/` (clé `miaou_dist`), MIAOU ouvert à
    notification signale la version servie (une fois par session), Réglages ›
    Application propose « Ouvrir la version servie ». Proxy arrêté → aucune
    notification, la catégorie explique comment l'obtenir.
-6. **Navigateur sans installation** (Firefox) : Réglages › Application → ligne
+6. **Nouvelle fenêtre** : dans la fenêtre installée, Cmd+N (macOS) ou Ctrl+N
+   (Windows, Linux) → une nouvelle fenêtre MIAOU, pas une fenêtre de
+   navigateur. Dans un onglet du navigateur, Ctrl+N ouvre une fenêtre de
+   navigateur comme d'habitude.
+7. **Navigateur sans installation** (Firefox) : Réglages › Application → ligne
    qui dit comment faire, aucun bouton.

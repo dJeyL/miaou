@@ -159,6 +159,25 @@ registre qui est vérifiée, pas le cycle d'une génération. Sur une connexion
 détruite, Chromium rejoue d'office un GET idempotent : deux arrivées serveur
 pour une seule lecture de l'appli.
 
+## Ctrl+N : nouvelle fenêtre de l'appli
+
+Sur macOS, la fenêtre installée a sa barre de menus et Cmd+N y ouvre une
+fenêtre MIAOU sans rien demander à la page. Sous Windows et Linux, Chrome garde
+Ctrl+N et ouvre une fenêtre de navigateur. Dans une fenêtre d'application,
+Chromium ne réserve pas ses raccourcis : la page reçoit la touche, et
+`isNewAppWindowShortcut` (pur : fenêtre installée, hors macOS, Ctrl seul, pas
+de répétition) décide de l'intercepter. Dans un onglet ou en file://, la touche
+ne parvient pas à la page et le prédicat l'écarte de toute façon ; sur macOS,
+Ctrl+N reste à l'édition de texte.
+
+`openNewAppWindow` ouvre l'adresse de l'appli (sans requête ni ancre) en
+`window.open` avec la fonctionnalité `popup`, à la taille de la fenêtre
+courante : un `window.open` nu peut être envoyé par Chromium dans un onglet du
+navigateur. `_newAppWindowMode` (`'popup'` ou `'tab'`) se change depuis la
+console pour comparer les deux. Vérification à la main seulement
+(`docs/manual-tests.md`, « MIAOU installable ») : la réception de la touche
+dépend de la fenêtre d'application, qu'aucun navigateur piloté ne reproduit.
+
 ## Installer, ou passer à la version servie (Réglages › Application)
 
 La catégorie « Application » des réglages varie selon le contexte ; son état est

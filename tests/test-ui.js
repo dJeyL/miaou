@@ -909,6 +909,26 @@ describe('isServedProtocol (pwa)', function() {
   });
 });
 
+describe('isNewAppWindowShortcut (pwa)', function() {
+  const ctrlN = { key: 'n', ctrlKey: true };
+  it('Ctrl+N dans la fenêtre installée, hors macOS : oui', function() {
+    expect(isNewAppWindowShortcut(ctrlN, true, false)).toBe(true);
+    expect(isNewAppWindowShortcut({ key: 'N', ctrlKey: true }, true, false)).toBe(true);
+  });
+  it('onglet, file:// ou macOS : la touche reste au navigateur ou au système', function() {
+    expect(isNewAppWindowShortcut(ctrlN, false, false)).toBe(false);
+    expect(isNewAppWindowShortcut(ctrlN, true, true)).toBe(false);
+  });
+  it('autre modificateur, répétition ou autre touche : non', function() {
+    expect(isNewAppWindowShortcut({ key: 'n', ctrlKey: true, shiftKey: true }, true, false)).toBe(false);
+    expect(isNewAppWindowShortcut({ key: 'n', ctrlKey: true, altKey: true }, true, false)).toBe(false);
+    expect(isNewAppWindowShortcut({ key: 'n', ctrlKey: true, metaKey: true }, true, false)).toBe(false);
+    expect(isNewAppWindowShortcut({ key: 'n', ctrlKey: true, repeat: true }, true, false)).toBe(false);
+    expect(isNewAppWindowShortcut({ key: 'n' }, true, false)).toBe(false);
+    expect(isNewAppWindowShortcut({ key: 'k', ctrlKey: true }, true, false)).toBe(false);
+  });
+});
+
 describe('shouldCheckVersion (pwa)', function() {
   it('jamais en file:// ni hors build', function() {
     expect(shouldCheckVersion(false, 'abc', 0, 1000, 120000)).toBe(false);

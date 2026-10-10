@@ -143,6 +143,47 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
   });
 }
 
+// ── Ctrl+N : nouvelle fenêtre MIAOU (fenêtre installée, hors macOS) ──────────
+// Sur macOS, la fenêtre installée a sa barre de menus et Cmd+N y ouvre déjà une
+// fenêtre de l'appli : rien à faire. Ailleurs (Windows, Linux), Chrome garde
+// Ctrl+N pour lui et ouvre une fenêtre de NAVIGATEUR. Dans une fenêtre
+// d'application, Chromium ne réserve pas ses raccourcis : la page reçoit la
+// touche et peut l'intercepter. Dans un onglet ou en file://, la touche ne
+// parvient pas à la page — et le prédicat l'écarte de toute façon.
+// Sur macOS, Ctrl+N reste à l'édition de texte (ligne suivante, emacs).
+
+// Pur : ce keydown doit-il ouvrir une nouvelle fenêtre MIAOU ?
+function isNewAppWindowShortcut(e, standalone, isMac) {
+  if (!standalone || isMac || !e) return false;
+  if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat) return false;
+  return e.key === 'n' || e.key === 'N';
+}
+
+// Comment ouvrir la fenêtre : 'popup' (fenêtre d'application, à la taille de
+// la fenêtre courante) ou 'tab' (window.open nu, que Chromium peut envoyer
+// dans un onglet du navigateur). Modifiable depuis la console pour comparer.
+let _newAppWindowMode = 'popup';
+
+function openNewAppWindow() {
+  const url = location.origin + location.pathname;
+  if (_newAppWindowMode === 'tab') {
+    window.open(url, '_blank', 'noopener');
+    return;
+  }
+  const w = window.outerWidth || 1200;
+  const h = window.outerHeight || 800;
+  window.open(url, '_blank', 'popup,noopener,width=' + w + ',height=' + h);
+}
+
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('keydown', function (e) {
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
+    if (!isNewAppWindowShortcut(e, isStandaloneDisplay(), isMac)) return;
+    e.preventDefault();
+    openNewAppWindow();
+  });
+}
+
 // Pur : ce que montre la catégorie « Application ».
 //   ctx = { served, secure, standalone, installed, canPrompt, servedUrl }
 //   → { hint, install (bouton), openServed (bouton) }

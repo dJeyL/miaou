@@ -1538,6 +1538,8 @@ dans Chrome et Edge, l'icône d'installation de la barre d'adresse ou le menu ;
 dans Safari sur macOS, Fichier › Ajouter au Dock. Firefox n'installe pas
 d'application web. Une fois installé, MIAOU s'ouvre depuis le menu du système,
 et sa barre de titre prend les couleurs du thème et de la palette choisis.
+Une nouvelle fenêtre MIAOU s'ouvre par Cmd+N sur macOS, par Ctrl+N ailleurs
+(dans un onglet du navigateur, Ctrl+N reste au navigateur).
 L'installation exige une connexion sécurisée : `https`, ou une adresse locale
 (`localhost`, `127.0.0.1`) ; une adresse du réseau local en `http` ne suffit
 pas.
