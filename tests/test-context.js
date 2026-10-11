@@ -515,6 +515,11 @@ describe('buildSummaryBlock (résumés matchés injectés dans le contexte)', fu
     expect(b).toContain('Un résumé concis');
     expect(b).toContain('conv__list');
   });
+  it('titre absent → segment omis, jamais « undefined »', function() {
+    var b = buildSummaryBlock([{ id: 'c1', summary: 'Un résumé concis' }]);
+    expect(b).toContain('- [id: c1] — Un résumé concis');
+    expect(b.indexOf('undefined') < 0).toBeTruthy();
+  });
 });
 
 // Les souvenirs sont désormais SCINDÉS par destination : le scope `profile`

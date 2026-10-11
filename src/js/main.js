@@ -1271,7 +1271,9 @@ function setConvReasoningEffort(v) {
 // ── Construction du message système (un seul, concaténé) ────────────────────
 function buildSummaryBlock(matches) {
   if (!matches.length) return '';
-  const lines = matches.map(m => `- [id: ${m.id}] « ${m.title} » — ${m.summary}`);
+  // Titre absent (conversation jamais titrée) : segment omis, sinon le modèle
+  // lisait « undefined ».
+  const lines = matches.map(m => `- [id: ${m.id}]${m.title ? ` « ${m.title} »` : ''} — ${m.summary}`);
   return "Conversations passées potentiellement pertinentes (résumés). " +
          "Ces résumés décrivent un état PASSÉ, pas l'état actuel du système : " +
          "une difficulté ou un échec qu'ils relatent a pu être corrigé depuis, " +
@@ -2302,10 +2304,21 @@ function onTitleBlur(e) {
     // `autoTitled: false` explicite, jamais l'omission : la conversation peut
     // porter le marqueur d'un titrage automatique antérieur, que cette saisie
     // doit effacer — sinon un retitrage de fin d'échange écraserait ce titre-ci.
-    if (conv) { persistConversationField(currentConvId, { title: t, autoTitled: false }); renderConvList(); }
-    const entry = getSummaryEntry(currentConvId);
-    if (entry) { entry.title = t; saveSummary(currentConvId, entry); }
+    if (conv) { persistConvTitle(currentConvId, t, false); renderConvList(); }
   }
+}
+
+// Titre d'une conversation : point d'écriture UNIQUE de ses deux porteurs, la
+// conversation et la copie que garde son résumé (drawer, recherche, liste des
+// résumés servie au modèle). Seul le renommage manuel tenait la copie à jour :
+// un titre généré après le résumé — titrage de fin d'échange, ou titrage qui
+// avait échoué puis réussi — laissait le résumé sur l'ancien, souvent vide,
+// donc affiché « Nouvelle conversation ». Une tombstone est mise à jour aussi :
+// elle garde ses données pour une ré-autorisation.
+function persistConvTitle(convId, title, autoTitled) {
+  persistConversationField(convId, { title: title, autoTitled: autoTitled });
+  const entry = getSummaryEntry(convId);
+  if (entry && entry.title !== title) saveSummary(convId, Object.assign({}, entry, { title: title }));
 }
 
 // ── Réglages ────────────────────────────────────────────────────────────────
@@ -4944,7 +4957,7 @@ function applyGeneratedTitle(convId, title, force) {
   // précoce (qu'on doit pouvoir régénérer) et un titre choisi (jamais écrasé)
   // sont tous deux un `title` non vide. onTitleBlur écrit `autoTitled: false`.
   if (!force && conv.title && conv.autoTitled === false) return;
-  persistConversationField(convId, { title: title, autoTitled: !force });
+  persistConvTitle(convId, title, !force);
   if (convId === currentConvId) setTitle(title);   // barre du haut + <title> de la page
   renderConvList();                                 // liste de gauche
 }
@@ -5090,9 +5103,13 @@ async function summarizeIfNeeded(id) {
   // non plus — le cycle est déjà d'une minute, et la garde `messageCount` rend
   // la tentative suivante gratuite dès qu'une a réussi.
   if (!s) { toastSummaryFailed(id); armIdleSummaryTimer(); return; }
-  if (!loadConversation(id)) return;   // supprimée pendant la génération (async) : ne pas ressusciter l'entrée
+  const fresh = loadConversation(id);
+  if (!fresh) return;   // supprimée pendant la génération (async) : ne pas ressusciter l'entrée
   saveSummary(id, {
-    title: conv.title,
+    // Titre relu APRÈS l'await (piège 24 (b)) : le titrage tourne en parallèle
+    // et peut aboutir pendant le résumé. Le reste décrit ce qui a été résumé,
+    // donc l'instantané d'avant l'appel.
+    title: fresh.title,
     timestamp: conv.updatedAt || conv.timestamp,
     summary: s.summary,
     keywords: s.keywords,
@@ -5654,6 +5671,15 @@ function pruneOrphanSummariesOnInit() {
   }
 }
 
+// Copies de titre périmées (démarrage). `persistConvTitle` les tient à jour
+// depuis qu'il existe ; ce passage corrige celles écrites avant, et celles
+// qu'un import ou un pair aurait laissées. staleSummaryTitles (storage.js) est pure.
+function reconcileSummaryTitlesOnInit() {
+  for (const fix of staleSummaryTitles(loadSummaries(), listAllConversations())) {
+    saveSummary(fix.id, Object.assign({}, getSummaryEntry(fix.id), { title: fix.title }));
+  }
+}
+
 // ── Backfill modèle : attribue le modèle courant aux réponses sans modèle ───
 // Cœur décisionnel, PUR et QuickJS-testable : mute les réponses assistant sans
 // modèle et rend true si quelque chose a bougé (donc s'il faut réécrire). La
@@ -5947,6 +5973,7 @@ async function init() {
     syncContextCounter();
   });
   pruneOrphanSummariesOnInit();   // résidus d'une suppression concurrente à une génération (avant le backfill, sinon liste faussée)
+  reconcileSummaryTitlesOnInit(); // copies de titre restées sur un ancien titre (persistConvTitle)
   runBackfill();         // auto-gardé sur la présence d'URL
   armIdleSummaryTimer(); // résumé sur inactivité, réarmé à chaque activité
   registerServiceWorker();   // page servie seulement (pwa.js)

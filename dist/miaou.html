@@ -5604,7 +5604,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-10 23:41 UTC */
+/* miaou — built: 2026-10-11 07:49 UTC */
 
 /* ── utils.js ── */
 
@@ -11125,7 +11125,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1791675718}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1791704950}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11133,7 +11133,7 @@ const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
 const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "9e4e78c536cbe50f"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "6c5f6e7252aaaa9f"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -12425,6 +12425,15 @@ function pruneOrphanSummaries(summaries, convs) {
   const out = {};
   for (const id of Object.keys(summaries)) {
     if (ids.has(id)) out[id] = summaries[id];
+  }
+  return out;
+}
+
+function staleSummaryTitles(summaries, convs) {
+  const out = [];
+  for (const c of convs || []) {
+    const e = c && summaries[c.id];
+    if (e && typeof c.title === 'string' && c.title && e.title !== c.title) out.push({ id: c.id, title: c.title });
   }
   return out;
 }
@@ -19518,7 +19527,7 @@ async function generateDidYouKnowTip() {
 
 /* ── api.js ── */
 
-const NOTHINK_PARAMS = { reasoning_effort: 'none' };
+const NOTHINK_EFFORT = 'none';
 
 const _noThinkRejected = {};
 
@@ -19630,6 +19639,19 @@ function noteReasoningEffortRefused(url, model, value, bodyText) {
   const list = _reasoningEffortLevelsRefused[k] || (_reasoningEffortLevelsRefused[k] = []);
   if (!list.includes(value)) list.push(value);
   if (reasoningEffortRefusalsExhaust(list)) markReasoningEffortRejected(url, model);
+}
+
+function silentReasoningEffort(efforts, refused) {
+  const r = refused || [];
+  if (!r.includes(NOTHINK_EFFORT)) return NOTHINK_EFFORT;
+  const levels = (efforts && Array.isArray(efforts.levels) ? efforts.levels : [])
+    .filter(l => typeof l === 'string' && !r.includes(l));
+  const rank = (l) => {
+    const i = REASONING_EFFORT_SCALE.indexOf(l);
+    return i >= 0 ? i : REASONING_EFFORT_SCALE.length + levels.indexOf(l);
+  };
+  levels.sort((a, b) => rank(a) - rank(b));
+  return levels.length ? levels[0] : null;
 }
 
 const _visionRejected = {};
@@ -19802,11 +19824,14 @@ async function silentCompletion(messages, opts) {
         refused = true;
         const err = new Error('silentCompletion ' + res.status);
         err.status = res.status;
+
+        try { err.bodyText = await res.text(); } catch (_) { err.bodyText = ''; }
         throw err;
       }
       answered = true;
       const data = await res.json();
-      const content = (data.choices?.[0]?.message?.content ?? '').trim();
+
+      const content = contentDelta(data.choices?.[0]?.message).trim();
 
       noteModelUsage(server, model, o.purpose, data.usage);
       return content;
@@ -19823,12 +19848,23 @@ async function silentCompletion(messages, opts) {
 
   const _cascade = async () => {
     if (!_noThinkRejected[url]) {
-      try {
-        return await _attempt(NOTHINK_PARAMS);
-      } catch (e) {
 
-        if (!serverVerdictOnFailure(e)) throw e;
-        _noThinkRejected[url] = true;
+      for (let i = 0; i < REASONING_EFFORT_SCALE.length; i++) {
+        const effort = silentReasoningEffort(
+          (knownReasoningEfforts(url, model) || {}).efforts, refusedReasoningEfforts(url, model));
+        if (!effort) break;
+        try {
+          return await _attempt({ reasoning_effort: effort });
+        } catch (e) {
+
+          if (!serverVerdictOnFailure(e)) throw e;
+
+          if (!reasoningEffortsFromRefusal(e.bodyText, effort)) {
+            _noThinkRejected[url] = true;
+            break;
+          }
+          noteReasoningEffortRefused(url, model, effort, e.bodyText);
+        }
       }
     }
     return await _attempt({});
@@ -33090,7 +33126,8 @@ function setConvReasoningEffort(v) {
 
 function buildSummaryBlock(matches) {
   if (!matches.length) return '';
-  const lines = matches.map(m => `- [id: ${m.id}] « ${m.title} » — ${m.summary}`);
+
+  const lines = matches.map(m => `- [id: ${m.id}]${m.title ? ` « ${m.title} »` : ''} — ${m.summary}`);
   return "Conversations passées potentiellement pertinentes (résumés). " +
          "Ces résumés décrivent un état PASSÉ, pas l'état actuel du système : " +
          "une difficulté ou un échec qu'ils relatent a pu être corrigé depuis, " +
@@ -33640,10 +33677,14 @@ function onTitleBlur(e) {
     needTitle = false;
     const conv = loadConversation(currentConvId);
 
-    if (conv) { persistConversationField(currentConvId, { title: t, autoTitled: false }); renderConvList(); }
-    const entry = getSummaryEntry(currentConvId);
-    if (entry) { entry.title = t; saveSummary(currentConvId, entry); }
+    if (conv) { persistConvTitle(currentConvId, t, false); renderConvList(); }
   }
+}
+
+function persistConvTitle(convId, title, autoTitled) {
+  persistConversationField(convId, { title: title, autoTitled: autoTitled });
+  const entry = getSummaryEntry(convId);
+  if (entry && entry.title !== title) saveSummary(convId, Object.assign({}, entry, { title: title }));
 }
 
 function onSaveSettings() {
@@ -35209,7 +35250,7 @@ function applyGeneratedTitle(convId, title, force) {
   if (!conv) return;
 
   if (!force && conv.title && conv.autoTitled === false) return;
-  persistConversationField(convId, { title: title, autoTitled: !force });
+  persistConvTitle(convId, title, !force);
   if (convId === currentConvId) setTitle(title);
   renderConvList();
 }
@@ -35280,9 +35321,11 @@ async function summarizeIfNeeded(id) {
   const s = await runBackgroundTask('résumé…', () => generateSummary(conv.messages));
 
   if (!s) { toastSummaryFailed(id); armIdleSummaryTimer(); return; }
-  if (!loadConversation(id)) return;
+  const fresh = loadConversation(id);
+  if (!fresh) return;
   saveSummary(id, {
-    title: conv.title,
+
+    title: fresh.title,
     timestamp: conv.updatedAt || conv.timestamp,
     summary: s.summary,
     keywords: s.keywords,
@@ -35521,6 +35564,12 @@ function pruneOrphanSummariesOnInit() {
   }
 }
 
+function reconcileSummaryTitlesOnInit() {
+  for (const fix of staleSummaryTitles(loadSummaries(), listAllConversations())) {
+    saveSummary(fix.id, Object.assign({}, getSummaryEntry(fix.id), { title: fix.title }));
+  }
+}
+
 function applyMessageModelBackfill(conv, model) {
   if (!conv || !Array.isArray(conv.messages) || !model) return false;
   let dirty = false;
@@ -35729,6 +35778,7 @@ async function init() {
     syncContextCounter();
   });
   pruneOrphanSummariesOnInit();
+  reconcileSummaryTitlesOnInit();
   runBackfill();
   armIdleSummaryTimer();
   registerServiceWorker();

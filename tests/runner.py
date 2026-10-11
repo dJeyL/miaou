@@ -1145,7 +1145,6 @@ def run_native_title_check() -> tuple[int, int]:
     print('\nInfobulles : aucun title natif (lot AH)')
 
     DATA_TITLE_WRITES = {
-        ('main.js', "if (entry) { entry.title = t; saveSummary(currentConvId, entry); }"),
         ('skills.js', "if (inMetadata && key === 'title' && val) out.title = val;"),
         # Titre de page d'une source web (lot AI) : webMetaFromResult et
         # webSourceRegistry, donnée du registre — l'infobulle passe par tipAttrs.

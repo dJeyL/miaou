@@ -30,11 +30,14 @@
 // ou rien. streamCompletion le pose sur l'objet passé en o.gen ; abortStream
 // (main.js) cible la génération d'une conversation donnée.
 
-// Param(s) mergés dans le body des appels silencieux pour désactiver le raisonnement.
-// À modifier ici uniquement si le backend utilise un autre knob (ex. think: false).
-const NOTHINK_PARAMS = { reasoning_effort: 'none' };
+// Niveau de `reasoning_effort` demandé par les appels silencieux pour éteindre
+// le raisonnement. Un modèle qui le refuse en nommant ses niveaux reçoit le plus
+// bas d'entre eux (`silentReasoningEffort`).
+const NOTHINK_EFFORT = 'none';
 
-// Cache session : endpoints ayant rejeté NOTHINK_PARAMS (clé = URL endpoint).
+// Cache session : endpoints ayant rejeté le no-think sans dire pourquoi (clé =
+// URL endpoint). Un refus qui nomme les niveaux acceptés ne le pose pas : il
+// vise un modèle, et s'apprend par (endpoint, modèle).
 const _noThinkRejected = {};
 
 // Cet échec porte-t-il un VERDICT DU SERVEUR sur ce qu'on lui a envoyé, ou
@@ -182,7 +185,7 @@ async function readErrorDetail(res) {
 // Cache session : (endpoint, modèle) ayant rejeté reasoning_effort choisi par
 // l'utilisateur. Clé composite (url + '::' + model) — un même endpoint peut
 // exposer plusieurs modèles aux capacités de raisonnement différentes, donc on
-// ne peut pas généraliser le rejet à tout l'endpoint comme pour NOTHINK_PARAMS
+// ne peut pas généraliser le rejet à tout l'endpoint comme pour le no-think
 // (qui, lui, ne cible jamais qu'un seul modèle fixe : cfg.model).
 const _reasoningEffortRejected = {};
 function reasoningEffortRejectedKey(url, model) { return url + '::' + (model || ''); }
@@ -268,6 +271,27 @@ function noteReasoningEffortRefused(url, model, value, bodyText) {
   const list = _reasoningEffortLevelsRefused[k] || (_reasoningEffortLevelsRefused[k] = []);
   if (!list.includes(value)) list.push(value);
   if (reasoningEffortRefusalsExhaust(list)) markReasoningEffortRejected(url, model);
+}
+
+// Pur : niveau à demander pour un appel silencieux (titre, résumé, description),
+// ou null pour n'envoyer aucun paramètre. `NOTHINK_EFFORT` tant qu'il n'a pas
+// été refusé ; sinon le plus bas des niveaux NOMMÉS connus et non refusés —
+// GLM chez Mistral refuse `none` et liste `low`, `high`, `max` (mesuré le
+// 2026-10-11) : sans repli, l'appel repartait sans paramètre, donc au niveau
+// par défaut du modèle. Le `true` d'un modèle booléen n'est jamais retenu : il
+// ALLUME la réflexion (`REASONING_EFFORT_ON_VALUE`). Et un `none` simplement
+// absent d'une déclaration ne suffit pas à l'écarter : seul un refus le fait.
+function silentReasoningEffort(efforts, refused) {
+  const r = refused || [];
+  if (!r.includes(NOTHINK_EFFORT)) return NOTHINK_EFFORT;
+  const levels = (efforts && Array.isArray(efforts.levels) ? efforts.levels : [])
+    .filter(l => typeof l === 'string' && !r.includes(l));
+  const rank = (l) => {
+    const i = REASONING_EFFORT_SCALE.indexOf(l);
+    return i >= 0 ? i : REASONING_EFFORT_SCALE.length + levels.indexOf(l);
+  };
+  levels.sort((a, b) => rank(a) - rank(b));
+  return levels.length ? levels[0] : null;
 }
 
 // Cache session : (endpoint, modèle) ayant rejeté des content parts image_url
@@ -581,11 +605,17 @@ async function silentCompletion(messages, opts) {
         refused = true;
         const err = new Error('silentCompletion ' + res.status);
         err.status = res.status;   // lu par serverVerdictOnFailure
+        // Corps lu pour la cascade : un refus de niveau y nomme les niveaux acceptés.
+        try { err.bodyText = await res.text(); } catch (_) { err.bodyText = ''; }
         throw err;
       }
       answered = true;
       const data = await res.json();
-      const content = (data.choices?.[0]?.message?.content ?? '').trim();
+      // `content` peut être un tableau de parts (Mistral, vLLM) dès que le modèle
+      // raisonne : `contentDelta` en garde le texte de réponse, sans les parts
+      // thinking. Un `.trim()` direct levait sur une réponse 200 valide, et le
+      // titre ou le résumé était perdu en silence.
+      const content = contentDelta(data.choices?.[0]?.message).trim();
       // Statistiques : UN enregistrement par essai servi. La cascade NOTHINK et
       // le rejeu vision ne relancent que sur un refus, qui n'est pas compté.
       // Posé APRÈS l'extraction du contenu, dernier geste qui puisse lever :
@@ -616,24 +646,40 @@ async function silentCompletion(messages, opts) {
   // exotique.
   const _cascade = async () => {
     if (!_noThinkRejected[url]) {
-      try {
-        return await _attempt(NOTHINK_PARAMS);
-      } catch (e) {
-        // Ne marquer QUE sur un échec concluant (serverVerdictOnFailure,
-        // plus haut) : un timeout ou une panne réseau n'apprend rien sur ce que
-        // l'endpoint accepte, et le marquer rallumait le raisonnement pour toute
-        // la session — le cas réel que le commentaire précédent attendait pour
-        // affiner est arrivé (Ollama lent, 2026-09-22).
-        //
-        // Et sur un échec NON concluant, on ne rejoue pas non plus : le rejeu
-        // sans paramètre n'a de sens que contre un endpoint qui REFUSE le
-        // paramètre. Après un timeout il est nuisible deux fois — il redouble
-        // l'attente (un second `_attempt` repart sur un timeout PLEIN, soit
-        // jusqu'à 180 s pour une compaction avant de renoncer) et il retire
-        // justement le no-think, donc il rallonge la réponse qu'on attend sur
-        // un backend déjà trop lent. On propage l'échec tel quel.
-        if (!serverVerdictOnFailure(e)) throw e;
-        _noThinkRejected[url] = true;
+      // Un niveau refusé est noté, puis le suivant est tenté : la boucle avance
+      // sur une liste finie qui ne repropose jamais un niveau refusé. La borne
+      // n'est qu'un filet.
+      for (let i = 0; i < REASONING_EFFORT_SCALE.length; i++) {
+        const effort = silentReasoningEffort(
+          (knownReasoningEfforts(url, model) || {}).efforts, refusedReasoningEfforts(url, model));
+        if (!effort) break;
+        try {
+          return await _attempt({ reasoning_effort: effort });
+        } catch (e) {
+          // Ne marquer QUE sur un échec concluant (serverVerdictOnFailure,
+          // plus haut) : un timeout ou une panne réseau n'apprend rien sur ce que
+          // l'endpoint accepte, et le marquer rallumait le raisonnement pour toute
+          // la session — le cas réel que le commentaire précédent attendait pour
+          // affiner est arrivé (Ollama lent, 2026-09-22).
+          //
+          // Et sur un échec NON concluant, on ne rejoue pas non plus : le rejeu
+          // sans paramètre n'a de sens que contre un endpoint qui REFUSE le
+          // paramètre. Après un timeout il est nuisible deux fois — il redouble
+          // l'attente (un second `_attempt` repart sur un timeout PLEIN, soit
+          // jusqu'à 180 s pour une compaction avant de renoncer) et il retire
+          // justement le no-think, donc il rallonge la réponse qu'on attend sur
+          // un backend déjà trop lent. On propage l'échec tel quel.
+          if (!serverVerdictOnFailure(e)) throw e;
+          // Refus qui parle de raisonnement et nomme le niveau envoyé : il vise
+          // CE modèle, noté comme un refus du composer (le menu en profite),
+          // et le niveau suivant est tenté. Tout autre refus garde l'hypothèse
+          // d'origine : l'endpoint ne prend pas le paramètre.
+          if (!reasoningEffortsFromRefusal(e.bodyText, effort)) {
+            _noThinkRejected[url] = true;
+            break;
+          }
+          noteReasoningEffortRefused(url, model, effort, e.bodyText);
+        }
       }
     }
     return await _attempt({});

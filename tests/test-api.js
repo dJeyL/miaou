@@ -181,6 +181,15 @@ describe('contentDelta (normalisation du texte de réponse)', function() {
       { type: 'text', text: 'réponse' },
     ] })).toBe('réponse');
   });
+  it('lit aussi le message d\'une réponse NON streamée (silentCompletion) : forme Mistral avec thinking', function() {
+    // Forme relevée sur GLM via l'API de Mistral (choices[0].message) : un
+    // `.trim()` direct sur ce tableau levait et perdait titre et résumé.
+    var message = { role: 'assistant', index: 0, content: [
+      { type: 'thinking', thinking: [{ type: 'text', text: 'Le titre doit faire 3 à 6 mots.' }], closed: true },
+      { type: 'text', text: 'Titre de la conversation' },
+    ] };
+    expect(contentDelta(message).trim()).toBe('Titre de la conversation');
+  });
   it('accepte une part sans type explicite comme du texte', function() {
     expect(contentDelta({ content: [{ text: 'nu' }] })).toBe('nu');
   });
@@ -414,6 +423,9 @@ describe('parseSummaryJSON (parsing défensif des résumés)', function() {
 var RE_MISTRAL_REFUSAL = JSON.stringify({ object: 'error',
   message: "reasoning_effort low is not supported for this model, supported values: [<ReasoningEffort.high: 'high'>, <ReasoningEffort.none: 'none'>]",
   type: 'invalid_request_invalid_args', param: null, code: '3051', raw_status_code: 400 });
+var RE_NONE_REFUSAL = JSON.stringify({ object: 'error',
+  message: "reasoning_effort 'none' is not supported for this model; supported values: ['low', 'high', 'max']",
+  type: 'invalid_request_invalid_args', param: null, code: '3051', raw_status_code: 400 });
 var RE_GATEWAY_REFUSAL = JSON.stringify({ error: { type: 'http_error',
   message: '400: ' + JSON.stringify({ object: 'Error',
     message: "reasoning_effort medium is not supported for this model, supported values: [<ReasoningEffort.high: 'high'>, <ReasoningEffort.none: 'none'>]",
@@ -435,6 +447,9 @@ describe('niveaux appris du corps d\'un refus (reasoningEffortsFromRefusal)', fu
   it('mots entiers : xhigh ne vaut pas high, max_tokens ne vaut pas max, None n\'est pas none', function() {
     expect(reasoningEffortsFromRefusal("reasoning_effort low refused; accepted: xhigh; max_tokens=None", 'low'))
       .toEqual({ levels: ['xhigh'], default: null });
+  });
+  it('refus de `none` qui liste ses niveaux entre apostrophes (GLM via Mistral) → niveaux appris', function() {
+    expect(reasoningEffortsFromRefusal(RE_NONE_REFUSAL, 'none')).toEqual({ levels: ['low', 'high', 'max'], default: null });
   });
   it('corps illisible ou vide → rien appris', function() {
     expect(reasoningEffortsFromRefusal('', 'low')).toBe(null);
@@ -581,6 +596,35 @@ describe('injectVisionDegradedNote', function() {
   it('aucun message user → renvoie le tableau inchangé', function() {
     var msgs = [{ role: 'system', content: 'sys' }];
     expect(injectVisionDegradedNote(msgs)).toEqual(msgs);
+  });
+});
+
+describe('silentReasoningEffort : niveau des appels silencieux (titre, résumé, description)', function() {
+  it('rien de refusé → no-think, même si la déclaration ne cite pas `none`', function() {
+    expect(silentReasoningEffort(null, [])).toBe('none');
+    expect(silentReasoningEffort({ levels: ['low', 'high'], default: null }, [])).toBe('none');
+  });
+  it('`none` refusé → le plus bas des niveaux nommés connus, pas l\'ordre de la liste', function() {
+    expect(silentReasoningEffort({ levels: ['max', 'high', 'low'], default: null }, ['none'])).toBe('low');
+  });
+  it('les niveaux déjà refusés sont sautés', function() {
+    expect(silentReasoningEffort({ levels: ['low', 'high', 'max'], default: null }, ['none', 'low'])).toBe('high');
+  });
+  it('`none` refusé sans niveau connu → aucun paramètre', function() {
+    expect(silentReasoningEffort(null, ['none'])).toBe(null);
+    expect(silentReasoningEffort({ levels: ['low'], default: null }, ['none', 'low'])).toBe(null);
+  });
+  it('le `true` d\'un modèle booléen n\'est jamais retenu : il allumerait la réflexion', function() {
+    expect(silentReasoningEffort({ levels: [true], default: null }, ['none'])).toBe(null);
+  });
+  it('enchaînement réel : un refus de `none` appris fait choisir `low` pour CE modèle seulement', function() {
+    noteReasoningEffortRefused('http://sre1/v1', 'glm', 'none', RE_NONE_REFUSAL);
+    var pick = function(m) {
+      return silentReasoningEffort((knownReasoningEfforts('http://sre1/v1', m) || {}).efforts,
+        refusedReasoningEfforts('http://sre1/v1', m));
+    };
+    expect(pick('glm')).toBe('low');
+    expect(pick('autre-modele')).toBe('none');
   });
 });
 

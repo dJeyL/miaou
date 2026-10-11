@@ -551,3 +551,33 @@ describe('kind de génération — compaction au registre sans peindre', functio
     _activeGenerations.clear();
   });
 });
+
+describe('persistConvTitle — le titre et sa copie dans le résumé, ensemble', function () {
+  it('un titre écrit après le résumé met aussi la copie du résumé à jour', function () {
+    localStorage.clear();
+    saveConversation({ id: 'pct1', title: '', timestamp: Date.now(), messages: [] });
+    saveSummary('pct1', { title: '', timestamp: 0, summary: 's', keywords: ['k'], messageCount: 2 });
+    persistConvTitle('pct1', 'Titre généré', true);
+    expect(loadConversation('pct1').title).toBe('Titre généré');
+    expect(loadConversation('pct1').autoTitled).toBe(true);
+    var e = getSummaryEntry('pct1');
+    expect(e.title).toBe('Titre généré');
+    expect(e.summary).toBe('s');
+    expect(e.messageCount).toBe(2);
+  });
+  it('sans résumé, aucune entrée n\'est créée', function () {
+    localStorage.clear();
+    saveConversation({ id: 'pct2', title: '', timestamp: Date.now(), messages: [] });
+    persistConvTitle('pct2', 'Titre', false);
+    expect(getSummaryEntry('pct2') == null).toBe(true);
+  });
+  it('une tombstone garde son flag et reçoit le titre', function () {
+    localStorage.clear();
+    saveConversation({ id: 'pct3', title: '', timestamp: Date.now(), messages: [] });
+    saveSummary('pct3', { title: '', timestamp: 0, summary: 's', keywords: [], messageCount: 2 });
+    suppressSummary('pct3');
+    persistConvTitle('pct3', 'Titre', true);
+    expect(getSummaryEntry('pct3').suppressed).toBe(true);
+    expect(getSummaryEntry('pct3').title).toBe('Titre');
+  });
+});

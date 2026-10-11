@@ -415,7 +415,7 @@ aide à la décision de lecture).
   `_declaresContentReadSignature` (présence de `char_start`/`line_start`,
   absence de `query`), cf. `docs/mcp.md` point 14 pour le détail complet et la
   convention à respecter par tout futur serveur d'extraction.
-- **Appel de description** : `silentCompletion` + `NOTHINK_PARAMS` (api.js),
+- **Appel de description** : `silentCompletion` + no-think (`silentReasoningEffort`, api.js),
   prompt constant dédié `FILE_DESCRIPTION_PROMPT` (**distinct** de
   `SUMMARY_PROMPT`, qui cible une conversation en JSON summary+keywords, et
   sémantiquement distinct d'un résumé — cf. plus haut) — sortie texte libre,

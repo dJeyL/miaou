@@ -1068,6 +1068,23 @@ describe('validateImportPayload', function() {
   });
 });
 
+describe('staleSummaryTitles', function() {
+  it('signale une copie vide ou différente du titre de la conversation', function() {
+    var summaries = { c1: { id: 'c1' }, c2: { id: 'c2', title: 'Ancien' }, c3: { id: 'c3', title: 'Pareil' } };
+    var convs = [{ id: 'c1', title: 'Nouveau' }, { id: 'c2', title: 'Renommé' }, { id: 'c3', title: 'Pareil' }];
+    expect(staleSummaryTitles(summaries, convs)).toEqual([{ id: 'c1', title: 'Nouveau' }, { id: 'c2', title: 'Renommé' }]);
+  });
+  it('un titre de conversation vide n\'efface jamais la copie', function() {
+    expect(staleSummaryTitles({ c1: { id: 'c1', title: 'Gardé' } }, [{ id: 'c1', title: '' }, { id: 'c1' }])).toEqual([]);
+  });
+  it('conversation sans résumé → rien', function() {
+    expect(staleSummaryTitles({}, [{ id: 'c1', title: 'T' }])).toEqual([]);
+  });
+  it('tombstone comprise : elle garde ses données pour une ré-autorisation', function() {
+    expect(staleSummaryTitles({ c1: { id: 'c1', suppressed: true } }, [{ id: 'c1', title: 'T' }])).toEqual([{ id: 'c1', title: 'T' }]);
+  });
+});
+
 describe('pruneOrphanSummaries', function() {
   it('retire les entrées dont la conversation n\'existe plus', function() {
     var summaries = { c1: { id: 'c1', summary: 'a' }, c2: { id: 'c2', summary: 'b' } };

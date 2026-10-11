@@ -2191,6 +2191,18 @@ function pruneOrphanSummaries(summaries, convs) {
   return out;
 }
 
+// Copies de titre à corriger : [{ id, title }] pour chaque résumé (tombstones
+// comprises) dont la conversation porte un titre différent. Un titre de
+// conversation vide n'efface jamais la copie : il n'y a rien de mieux à y mettre.
+function staleSummaryTitles(summaries, convs) {
+  const out = [];
+  for (const c of convs || []) {
+    const e = c && summaries[c.id];
+    if (e && typeof c.title === 'string' && c.title && e.title !== c.title) out.push({ id: c.id, title: c.title });
+  }
+  return out;
+}
+
 // Conversations à résumer au démarrage : absentes de l'index et substantielles.
 // `hasSubstance` porte sur les MESSAGES : lecture froide en masse (la plupart
 // des conversations ne sont pas en RAM), donc IDB et non loadConversations —

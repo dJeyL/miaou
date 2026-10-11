@@ -463,6 +463,17 @@ des trois titrages (précoce, fin d'échange, régénération) — et à `false`
 **explicitement** par `onTitleBlur`, jamais par omission : une conversation
 peut porter le marqueur d'un titrage antérieur que la saisie doit effacer.
 
+Le résumé d'une conversation garde sa propre copie du titre (drawer, recherche,
+liste servie au modèle). Les deux écrivains de titre passent par
+`persistConvTitle`, qui met les deux porteurs à jour ensemble. Avant, seul le
+renommage manuel touchait la copie : un titre généré après le résumé la
+laissait vide, affichée « Nouvelle conversation ». `summarizeIfNeeded` relit
+aussi le titre APRÈS son await, puisque le titrage tourne en parallèle. Au
+démarrage, `reconcileSummaryTitlesOnInit` (pur : `staleSummaryTitles`) recopie
+le titre de la conversation dans toute copie restée vide ou ancienne ; un titre
+de conversation vide n'efface jamais la copie. `buildSummaryBlock` omet le
+segment de titre quand il manque, au lieu d'injecter « undefined ».
+
 Il n'existe que pour le retitrage de fin d'échange, qui doit distinguer un titre
 précoce (à régénérer) d'un titre choisi (jamais écrasé) — les deux étant un
 `title` non vide. `maybeTitle` le relit par `loadConversation` **au moment

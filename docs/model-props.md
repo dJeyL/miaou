@@ -364,6 +364,19 @@ l'inspecteur : une déclaration du serveur passe avant un apprentissage. Rien
 n'est persisté : aucune relecture de `/models` ne l'effacerait chez un backend
 qui ne déclare rien. L'inspecteur dit « niveaux appris d'un refus ».
 
+**Appels silencieux.** Titre, résumé et description de fichier
+(`silentCompletion`) demandent `reasoning_effort: 'none'` pour éteindre le
+raisonnement. GLM servi par l'API de Mistral le refuse et liste `low`, `high`,
+`max` (mesuré le 2026-10-11) : l'appel repartait alors sans paramètre, donc au
+niveau par défaut du modèle. Le refus suit désormais le même chemin que celui
+du composer. Quand son corps nomme le niveau envoyé
+(`reasoningEffortsFromRefusal`), `none` est noté refusé pour (endpoint, modèle)
+et le plus bas des niveaux nommés connus est tenté (`silentReasoningEffort`,
+pur). Le `true` d'un modèle booléen n'est jamais retenu, puisqu'il allume la
+réflexion. Un refus muet garde l'ancienne hypothèse, propre à l'endpoint
+entier : `_noThinkRejected`, puis un essai sans paramètre. Le composer profite
+au passage de ce qu'un titrage a appris : `none` sort de son menu.
+
 **Outils.** `tools: false` n'empêche rien : les outils partent quand même.
 La capacité est seulement affichée dans l'inspecteur (`formatModelCapsLine`).
 
