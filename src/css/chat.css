@@ -1561,11 +1561,11 @@ html[data-wide-tables="off"] .table-bleed {
      à 0.85 (cf. keyframe dédiée), le survol le remonte à 1 — le même cran que
      le fondu d'arrivée, donc aucun nouveau palier à accorder. */
   transition: opacity 160ms var(--ease);
-  /* 80% de la colonne, centré : la pleine largeur donnait des lignes trop
-     longues à lire. Marges en pourcentage plutôt qu'une max-width, pour rester
-     hors flux sans avoir à recentrer par transform. */
-  left: 10%;
-  right: 10%;
+  /* Pleine largeur de la colonne (.thread, bornée par --col) : mêmes bords que
+     le composer juste dessous. Le padding de .welcome-screen ne compte pas — un
+     élément absolu se positionne contre la padding box. */
+  left: 0;
+  right: 0;
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-2);
