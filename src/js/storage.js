@@ -836,6 +836,23 @@ function saveUnreadConvIds(ids) {
   }
 }
 
+// Vue de la bibliothèque de fichiers (tri, densité) : préférence de lecture
+// globale, propre à l'onglet. Ni diffusée (aucun `syncPost`, et
+// `storageEventDecision` ne la route pas : changer son tri ne réordonne pas
+// la liste qu'un autre onglet est en train de lire), ni dans EXPORT_KEYS — ce
+// n'est pas du contenu. Forme portée par le pur `normalizeLibraryView`
+// (resources.js).
+const LIBRARY_VIEW_KEY = 'miaou-library-view';
+
+function loadLibraryView() {
+  try { return normalizeLibraryView(JSON.parse(localStorage.getItem(LIBRARY_VIEW_KEY))); }
+  catch (e) { return normalizeLibraryView(null); }
+}
+
+function saveLibraryView(view) {
+  writeLocalStorage(LIBRARY_VIEW_KEY, JSON.stringify(normalizeLibraryView(view)));
+}
+
 // Pure : ne garde que les ids de conversations RACINE qui existent encore. Une
 // conversation supprimée (ici ou ailleurs, onglet fermé entre-temps) laisserait
 // sinon un id que rien n'efface, puisque seule son ouverture le fait.

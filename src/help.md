@@ -307,6 +307,18 @@ voit. Sa description, elle, ne bouge pas : elle décrit le contenu, que le
 renommage ne touche pas (le bouton « Régénérer la description » reste là si tu
 veux la refaire).
 
+Au-dessus des cartes, une barre règle l'affichage. **Nom**, **Date** et
+**Taille** trient la liste ; un second clic sur le critère actif inverse le
+sens, indiqué par une petite flèche (le survol dit l'ordre en clair). Par
+défaut, les fichiers apparaissent par date de dépôt, les plus anciens en haut.
+Le bouton voisin passe en **vue concise** : chaque carte ne garde que le nom,
+la ligne type · taille · date et l'icône de téléchargement — description et
+boutons « Régénérer la description » / « Supprimer » sont masqués jusqu'au
+retour en vue détaillée. Ces choix valent pour toutes les bibliothèques et sont
+retenus d'une session à l'autre ; ils ne changent rien à ce que le modèle sait
+des fichiers. Quand un fichier arrive, ou qu'un renommage le déplace dans un
+tri par nom, la liste défile jusqu'à lui et l'entoure brièvement d'un liseré.
+
 Supprimer un Espace supprime en cascade ses conversations, ses fichiers et ses
 souvenirs propres (double confirmation) ; les souvenirs de profil, valables
 partout, restent intacts (détails : sujet `memoire`).

@@ -190,6 +190,8 @@ Figtree/Fira Code).
   vient de produire.
 - Un fichier de bibliothèque se **renomme en place**, au clic sur son nom — même
   geste que le titre d'une conversation.
+- La liste se **trie** par nom, date ou taille, dans les deux sens, et passe en
+  **vue concise** sans les descriptions.
 - Un fichier déposé est **décrit automatiquement** pour que le modèle sache s'il
   vaut la peine d'être ouvert. Quand il n'y a pas de texte à extraire — PDF
   scanné, image —, l'image est donnée à voir au modèle, avec repli sur une

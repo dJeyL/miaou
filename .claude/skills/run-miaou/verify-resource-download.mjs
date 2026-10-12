@@ -202,7 +202,8 @@ check('A : aucune rangée de boutons ne déborde de sa boîte',
 check('A : aucune carte ne déborde horizontalement',
   rowsPerCard.every(c => c.overflows === false));
 
-// Le glyphe est aligné sur la ligne de méta de l'en-tête, pas flottant plus bas.
+// Le nom ouvre la carte, la ligne méta le suit ; le glyphe est aligné sur la
+// première ligne du nom, pas flottant plus bas.
 const glyphGeom = await page.evaluate(() => {
   const it = document.querySelector('#space-files-list .mem-item');
   const g = it.querySelector('.mem-dl').getBoundingClientRect();
@@ -212,9 +213,10 @@ const glyphGeom = await page.evaluate(() => {
            nameTop: Math.round(name.top), w: Math.round(g.width),
            rightOfName: Math.round(g.left) > Math.round(name.right) - 40 };
 });
-check('A : glyphe aligné sur la ligne de méta (au-dessus du nom)',
-  Math.abs(glyphGeom.glyphTop - glyphGeom.subTop) <= 6
-  && glyphGeom.glyphTop < glyphGeom.nameTop);
+check('A : nom au-dessus de la ligne de méta', glyphGeom.nameTop < glyphGeom.subTop);
+check('A : glyphe aligné sur la première ligne du nom (au-dessus de la méta)',
+  Math.abs(glyphGeom.glyphTop - glyphGeom.nameTop) <= 8
+  && glyphGeom.glyphTop < glyphGeom.subTop);
 check('A : glyphe de taille non nulle et posé à droite', glyphGeom.w > 0 && glyphGeom.rightOfName);
 
 // Téléchargement réel : nom sans extension + image/webp → repli générique.

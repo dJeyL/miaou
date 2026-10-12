@@ -110,6 +110,16 @@ if (window.requestAnimationFrame) {
         <input type="file" id="space-file-input" multiple hidden onchange="onSpaceFilesSelected(this)">
         <button class="drawer-btn" onclick="onSpaceFilesUploadClick()">Ajouter un fichier</button>
         <div class="cfg-err" id="space-files-error" hidden></div>
+        <div class="library-toolbar" id="library-toolbar" hidden>
+          <div class="library-sort" role="group" aria-label="Trier les fichiers">
+            <button type="button" class="library-sort-btn" id="library-sort-name" onclick="onLibrarySortClick('name')">Nom<span class="sort-dir"></span></button>
+            <button type="button" class="library-sort-btn" id="library-sort-date" onclick="onLibrarySortClick('date')">Date<span class="sort-dir"></span></button>
+            <button type="button" class="library-sort-btn" id="library-sort-size" onclick="onLibrarySortClick('size')">Taille<span class="sort-dir"></span></button>
+          </div>
+          <button type="button" class="library-concise-btn" id="library-concise-btn" onclick="onLibraryConciseToggle()" data-tip="Vue concise" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/></svg>
+          </button>
+        </div>
         <div class="mem-list" id="space-files-list"></div>
       </div>
 
@@ -809,7 +819,7 @@ if (window.requestAnimationFrame) {
 
   <!-- ═══ Space screen (renommage, description, souvenirs scopés, suppression D6) ═══ -->
   <div class="backdrop" id="space-backdrop" onclick="closeSpaceScreen()"></div>
-  <div class="drawer drawer-mid" id="space-drawer">
+  <div class="drawer drawer-mid drawer-left" id="space-drawer">
     <div class="drawer-head">
       <h2 id="space-drawer-title">Espace</h2>
       <button class="icon-btn" onclick="closeSpaceScreen()">

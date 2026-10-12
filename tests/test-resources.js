@@ -121,21 +121,104 @@ describe('normalizeLibraryRecord', function() {
   });
 });
 
-// ── libraryRefreshRevealsArrival (scroll vers l'arrivant ou non) ─────────────
+// ── libraryRevealTargets (cartes amenées en vue après rafraîchissement) ─────
 
-describe('libraryRefreshRevealsArrival', function() {
-  var shown = function(id) { return id === 'file_a' || id === 'file_b'; };
-  it('sans ids (voie locale d\'ajout) → montre l\'arrivant', function() {
-    expect(libraryRefreshRevealsArrival(null, shown)).toBe(true);
+describe('libraryRevealTargets', function() {
+  it('arrivant = id affiché après et absent avant, dans l\'ordre de la liste', function() {
+    expect(libraryRevealTargets(['file_a', 'file_b'], ['file_z', 'file_a', 'file_b'], null)).toEqual(['file_z']);
   });
-  it('mise à jour d\'une carte déjà affichée (renommage, description) → pas de scroll', function() {
-    expect(libraryRefreshRevealsArrival(['file_a'], shown)).toBe(false);
+  it('mise à jour d\'une carte déjà affichée (renommage, description) → rien', function() {
+    expect(libraryRevealTargets(['file_a', 'file_b'], ['file_b', 'file_a'], null)).toEqual([]);
   });
-  it('id pas encore affiché → arrivant, scroll', function() {
-    expect(libraryRefreshRevealsArrival(['file_z'], shown)).toBe(true);
+  it('suppression → rien', function() {
+    expect(libraryRevealTargets(['file_a', 'file_b'], ['file_a'], undefined)).toEqual([]);
   });
-  it('lot mixte : un seul arrivant suffit', function() {
-    expect(libraryRefreshRevealsArrival(['file_a', 'file_z'], shown)).toBe(true);
+  it('carte suivie (renommée, déplacée par le tri) → ciblée bien que déjà affichée', function() {
+    expect(libraryRevealTargets(['file_a', 'file_b'], ['file_b', 'file_a'], ['file_a'])).toEqual(['file_a']);
+  });
+  it('arrivants et suivis réunis, ordre de la liste et non de l\'appel', function() {
+    expect(libraryRevealTargets(['file_a', 'file_b'], ['file_b', 'file_c', 'file_a'], ['file_a'])).toEqual(['file_c', 'file_a']);
+  });
+  it('suivi absent de la liste (supprimé entre-temps) → ignoré', function() {
+    expect(libraryRevealTargets(['file_a'], ['file_a'], ['file_x'])).toEqual([]);
+  });
+  it('liste vide avant (premier dépôt) → tout est arrivant', function() {
+    expect(libraryRevealTargets([], ['file_a'], null)).toEqual(['file_a']);
+  });
+});
+
+// ── Vue de la bibliothèque (tri, densité) ─────────────────────────────────────
+
+describe('normalizeLibraryView', function() {
+  it('défaut = ordre historique du panneau (date croissante), vue détaillée', function() {
+    expect(normalizeLibraryView(null)).toEqual({ sort: 'date', dir: 'asc', concise: false });
+  });
+  it('valeurs inconnues ramenées au défaut, valeurs valides conservées', function() {
+    expect(normalizeLibraryView({ sort: 'color', dir: 'up', concise: 'yes' })).toEqual({ sort: 'date', dir: 'asc', concise: false });
+    expect(normalizeLibraryView({ sort: 'size', dir: 'desc', concise: true })).toEqual({ sort: 'size', dir: 'desc', concise: true });
+  });
+});
+
+describe('toggleLibrarySort', function() {
+  it('critère actif → inverse le sens', function() {
+    expect(toggleLibrarySort({ sort: 'date', dir: 'asc' }, 'date').dir).toBe('desc');
+    expect(toggleLibrarySort({ sort: 'date', dir: 'desc' }, 'date').dir).toBe('asc');
+  });
+  it('autre critère → l\'active en croissant, quel que soit le sens d\'avant', function() {
+    var v = toggleLibrarySort({ sort: 'date', dir: 'desc', concise: true }, 'name');
+    expect(v).toEqual({ sort: 'name', dir: 'asc', concise: true });
+  });
+  it('critère inconnu → vue inchangée', function() {
+    expect(toggleLibrarySort({ sort: 'size', dir: 'desc' }, 'color')).toEqual({ sort: 'size', dir: 'desc', concise: false });
+  });
+});
+
+describe('sortLibraryEntries', function() {
+  var E = [
+    { id: 'file_1', name: 'beta.txt', size: 300, createdAt: 10 },
+    { id: 'file_2', name: 'Alpha.md', size: 100, createdAt: 30 },
+    { id: 'file_3', name: 'gamma.csv', size: 200, createdAt: 20 },
+  ];
+  var ids = function(arr) { return arr.map(function(e) { return e.id; }); };
+  it('date croissante par défaut', function() {
+    expect(ids(sortLibraryEntries(E, null))).toEqual(['file_1', 'file_3', 'file_2']);
+  });
+  it('date décroissante', function() {
+    expect(ids(sortLibraryEntries(E, { sort: 'date', dir: 'desc' }))).toEqual(['file_2', 'file_3', 'file_1']);
+  });
+  it('nom, insensible à la casse sans collateur injecté', function() {
+    expect(ids(sortLibraryEntries(E, { sort: 'name', dir: 'asc' }))).toEqual(['file_2', 'file_1', 'file_3']);
+    expect(ids(sortLibraryEntries(E, { sort: 'name', dir: 'desc' }))).toEqual(['file_3', 'file_1', 'file_2']);
+  });
+  it('taille dans les deux sens', function() {
+    expect(ids(sortLibraryEntries(E, { sort: 'size', dir: 'asc' }))).toEqual(['file_2', 'file_3', 'file_1']);
+    expect(ids(sortLibraryEntries(E, { sort: 'size', dir: 'desc' }))).toEqual(['file_1', 'file_3', 'file_2']);
+  });
+  it('égalité → createdAt puis id croissants, quel que soit le sens', function() {
+    var T = [
+      { id: 'file_b', name: 'x', size: 5, createdAt: 2 },
+      { id: 'file_c', name: 'x', size: 5, createdAt: 1 },
+      { id: 'file_a', name: 'x', size: 5, createdAt: 2 },
+    ];
+    expect(ids(sortLibraryEntries(T, { sort: 'size', dir: 'desc' }))).toEqual(['file_c', 'file_a', 'file_b']);
+    expect(ids(sortLibraryEntries(T, { sort: 'name', dir: 'asc' }))).toEqual(['file_c', 'file_a', 'file_b']);
+  });
+  it('collateur injecté utilisé pour le nom', function() {
+    var reverse = function(a, b) { return a < b ? 1 : (a > b ? -1 : 0); };
+    expect(ids(sortLibraryEntries(E, { sort: 'name', dir: 'asc' }, reverse))).toEqual(['file_3', 'file_1', 'file_2']);
+  });
+  it('trie une copie, l\'entrée reste intacte', function() {
+    sortLibraryEntries(E, { sort: 'size', dir: 'asc' });
+    expect(ids(E)).toEqual(['file_1', 'file_2', 'file_3']);
+  });
+});
+
+describe('librarySortTip', function() {
+  it('critère actif : sens courant et geste d\'inversion', function() {
+    expect(librarySortTip('date', { sort: 'date', dir: 'desc' })).toBe('Date, les plus récents en haut — cliquer pour inverser');
+  });
+  it('critère inactif : intitulé seul', function() {
+    expect(librarySortTip('size', { sort: 'date', dir: 'asc' })).toBe('Trier par taille');
   });
 });
 

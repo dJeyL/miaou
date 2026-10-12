@@ -9533,8 +9533,8 @@ function onAuthPendingClick() {
 // carte est cherchée APRÈS le délai, une liste re-rendue entre-temps (statut
 // MCP qui arrive) ayant remplacé ses nœuds.
 const SERVER_CARD_REVEAL_DELAY_MS = 240;
-const SERVER_CARD_FLASH_MS = 1600;
-let _serverCardFlash = null;   // { cards, timer } : un seul signal à la fois
+const CARD_FLASH_MS = 1600;
+let _cardFlash = null;   // { cards, timer } : un seul signal à la fois
 
 // `findCards` rend une carte, une liste de cartes (dans l'ordre du drawer) ou
 // rien. Plusieurs : toutes sont signalées, la PREMIÈRE seule est amenée en vue.
@@ -9543,28 +9543,36 @@ function revealServerCard(findCards) {
     const found = findCards();
     const cards = Array.isArray(found) ? found : (found ? [found] : []);
     if (!cards.length) return;
-    const card = cards[0];
-    // Défile seulement si la carte n'est pas visible EN ENTIER (`nearest`) ;
-    // plus haute que la zone visible, on aligne son haut — `nearest` alignerait
-    // son bas quand elle déborde par le haut. La marge (`scroll-margin-block`,
-    // drawers.css) compte dans « entière » : scrollIntoView l'applique aussi.
-    const scroller = card.closest('.drawer-body');
-    const margin = parseFloat(getComputedStyle(card).scrollMarginTop) || 0;
-    const tall = scroller && card.getBoundingClientRect().height + 2 * margin > scroller.clientHeight;
-    card.scrollIntoView({ block: tall ? 'start' : 'nearest', behavior: motionReduced() ? 'auto' : 'smooth' });
-    if (_serverCardFlash) {
-      clearTimeout(_serverCardFlash.timer);
-      _serverCardFlash.cards.forEach(c => c.classList.remove('is-target'));
-    }
-    cards.forEach(c => c.classList.add('is-target'));
-    _serverCardFlash = {
-      cards: cards,
-      timer: setTimeout(function() {
-        cards.forEach(c => c.classList.remove('is-target'));
-        _serverCardFlash = null;
-      }, SERVER_CARD_FLASH_MS),
-    };
+    revealAndFlashCards(cards, cards[0].closest('.drawer-body'));
   }, SERVER_CARD_REVEAL_DELAY_MS);
+}
+
+// Amène la PREMIÈRE carte en vue dans `scroller` et signale toutes les cartes
+// par la classe `is-target`, retirée par minuterie. Partagé par les cartes de
+// serveur (clic d'un toast) et la bibliothèque de fichiers (arrivant, carte
+// déplacée par le tri) : un seul vocabulaire de « c'est ici ».
+function revealAndFlashCards(cards, scroller) {
+  if (!cards.length) return;
+  const card = cards[0];
+  // Défile seulement si la carte n'est pas visible EN ENTIER (`nearest`) ;
+  // plus haute que la zone visible, on aligne son haut — `nearest` alignerait
+  // son bas quand elle déborde par le haut. La marge (`scroll-margin-block`,
+  // drawers.css) compte dans « entière » : scrollIntoView l'applique aussi.
+  const margin = parseFloat(getComputedStyle(card).scrollMarginTop) || 0;
+  const tall = scroller && card.getBoundingClientRect().height + 2 * margin > scroller.clientHeight;
+  card.scrollIntoView({ block: tall ? 'start' : 'nearest', behavior: motionReduced() ? 'auto' : 'smooth' });
+  if (_cardFlash) {
+    clearTimeout(_cardFlash.timer);
+    _cardFlash.cards.forEach(c => c.classList.remove('is-target'));
+  }
+  cards.forEach(c => c.classList.add('is-target'));
+  _cardFlash = {
+    cards: cards,
+    timer: setTimeout(function() {
+      cards.forEach(c => c.classList.remove('is-target'));
+      _cardFlash = null;
+    }, CARD_FLASH_MS),
+  };
 }
 
 // Focus d'un champ du catalogue : clé portée par `data-cat-focus`, retrouvée
@@ -11091,13 +11099,16 @@ function promoteMemoryEntry(id, containerId, scope) {
 // Frère de renderMemoryList : composants de carte réutilisés (mem-item/
 // mem-header/mem-sub/mem-excerpt, drawers.css), pas de duplication de style.
 // Async (getResourcesBySpace lit IDB) — appelée fire-and-forget par
-// openSpaceScreen, comme loadSpaceLibrary. Tri createdAt→id, même ordre
-// déterministe que le manifeste de contexte (Cbis-2).
+// openSpaceScreen, comme loadSpaceLibrary. Ordre et densité suivent la vue
+// choisie (`loadLibraryView`) ; le défaut, date croissante, est l'ordre du
+// manifeste de contexte, qui lui ne bouge jamais.
 async function renderSpaceFilesList(spaceId) {
   const wrap = $('space-files-list');
   if (!wrap) return;
-  const entries = (await getResourcesBySpace(spaceId)).slice()
-    .sort((a, b) => (a.createdAt !== b.createdAt ? a.createdAt - b.createdAt : String(a.id).localeCompare(String(b.id))));
+  const view = loadLibraryView();
+  const entries = sortLibraryEntries(await getResourcesBySpace(spaceId), view, libraryNameCollate());
+  wrap.classList.toggle('concise', view.concise);
+  syncLibraryToolbar(view, entries.length);
   wrap.innerHTML = '';
   if (!entries.length) {
     const empty = document.createElement('div');
@@ -11136,22 +11147,14 @@ async function renderSpaceFilesList(spaceId) {
       ? ` · <span${tipAttrs(formatFullDateFr(dts), { text: formatDateRelative(dts, Date.now()) })}>${escHtml(formatDateRelative(dts, Date.now()))}</span>`
       : '';
     const descriptionLine = `<div class="mem-excerpt file-description-line" id="file-description-${e.id}">${e.description ? escHtml(e.description) : ''}</div>`;
+    // Le NOM en tête de carte, la ligne méta juste dessous (resserrée, cf.
+    // drawers.css) : on cherche un fichier par son nom, les faits sur lui
+    // viennent ensuite. Type lisible plutôt que mime brut
+    // (`libraryFileTypeLabel`), le mime exact restant accessible en tooltip :
+    // il n'est pas perdu, il est rangé là où on le consulte au lieu de le subir.
+    const metaLine = `<div class="mem-sub file-meta"><span${tipAttrs(e.mime, { text: libraryFileTypeLabel(e.mime) })}>${escHtml(libraryFileTypeLabel(e.mime))}</span> · ${escHtml(humanSize(e.size))}${dateBit}${provenanceBadge}</div>`;
     item.innerHTML =
-      `<div class="mem-header"><div class="mem-meta">` +
-      // Type lisible plutôt que mime brut (`libraryFileTypeLabel`), le mime
-      // exact restant accessible en tooltip : il n'est pas perdu, il est
-      // rangé là où on le consulte au lieu de le subir.
-      `<div class="mem-sub"><span${tipAttrs(e.mime, { text: libraryFileTypeLabel(e.mime) })}>${escHtml(libraryFileTypeLabel(e.mime))}</span> · ${escHtml(humanSize(e.size))}${dateBit}${provenanceBadge}</div>` +
-      `</div>` +
-      // Téléchargement en GLYPHE dans l'en-tête (pas un bouton texte) : la
-      // colonne latérale fait ~210 px utiles, un troisième bouton texte faisait
-      // wrapper la rangée sur deux lignes. L'en-tête est déjà le porteur
-      // d'actions des cartes (cf. les cartes de résumé) et surplombe
-      // directement le nom ; on ne le pose PAS dans `.mem-content`, qui est en
-      // `word-break: break-word` — un nom long y ferait flotter l'icône à une
-      // position imprévisible. Même glyphe que l'ack (ICON_DOWNLOAD).
-      `<button class="mem-dl"${tipAttrs('Télécharger')} onclick="onDownloadSpaceFile(this,'${e.id}')">${ICON_DOWNLOAD}</button>` +
-      `</div>` +
+      `<div class="mem-header file-head">` +
       // Nom RENOMMABLE en place, même mécanique que le titre de conversation
       // (contenteditable, Entrée valide, Échap annule, blur persiste, vide
       // restaure) : un seul vocabulaire de renommage dans l'appli. Les
@@ -11159,6 +11162,15 @@ async function renderSpaceFilesList(spaceId) {
       // qu'en attributs inline : il faut mémoriser le nom d'avant l'édition
       // pour pouvoir le restaurer, ce qu'un attribut ne porte pas.
       `<div class="mem-content file-name-edit" id="file-name-${e.id}" contenteditable="true" spellcheck="false"${tipAttrs('Renommer le fichier', { text: e.name })}>${escHtml(e.name)}</div>` +
+      // Téléchargement en GLYPHE (pas un bouton texte) : la colonne latérale
+      // fait ~210 px utiles, un troisième bouton texte faisait wrapper la
+      // rangée sur deux lignes. Il partage la rangée flex du nom, en élément
+      // frère : DANS `.mem-content` (`word-break: break-word`), un nom long le
+      // ferait flotter à une position imprévisible. Même glyphe que l'ack
+      // (ICON_DOWNLOAD).
+      `<button class="mem-dl"${tipAttrs('Télécharger')} onclick="onDownloadSpaceFile(this,'${e.id}')">${ICON_DOWNLOAD}</button>` +
+      `</div>` +
+      metaLine +
       descriptionLine +
       `<div class="drawer-btns" id="file-btns-${e.id}">` +
       `<button class="drawer-btn" onclick="onRegenerateFileDescription(this,'${e.id}','${spaceId}')">${e.description ? 'Régénérer la description' : 'Générer une description'}</button>` +
@@ -11167,6 +11179,73 @@ async function renderSpaceFilesList(spaceId) {
     wrap.appendChild(item);
     wireLibraryNameEditing(item.querySelector('.file-name-edit'), e.id, spaceId);
   }
+}
+
+// Comparaison de noms de l'UI : Intl.Collator français, insensible à la casse
+// et aux accents, ordre numérique (« fichier2 » avant « fichier10 »). Le pur
+// `sortLibraryEntries` a un repli sans Intl pour le harnais QuickJS.
+let _libraryCollate = null;
+function libraryNameCollate() {
+  if (!_libraryCollate && typeof Intl !== 'undefined' && Intl.Collator) {
+    _libraryCollate = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' }).compare;
+  }
+  return _libraryCollate;
+}
+
+const ICON_SORT_DIR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V4"/><path d="m6 10 6-6 6 6"/></svg>';
+
+// Barre de vue : masquée sur une bibliothèque vide (rien à trier ni à
+// condenser). Le sens n'est dessiné que sur le critère actif — flèche vers le
+// haut en croissant, retournée en décroissant.
+function syncLibraryToolbar(view, count) {
+  const bar = $('library-toolbar');
+  if (!bar) return;
+  bar.hidden = !count;
+  for (const key of LIBRARY_SORT_KEYS) {
+    const btn = $('library-sort-' + key);
+    if (!btn) continue;
+    const active = view.sort === key;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    const dir = btn.querySelector('.sort-dir');
+    if (dir) {
+      dir.innerHTML = active ? ICON_SORT_DIR : '';
+      dir.classList.toggle('desc', active && view.dir === 'desc');
+    }
+    setTip(btn, librarySortTip(key, view));
+  }
+  const concise = $('library-concise-btn');
+  if (concise) {
+    concise.classList.toggle('active', view.concise);
+    concise.setAttribute('aria-pressed', view.concise ? 'true' : 'false');
+  }
+}
+
+// Changer de tri remonte en tête : l'ancienne position de lecture ne désigne
+// plus rien dans le nouvel ordre.
+async function onLibrarySortClick(key) {
+  saveLibraryView(toggleLibrarySort(loadLibraryView(), key));
+  await renderSpaceFilesList(activeSpaceId);
+  const panel = $('space-files-panel');
+  if (panel) panel.scrollTop = 0;
+}
+
+// Vue concise : nom, ligne méta et téléchargement seulement — la description
+// ET la rangée d'actions disparaissent ensemble (« Régénérer la description »
+// n'a plus de sens sans la description affichée). Pure bascule de classe,
+// sans re-rendu : les cartes portent déjà tout.
+function onLibraryConciseToggle() {
+  const view = loadLibraryView();
+  view.concise = !view.concise;
+  saveLibraryView(view);
+  const wrap = $('space-files-list');
+  if (wrap) wrap.classList.toggle('concise', view.concise);
+  syncLibraryToolbar(view, wrap ? wrap.querySelectorAll('.mem-item').length : 0);
+}
+
+function shownLibraryIds() {
+  const wrap = $('space-files-list');
+  return wrap ? Array.from(wrap.querySelectorAll('.mem-item')).map(el => el.dataset.id) : [];
 }
 
 // Renommage en place du nom d'un fichier de bibliothèque. Calque de
@@ -11219,7 +11298,15 @@ function wireLibraryNameEditing(el, fileId, spaceId) {
     // se lisait comme une saisie perdue.
     if (applied == null) toastRenameFailed(before);
     el._libNameBefore = el.textContent;
-    flushDeferredLibraryRefresh();
+    // Sous un tri par nom, le renommage déplace la carte : re-rendre pour la
+    // remettre à sa place, et l'y suivre (défilement + liseré). Ce rendu vaut
+    // aussi pour un rafraîchissement différé pendant la saisie.
+    if (applied != null && applied !== before && loadLibraryView().sort === 'name') {
+      _libraryRefreshDeferred = null;
+      refreshVisibleSpaceLibrary(spaceId, [fileId]);
+    } else {
+      flushDeferredLibraryRefresh();
+    }
     // Le libellé du bouton de suppression du drawer Space porte des comptes,
     // pas des noms : rien à resynchroniser ici (contrairement à onDeleteSpaceFile).
   });
@@ -11255,52 +11342,52 @@ function selectLibraryNameStem(el) {
 // qu'on regarde : sinon `selectSpaceTab` re-rendra à l'ouverture, il n'y a rien
 // à faire ici.
 //
-// Le scroll en bas est la CONSÉQUENCE du tri de `renderSpaceFilesList`
-// (createdAt→id croissant, aligné sur le manifeste de contexte) : le nouvel
-// arrivant y est en fin de liste. Si ce tri s'inverse un jour, ce scroll devient
-// faux — ce n'est pas une préférence d'affichage, c'est « montrer l'arrivant ».
-//
-// `ids` (optionnel) : les records touchés, passés par la voie de synchro. Seul un
-// id sans carte à l'écran justifie de descendre (libraryRefreshRevealsArrival,
-// resources.js) ; sinon c'est une mise à jour sur place et la position de
-// lecture est restaurée. Le constat se fait AVANT le re-rendu, qui recrée toutes
-// les cartes.
+// Après le re-rendu, la position de lecture est restaurée, puis les cartes
+// désignées par le pur `libraryRevealTargets` (resources.js) sont amenées en
+// vue et brièvement signalées : les ARRIVANTS, constatés par diff des cartes
+// affichées avant/après — l'arrivant n'est en bas que sous le tri par date
+// croissante —, plus les `followIds` de l'appelant (carte renommée déplacée par
+// le tri par nom, lot de fichiers déposés). Une carte seulement mise à jour
+// (renommage vu d'un autre onglet, description aboutie) ne fait pas défiler.
 //
 // Un nom EN COURS D'ÉDITION diffère le re-rendu jusqu'à son blur
 // (`_libraryRefreshDeferred`, vidé par wireLibraryNameEditing). Re-rendre
 // maintenant retirerait le champ focalisé : le navigateur émet alors un `blur`,
 // dont le handler PERSISTE le brouillon comme un renommage validé — tandis que
 // la carte re-rendue montre l'ancien nom (mesuré le 2026-09-24). La liste reste
-// figée le temps d'une saisie, prix accepté ; les `ids` différés sont cumulés,
-// `null` (ajout local) l'emportant, pour que le rendu d'après sache encore s'il
-// doit montrer un arrivant.
-let _libraryRefreshDeferred = null;   // { spaceId, ids } | null
+// figée le temps d'une saisie, prix accepté. Le rendu différé repère encore
+// les arrivants : le diff se fait contre les cartes affichées, restées celles
+// d'avant. Les `followIds` d'un appel différé sont abandonnés — défiler vers
+// une autre carte à la sortie d'un champ ferait sauter le panneau.
+let _libraryRefreshDeferred = null;   // { spaceId } | null
 // Joue le rafraîchissement différé pendant une saisie, à la sortie du champ —
 // sur TOUTES les sorties (validé, inchangé, Échap), sinon la liste resterait
 // périmée jusqu'à la prochaine écriture.
 function flushDeferredLibraryRefresh() {
   const deferred = _libraryRefreshDeferred;
   _libraryRefreshDeferred = null;
-  if (deferred) refreshVisibleSpaceLibrary(deferred.spaceId, deferred.ids);
+  if (deferred) refreshVisibleSpaceLibrary(deferred.spaceId);
 }
-async function refreshVisibleSpaceLibrary(spaceId, ids) {
+async function refreshVisibleSpaceLibrary(spaceId, followIds) {
   if (!spaceId || spaceId !== activeSpaceId) return;
   const panel = $('space-files-panel');
   if (!panel || panel.hidden) return;
   const focused = document.activeElement;
   if (focused && focused.classList.contains('file-name-edit') && panel.contains(focused)) {
-    const prev = _libraryRefreshDeferred;
-    const merged = !ids || (prev && prev.spaceId === spaceId && !prev.ids) ? null
-      : (prev && prev.spaceId === spaceId ? prev.ids.concat(ids) : ids.slice());
-    _libraryRefreshDeferred = { spaceId, ids: merged };
+    _libraryRefreshDeferred = { spaceId };
     return;
   }
-  const reveal = libraryRefreshRevealsArrival(ids, (id) => !!$('file-name-' + id));
+  const before = shownLibraryIds();
   const keepTop = panel.scrollTop;
   await renderSpaceFilesList(spaceId);
   // Le scrolleur est le panneau entier (`.space-side-panel`, `overflow-y: auto`),
   // pas `.mem-list` qui n'a pas d'overflow propre.
-  panel.scrollTop = reveal ? panel.scrollHeight : keepTop;
+  panel.scrollTop = keepTop;
+  const targets = new Set(libraryRevealTargets(before, shownLibraryIds(), followIds));
+  if (!targets.size) return;
+  const cards = Array.from($('space-files-list').querySelectorAll('.mem-item'))
+    .filter(el => targets.has(el.dataset.id));
+  revealAndFlashCards(cards, panel);
 }
 
 // Statut de description par carte : « description en cours… » pendant le
@@ -11391,8 +11478,11 @@ async function ingestLibraryFiles(fileList) {
   // par storeLibraryFile : les callbacks de statut ci-dessous ciblent des ids DOM
   // (`file-description-<id>`) qui doivent exister au moment où on les branche.
   // Passer par le helper plutôt que par renderSpaceFilesList nu évite en outre
-  // que les deux rendus se croisent et laissent le scroll ailleurs qu'en bas.
-  await refreshVisibleSpaceLibrary(spaceId);
+  // que les deux rendus se croisent et laissent le scroll ailleurs. Les ids
+  // déposés sont suivis : sans eux, ce rendu-ci ne verrait plus d'arrivant
+  // (déjà peints par les rafraîchissements de storeLibraryFile), et seul le
+  // dernier fichier d'un lot resterait signalé.
+  await refreshVisibleSpaceLibrary(spaceId, stored.map(r => r.id));
   if (_spaceScreenId === spaceId) syncSpaceDeleteLabel(spaceId);
   // Trigger de description après le re-render (statut par carte visible dès le premier tick) :
   // fire-and-forget, chaque fichier indépendant (pas de blocage séquentiel).

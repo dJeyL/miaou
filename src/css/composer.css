@@ -149,8 +149,9 @@
 .composer-foot .composer-hint { grid-column: 2; margin-top: 0; }
 .composer-foot .col-width-ctl { grid-column: 3; justify-self: end; }
 
-/* Contrôle de largeur de colonne : même segmented control que les onglets
-   d'espace (.space-tab-btn, sidebar.css) — bordures fusionnées par marge
+/* Contrôle de largeur de colonne : même segmented control discret que la
+   barre de vue de la bibliothèque (.library-sort-btn, sidebar.css) — bordures
+   fusionnées par marge
    négative, arrondis aux seules extrémités, survol qui passe au-dessus de son
    voisin pour ne pas montrer un trait doublé. Deux divergences assumées, toutes
    deux tenant à son statut de réglage discret et non de navigation : pas d'état

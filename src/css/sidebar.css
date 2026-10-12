@@ -80,19 +80,26 @@
   align-items: center;
   gap: 7px;
   width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--border-2);
+  /* Haut de la hiérarchie de la sidebar (sélecteur > onglets d'espace > outils
+     de liste), marquée par le RELIEF plutôt que par l'accent : en saillie
+     (--surface-3, bordure plus appuyée que --border-2) au-dessus de la cuvette
+     en creux des onglets, la barre de tri restant à plat. Un cadre accentué
+     aurait imité l'état actif des onglets. Échelle, graisse et icône en accent
+     complètent. */
+  background: var(--surface-3);
+  border: 1px solid color-mix(in srgb, var(--border-2) 70%, var(--text-3));
   color: var(--text);
   font-family: var(--sans);
-  font-size: 12.5px;
-  font-weight: 500;
-  padding: 7px 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 8px 10px;
   border-radius: var(--r-sm);
   cursor: pointer;
   transition: background 140ms var(--ease), border-color 140ms var(--ease);
 }
-.space-select-btn:hover { background: var(--surface-3); border-color: var(--border-2); }
-.space-select-btn svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--text-3); }
+.space-select-btn:hover { background: var(--surface-4); }
+.space-select-btn svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent); }
+.space-select-btn svg.chev { width: 14px; height: 14px; color: var(--text-3); }
 .space-select-btn .chev { margin-left: auto; opacity: .7; }
 .space-select-btn #space-select-label {
   flex: 1;
@@ -103,8 +110,11 @@
   white-space: nowrap;
 }
 .space-menu { left: 0; right: 0; min-width: 0; }
-.space-menu .model-opt { gap: 6px; }
-.space-menu .model-opt .space-opt-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+/* Menu déplié à l'échelle du bouton (13,5px) plutôt qu'à celle des menus de
+   pilules (.model-opt, 12px) : on y lit les noms d'espaces qu'on choisit. */
+.space-menu .model-opt { gap: 6px; padding: 7px 10px; }
+.space-menu .model-opt span { font-size: 13.5px; }
+.space-menu .model-opt .space-opt-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
 .space-menu .space-opt-edit {
   flex-shrink: 0;
   display: grid;
@@ -120,7 +130,7 @@
 }
 .space-menu .model-opt:hover .space-opt-edit { opacity: 1; }
 .space-menu .space-opt-edit:hover { background: var(--surface-4); color: var(--text); }
-.space-menu .space-opt-edit svg { width: 12px; height: 12px; }
+.space-menu .space-opt-edit svg { width: 13px; height: 13px; }
 .space-menu .model-opt.space-new { color: var(--accent); border-top: 1px solid var(--border-2); margin-top: 2px; }
 /* "Nouvel espace" et "Déplacer des conversations…" : même structure exacte
    (svg.space-move-icon + span), donc icônes et textes alignés par construction
@@ -128,7 +138,7 @@
 .space-menu .model-opt.space-new,
 .space-menu .model-opt.space-move-trigger { justify-content: flex-start; gap: 6px; }
 .space-menu .model-opt.space-move-trigger { color: var(--text-2); }
-.space-menu .space-move-icon { width: 11px; height: 11px; flex-shrink: 0; }
+.space-menu .space-move-icon { width: 12px; height: 12px; flex-shrink: 0; }
 
 /* onglets Conversations / Fichiers / Souvenirs (remplacent le drawer Space
    pour la gestion fichiers/souvenirs) : swap complet de la zone scrollable,
@@ -137,33 +147,35 @@
   display: flex;
   margin: 0 14px 10px;
 }
-/* Segmented control : bordures fusionnées (marge négative pour ne pas doubler
-   le trait), coins arrondis aux seules extrémités ; l'actif/survolé passe
-   au-dessus de ses voisins pour que sa bordure accentuée soit entière.
-   Le cadre bordé est la seule divergence assumée avec .drawer-tab
-   (drawers.css), qui remplit la même fonction de navigation : ici les onglets
-   sont des icônes seules dans une sidebar étroite, sans cadre elles n'offrent
-   aucune cible lisible. Tous les autres états sont volontairement les mêmes
-   des deux côtés — les garder alignés. */
+/* Segmented control au contraste du .seg-group des réglages (drawers.css) :
+   cuvette en --bg, segments transparents en --text-2 au repos, actif en
+   --accent sur --accent-dim. C'est la navigation principale de la sidebar,
+   d'où le contraste le plus franc ; les contrôles de vue de la bibliothèque,
+   secondaires, prennent la forme discrète (.library-sort plus bas).
+   Divergence avec .drawer-tab (drawers.css), qui remplit la même fonction de
+   navigation mais garde --text-3 au repos et --surface-3 au survol. */
+.space-tabs {
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  padding: 3px;
+  gap: 3px;
+}
 .space-tab-btn {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 7px 0;
-  background: var(--surface-2);
-  border: 1px solid var(--border-2);
-  border-radius: 0;
-  color: var(--text-3);
+  padding: 5px 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-2);
   cursor: pointer;
-  position: relative;
-  transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
+  transition: background 130ms var(--ease), color 130ms var(--ease);
 }
-.space-tab-btn + .space-tab-btn { margin-left: -1px; }
-.space-tab-btn:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); }
-.space-tab-btn:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
-.space-tab-btn:hover { background: var(--surface-3); color: var(--text-2); z-index: 1; }
-.space-tab-btn.active { background: var(--accent-dim); border-color: var(--accent-bd); color: var(--accent); z-index: 2; }
+.space-tab-btn:hover { color: var(--text); }
+.space-tab-btn.active { background: var(--accent-dim); color: var(--accent); }
 .space-tab-btn svg { width: 15px; height: 15px; }
 
 /* panneaux Fichiers / Souvenirs : mêmes composants que l'ancien écran Space
@@ -185,6 +197,76 @@
 }
 .space-side-panel > .drawer-btn { margin-bottom: 12px; }
 .space-side-panel > .cfg-err:not([hidden]) { margin-bottom: 12px; }
+/* Barre de vue de la bibliothèque : tri et bascule de densité. Forme
+   DISCRÈTE, contrôle secondaire sous la navigation des onglets d'espace (qui
+   portent, eux, le contraste franc) : segments bordés fusionnés en
+   --surface-2, --text-3 au repos, --surface-3 + --text-2 au survol. L'actif
+   reste NEUTRE (--surface-3, --text, bordure --border-2) : dans la sidebar,
+   l'accent plein désigne où l'on est — l'onglet d'espace actif —, et un
+   critère de tri n'est pas un lieu. Un actif accentué ici concurrençait
+   l'onglet actif juste au-dessus. Bordures fusionnées par
+   marge négative, coins arrondis aux seules extrémités, l'actif/survolé passe
+   au-dessus de ses voisins pour que sa bordure soit entière. Gabarit resserré :
+   trois critères et le bouton tiennent dans les ~236px utiles du panneau. */
+.library-toolbar { display: flex; gap: 6px; margin-bottom: 12px; }
+.library-sort { display: flex; flex: 1; min-width: 0; }
+.library-sort-btn,
+.library-concise-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text-3);
+  cursor: pointer;
+  position: relative;
+  transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
+}
+.library-sort-btn:hover,
+.library-concise-btn:hover { background: var(--surface-3); color: var(--text-2); z-index: 1; }
+.library-sort-btn.active,
+.library-concise-btn.active { background: var(--surface-3); border-color: var(--border-2); color: var(--text); z-index: 2; }
+.library-sort-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 5px 2px;
+  border-radius: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+}
+.library-sort-btn + .library-sort-btn { margin-left: -1px; }
+.library-sort-btn:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+.library-sort-btn:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.library-sort .sort-dir { display: inline-flex; }
+.library-sort .sort-dir:empty { display: none; }
+.library-sort .sort-dir svg { width: 11px; height: 11px; }
+.library-sort .sort-dir.desc svg { transform: rotate(180deg); }
+.library-concise-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: var(--r-sm);
+}
+.library-concise-btn svg { width: 15px; height: 15px; }
+/* Vue concise : nom, ligne méta et téléchargement seulement. La rangée
+   d'actions part avec la description — « Régénérer la description » n'a plus
+   d'objet visible. */
+#space-files-list.concise .file-description-line,
+#space-files-list.concise .drawer-btns { display: none; }
+/* Carte amenée en vue par revealAndFlashCards (arrivant, carte déplacée par
+   le tri) : même liseré que .cfg-card.is-target (drawers.css). */
+#space-files-list .mem-item {
+  transition: border-color 600ms var(--ease), box-shadow 600ms var(--ease);
+  scroll-margin-block: 12px;
+}
+#space-files-list .mem-item.is-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bd);
+  transition-duration: 150ms;
+}
 /* sidebar plus étroite que le drawer d'origine (264px vs 380px) : les 2-3
    boutons d'action par carte (mem-item) n'y tiennent pas sur une ligne. */
 .space-side-panel .drawer-btns { flex-wrap: wrap; }

@@ -132,7 +132,8 @@ montre jamais un fil hors du Space actif. Décision Julien, S5 du lot AG — cf.
   `.app.booted:not(.sidebar-open)`), **masqué en plus** par `[hidden]` posé
   côté JS (`syncSpaceUI`) quand `activeSpaceId === DEFAULT_SPACE_ID` — deux
   conditions indépendantes qui se cumulent, ne pas les confondre.
-- **Écran Space** (`#space-drawer`, pattern sous-drawer MCP) : `openSpaceScreen(id)`
+- **Écran Space** (`#space-drawer`, pattern sous-drawer MCP, seul drawer ouvert
+  à GAUCHE — `.drawer-left`, il naît du sélecteur dans la sidebar) : `openSpaceScreen(id)`
   peuple nom/description, désactive le champ nom et masque le bouton
   suppression si `id === DEFAULT_SPACE_ID` (non renommable-nom-vide, non
   supprimable). **Depuis le passage aux onglets sidebar (ci-dessous), le
@@ -518,30 +519,60 @@ aide à la décision de lecture).
   multi-modèle est accepté (YAGNI, revisiter seulement si ça gêne en usage réel).
 - **Rafraîchissement de la bibliothèque affichée** (`refreshVisibleSpaceLibrary`,
   ui.js) : un fichier qui rejoint la bibliothèque apparaît dans le panneau si
-  celui-ci est **présentement affiché**, et la liste scrolle jusqu'à lui.
+  celui-ci est **présentement affiché**, et la liste l'amène en vue.
   L'appel vit dans `storeLibraryFile` (resources.js), **point d'écriture unique
   des trois voies** — pas chez les trois appelants : une quatrième voie
   l'oublierait en silence. Deux gardes portées par le helper, non redondantes :
   le Space (le panneau ne montre que `activeSpaceId`, or une génération d'agent
   ou d'une conversation d'un autre Space promeut dans le SIEN — piège 18), et
   `#space-files-panel.hidden` (un autre onglet actif ⇒ rien à faire,
-  `selectSpaceTab` re-rendra à l'ouverture). Le **scroll en bas** est la
-  conséquence du tri de `renderSpaceFilesList` (`createdAt`→`id` croissant,
-  aligné sur le manifeste de contexte) : l'arrivant y est en fin de liste — si
-  ce tri s'inverse, le scroll devient faux. Le scrolleur est le panneau entier
+  `selectSpaceTab` re-rendra à l'ouverture). Le scrolleur est le panneau entier
   (`.space-side-panel`, `overflow-y: auto`), pas `.mem-list`. Le même helper est
   appelé à la **réception** d'un `resources-updated` portant un `spaceId`
   (cf. `docs/multitab-sync.md`) : un onglet voisin ouvert sur la bibliothèque du
-  même Space se met à jour — mais ne descend que s'il y a un **arrivant**. Un
-  `resources-updated` diffuse aussi un renommage ou une description aboutie, sur
-  une carte déjà affichée : y descendre ferait sauter le panneau sous les yeux
-  de qui lit plus haut. Le récepteur passe ses `ids`, et le pur
-  `libraryRefreshRevealsArrival` (resources.js) tranche sur « un id sans carte
-  à l'écran ? », constaté AVANT le re-rendu ; sinon la position de lecture est
-  restaurée. Décidé côté récepteur, qui voit ce qu'il affiche, plutôt que par
-  un drapeau « ajout » dans le payload que chaque appelant de `putResource`
-  devrait penser à poser. La voie locale (`storeLibraryFile`, sans `ids`) reste
-  un ajout certain.
+  même Space se met à jour.
+
+  **Quelles cartes amener en vue** : le pur `libraryRevealTargets`
+  (resources.js) les désigne par **diff des cartes affichées** avant et après le
+  re-rendu — les arrivants —, plus les `followIds` de l'appelant. Le diff a
+  remplacé un « scroll en bas » qui n'était juste que sous le tri par date
+  croissante : l'arrivant est n'importe où dès que l'utilisateur choisit son
+  tri. Un `resources-updated` qui ne porte qu'un renommage ou une description
+  aboutie, sur une carte déjà affichée, ne fait donc pas défiler — y descendre
+  ferait sauter le panneau sous les yeux de qui lit plus haut —, et c'est le
+  récepteur qui en décide, par ce qu'il affiche, sans drapeau « ajout » dans le
+  payload. Deux appelants suivent explicitement : le **renommage local sous tri
+  par nom** (la carte change de place ; sinon le renommage ne re-rend rien) et
+  `ingestLibraryFiles`, qui passe tous les ids déposés — ses rafraîchissements
+  intermédiaires (un par `storeLibraryFile`) les ont déjà peints, son rendu
+  final ne verrait plus d'arrivant. Les cartes ciblées reçoivent le liseré
+  `is-target` de `revealAndFlashCards` (ui.js), partagé avec les cartes de
+  serveur menées par un toast (cf. `docs/toasts.md`) : défilement de la
+  première seulement, toutes signalées. Un rafraîchissement **différé** pendant
+  une saisie de nom (`_libraryRefreshDeferred`) garde la détection des
+  arrivants (le DOM d'avant est resté) mais abandonne ses `followIds`.
+- **Vue : tri et densité** (`libraryView`) : barre au-dessus des cartes, masquée
+  sur bibliothèque vide. Tri par nom, date de dépôt ou taille, segmented
+  control de forme discrète (segments bordés fusionnés, `.library-sort-btn`,
+  actif NEUTRE — dans la sidebar, l'accent plein est réservé à l'onglet
+  d'espace actif, « vous êtes ici » ; le contraste franc du `.seg-group` aussi,
+  la navigation que cette barre prolonge) où le critère actif inverse son sens
+  au clic ;
+  égalités départagées par `createdAt` puis `id` croissants
+  (`sortLibraryEntries`, pur, resources.js — collateur `Intl` français injecté
+  par l'UI, `numeric` et insensible aux accents, repli sans Intl pour QuickJS).
+  Défaut = date croissante, l'ordre historique du panneau. Changer de tri
+  remonte en tête. La **vue concise** masque la description ET la rangée
+  d'actions (« Régénérer la description » perd son objet sans la description
+  affichée) : nom, ligne méta et téléchargement seulement, par une classe sur
+  `#space-files-list`, sans re-rendu. Préférence **globale** (pas par Space :
+  c'est une manière de lire, pas une propriété de la bibliothèque), en
+  `localStorage` (`miaou-library-view`), **ni diffusée ni exportée** : changer
+  son tri ne doit pas réordonner la liste qu'un autre onglet est en train de
+  lire. Affichage seulement — le manifeste de contexte garde son ordre
+  `createdAt`→`id`, byte-stable (piège 16). Non-régression navigateur (tri, concise,
+  persistance, arrivant sous date décroissante, renommage sous tri par nom) :
+  `verify-library-view.mjs`.
 - **Statut par carte** (`renderSpaceFilesList`/`setFileDescriptionStatus`,
   ui.js) : « description en cours… » sur la ligne d'excerpt + bouton désactivé
   pendant le calcul, puis contenu (`done`) ou retour à l'état neutre avec

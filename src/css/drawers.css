@@ -35,6 +35,18 @@
   flex-direction: column;
 }
 .drawer.show { transform: none; }
+/* Drawer d'Espace (édition, suppression) : seul à s'ouvrir à GAUCHE. Il naît
+   du sélecteur d'espace, dans la sidebar, et s'ouvre donc du côté d'où on l'a
+   appelé ; tous les autres drawers relèvent de la conversation et des
+   réglages, à droite. */
+.drawer.drawer-left {
+  right: auto;
+  left: 0;
+  border-left: none;
+  border-right: 1px solid var(--border);
+  transform: translateX(-100%);
+}
+.drawer.drawer-left.show { transform: none; }
 .drawer.dragover { border-left-color: var(--accent-bd); box-shadow: inset 0 0 0 2px var(--accent-bd); }
 .drawer-head {
   display: flex;
@@ -526,12 +538,13 @@
 
 /* onglets du drawer combiné Résumés / Souvenirs.
    Même fonction que .space-tab-btn (sidebar.css) : naviguer entre panneaux,
-   pas choisir une valeur de réglage (ça, c'est .seg-group plus haut). Les deux
-   partagent délibérément leurs états — --text-3 au repos, --text-2 +
-   --surface-3 au survol, --accent + --accent-dim à l'actif, --r-sm, 140ms.
-   Retoucher un état ici demande de le répercuter là-bas, et inversement : la
-   divergence de forme (cadre bordé, segments fusionnés) n'est due qu'aux
-   icônes seules dans une sidebar étroite, qui ont besoin d'une cible visible. */
+   pas choisir une valeur de réglage (ça, c'est .seg-group plus haut). États :
+   --text-3 au repos, --text-2 + --surface-3 au survol, --accent +
+   --accent-dim à l'actif. Les onglets d'espace ont pris, eux, le contraste du
+   .seg-group (--text-2 au repos, cuvette --bg) : ils sont la navigation
+   principale de la sidebar, en icônes seules. Ici, des libellés texte dans un
+   en-tête de drawer n'ont besoin ni de cuvette ni de ce contraste ; seul
+   l'actif en accent est commun — l'accent plein dit « vous êtes ici ». */
 .drawer-tabs { display: flex; gap: 2px; flex: 1; margin-right: 8px; }
 .drawer-tab {
   background: none;
@@ -759,6 +772,12 @@
 }
 .mem-content.file-name-edit:hover { background: var(--surface-3); }
 .mem-content.file-name-edit:focus { background: var(--surface-3); border-color: var(--border-2); }
+/* Carte de fichier : le nom ouvre la carte, dans la rangée du glyphe de
+   téléchargement, et la ligne méta le suit de PRÈS — l'écart nom → méta
+   (padding + bordure du champ, ~3px) reste plus court que méta → description
+   (.mem-excerpt, 5px), pour que nom et méta se lisent comme un bloc. */
+.mem-header.file-head > .mem-content.file-name-edit { margin-top: 0; flex: 1; min-width: 0; }
+.mem-sub.file-meta { margin-top: 0; }
 
 .mem-edit-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
 .mem-edit-wrap.hidden { display: none; }
@@ -924,11 +943,11 @@
   flex-direction: column;
   gap: 10px;
   transition: border-color 600ms var(--ease), box-shadow 600ms var(--ease);
-  /* Marge de défilement de revealServerCard : la carte amenée en vue ne colle
+  /* Marge de défilement de revealAndFlashCards : la carte amenée en vue ne colle
      pas au bord du drawer. */
   scroll-margin-block: 16px;
 }
-/* Carte visée par le clic d'un toast (revealServerCard, ui.js) : signal posé
+/* Carte visée par le clic d'un toast (revealAndFlashCards, ui.js) : signal posé
    puis retiré par minuterie, donc lisible tel quel sous reduced-motion — seul
    le fondu disparaît. Arrivée rapide, départ lent (durée de la règle de base). */
 .cfg-card.is-target {
@@ -1325,8 +1344,8 @@ textarea.skill-content {
    carte, pas un bouton texte — la colonne latérale (~210 px utiles) ne tient pas
    trois boutons texte sans wrapper la rangée. Même glyphe et même vocabulaire
    d'états que `.ack-dl` (tools.css), l'autre surface de téléchargement.
-   `align-self: start` : l'icône s'aligne sur la première ligne de méta, pas sur
-   la hauteur totale d'un en-tête qui grandirait. */
+   `align-self: start` : l'icône s'aligne sur la première ligne du nom, pas sur
+   la hauteur totale d'un en-tête qui grandirait avec un nom long. */
 .mem-dl {
   flex-shrink: 0;
   align-self: start;
@@ -1340,6 +1359,9 @@ textarea.skill-content {
   line-height: 0;
 }
 .mem-dl:hover { color: var(--accent); }
+/* Centre le glyphe (14px) sur la première ligne du nom : bordure 1px +
+   padding 2px + (line-height 13 × 1.55 − 14) / 2. */
+.file-head > .mem-dl { margin-top: 6px; }
 .mem-dl.unavailable { opacity: 0.35; cursor: default; }
 .mem-dl.unavailable:hover { color: var(--text-3); }
 

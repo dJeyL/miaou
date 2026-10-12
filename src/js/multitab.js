@@ -230,12 +230,12 @@ function applySyncDecision(d) {
       // Un fichier de bibliothèque écrit ailleurs (ajout, renommage, description
       // aboutie) : si CET onglet regarde la bibliothèque du même Space, la
       // rafraîchir — mêmes gardes que la voie locale, portées par le helper
-      // lui-même. Les `ids` lui font distinguer un arrivant (on descend) d'une
-      // carte déjà affichée (on reste où l'on lisait). `spaceId` n'est
+      // lui-même, qui distingue un arrivant (amené en vue) d'une carte déjà
+      // affichée (on reste où l'on lisait). `spaceId` n'est
       // renseigné que par `putResource` ; une suppression diffusée le laisse à
       // null et ne repeint donc rien ici, limite assumée (l'onglet qui supprime
       // re-rend le sien).
-      if (d.spaceId != null) refreshVisibleSpaceLibrary(d.spaceId, d.ids);
+      if (d.spaceId != null) refreshVisibleSpaceLibrary(d.spaceId);
       return;
 
     case 'reload-skills':

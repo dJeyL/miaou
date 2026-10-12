@@ -1405,7 +1405,7 @@ Sur un **Ollama** (URL en `/v1`, derrière un proxy qui laisse passer CORS) :
 
 ## Bibliothèque d'Espace : écritures concurrentes et second onglet
 
-Les purs (`normalizeLibraryName`, `libraryRefreshRevealsArrival`) sont couverts
+Les purs (`normalizeLibraryName`, `libraryRevealTargets`, `sortLibraryEntries`) sont couverts
 en QuickJS ; ce qui suit touche IndexedDB, le DOM et la synchro, et se vérifie à
 la main. Onglet « Fichiers » du panneau d'Espace ; IndexedDB dans DevTools →
 Application → `miaou` → `resources`.
@@ -1420,8 +1420,8 @@ Application → `miaou` → `resources`.
    rien ne réapparaît — ni dans la liste, ni dans IndexedDB, ni après un
    rechargement.
 3. **Second onglet, arrivant.** Deux onglets sur la bibliothèque du même Space.
-   Déposer un fichier dans le premier : le second l'affiche et descend jusqu'à
-   lui.
+   Déposer un fichier dans le premier : le second l'affiche, défile jusqu'à
+   lui et l'entoure brièvement d'un liseré.
 4. **Second onglet, pas de saut.** Bibliothèque plus haute que le panneau ;
    dans le second onglet, s'arrêter au milieu de la liste. Dans le premier,
    renommer une AUTRE carte, puis en régénérer la description. Le second onglet
@@ -1435,6 +1435,18 @@ Application → `miaou` → `resources`.
    (`files__promote`) avec un nom sur plusieurs lignes ou très long : la carte
    porte un nom sur une ligne, borné, et la ligne correspondante du manifeste
    de bibliothèque reste une seule ligne.
+7. **Arrivant sous un autre tri.** Trier par date décroissante, descendre en
+   bas de la liste, déposer un fichier : la liste remonte jusqu'à lui (en
+   tête) et le signale. Même chose par nom, avec un nom qui tombe au milieu.
+8. **Renommage sous tri par nom.** Renommer « aaa.txt » en « zzz.txt » : la
+   carte passe en fin de liste, la liste la suit et la signale. Sous tri par
+   date, le même renommage ne fait rien bouger.
+9. **Dépôt multiple.** Glisser trois fichiers d'un coup : les trois cartes sont
+   signalées ensemble à la fin de l'ingestion, la première dans l'ordre affiché
+   amenée en vue.
+10. **Vue persistée, non diffusée.** Passer en vue concise et en tri par taille
+    décroissante, recharger : les deux sont retenus. Un second onglet ouvert
+    sur la bibliothèque ne change pas de vue avant d'être rechargé.
 
 ## Rendu pendant le streaming (sélection et défilement)
 

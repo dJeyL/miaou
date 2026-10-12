@@ -213,18 +213,90 @@ function libraryFileDate(rec) {
   return (rec && rec.createdAt) || null;   // sans date : rien à dire, on n'invente pas « maintenant »
 }
 
-// Un rafraîchissement de la bibliothèque affichée doit-il aller MONTRER un
-// arrivant (scroll en bas, cf. refreshVisibleSpaceLibrary) ? Oui seulement si
-// un des ids touchés n'a pas encore de carte : une carte déjà là (renommage,
-// description aboutie) est mise à jour sur place, et descendre ferait sauter le
-// panneau sous les yeux de qui lit plus haut. Décidé chez le RÉCEPTEUR, qui voit
-// ce qu'il affiche — plutôt qu'un drapeau « ajout » dans le broadcast, que
-// chaque appelant de `putResource` devrait penser à poser. `ids` absent : voie
-// locale d'ajout, l'arrivant est certain. `isShown(id)` est injecté (DOM côté
-// ui.js), d'où la pureté.
-function libraryRefreshRevealsArrival(ids, isShown) {
-  if (!ids) return true;
-  return ids.some(function(id) { return !isShown(id); });
+// Cartes à amener en vue après un rafraîchissement de la bibliothèque affichée
+// (cf. refreshVisibleSpaceLibrary) : les ARRIVANTS — ids présents après le
+// re-rendu et absents avant —, plus les `followIds` que l'appelant désigne
+// (carte renommée qu'un tri par nom a déplacée, lot de fichiers déposés d'un
+// coup). Rendu dans l'ordre de la liste affichée, le premier étant celui qu'on
+// fait défiler. Une carte seulement mise à jour (renommage vu d'un autre
+// onglet, description aboutie) n'en fait pas partie : y défiler ferait sauter
+// le panneau sous les yeux de qui lit plus haut.
+//
+// Décidé par diff des cartes affichées, chez qui affiche, et non par position :
+// l'arrivant n'est en bas que sous le tri par date croissante, or le tri est
+// au choix de l'utilisateur (`libraryView`).
+function libraryRevealTargets(beforeIds, afterIds, followIds) {
+  const before = new Set(beforeIds || []);
+  const follow = new Set(followIds || []);
+  return (afterIds || []).filter(function(id) { return !before.has(id) || follow.has(id); });
+}
+
+// ── Vue de la bibliothèque : tri et densité ─────────────────────────────────
+// Préférence de LECTURE, globale (pas par Space) et propre à l'onglet : jamais
+// diffusée aux autres onglets (cf. docs/spaces.md). Affichage seulement — le
+// manifeste de contexte garde son ordre `createdAt`→`id`, byte-stable (piège 16).
+const LIBRARY_SORT_KEYS = ['name', 'date', 'size'];
+
+// Défaut = l'ordre historique du panneau (date croissante, aligné sur le
+// manifeste) : rien ne bouge chez qui ne touche à rien.
+function normalizeLibraryView(raw) {
+  const v = raw && typeof raw === 'object' ? raw : {};
+  return {
+    sort: LIBRARY_SORT_KEYS.indexOf(v.sort) !== -1 ? v.sort : 'date',
+    dir: v.dir === 'desc' ? 'desc' : 'asc',
+    concise: v.concise === true,
+  };
+}
+
+// Clic sur un critère : le critère actif inverse son sens, un autre critère
+// s'active en sens croissant.
+function toggleLibrarySort(view, key) {
+  const v = normalizeLibraryView(view);
+  if (LIBRARY_SORT_KEYS.indexOf(key) === -1) return v;
+  if (v.sort === key) v.dir = v.dir === 'asc' ? 'desc' : 'asc';
+  else { v.sort = key; v.dir = 'asc'; }
+  return v;
+}
+
+// Comparaison de noms par défaut, sans Intl (absent du harnais QuickJS) :
+// insensible à la casse seulement. L'UI injecte un Intl.Collator (accents,
+// ordre numérique) — cf. libraryNameCollate, ui.js.
+function _plainNameCompare(a, b) {
+  const x = String(a || '').toLowerCase(), y = String(b || '').toLowerCase();
+  return x < y ? -1 : (x > y ? 1 : 0);
+}
+
+// Trie une COPIE. Le sens ne porte que sur le critère choisi ; les égalités
+// retombent sur `createdAt` puis `id`, croissants, pour un ordre déterministe
+// d'un rendu à l'autre (deux fichiers de même taille ne permutent pas).
+function sortLibraryEntries(entries, view, collate) {
+  const v = normalizeLibraryView(view);
+  const cmpName = collate || _plainNameCompare;
+  const sign = v.dir === 'desc' ? -1 : 1;
+  const primary = v.sort === 'name' ? function(a, b) { return cmpName(a.name || '', b.name || ''); }
+    : v.sort === 'size' ? function(a, b) { return (Number(a.size) || 0) - (Number(b.size) || 0); }
+    : function(a, b) { return (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0); };
+  return (entries || []).slice().sort(function(a, b) {
+    const p = primary(a, b);
+    if (p) return sign * p;
+    const d = (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0);
+    if (d) return d;
+    return String(a.id).localeCompare(String(b.id));
+  });
+}
+
+// Infobulle d'un bouton de tri : le sens courant et le geste pour l'actif,
+// le seul critère pour les autres.
+function librarySortTip(key, view) {
+  const v = normalizeLibraryView(view);
+  const LABELS = {
+    name: { title: 'Trier par nom', asc: 'Nom, de A à Z', desc: 'Nom, de Z à A' },
+    date: { title: 'Trier par date', asc: 'Date, les plus anciens en haut', desc: 'Date, les plus récents en haut' },
+    size: { title: 'Trier par taille', asc: 'Taille, les plus petits en haut', desc: 'Taille, les plus gros en haut' },
+  };
+  const l = LABELS[key];
+  if (!l) return '';
+  return v.sort === key ? l[v.dir] + ' — cliquer pour inverser' : l.title;
 }
 
 // Normalise un record library aux champs figés du schéma : présent dès le
