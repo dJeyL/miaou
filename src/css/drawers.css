@@ -536,6 +536,21 @@
 .btn-row { display: flex; gap: 8px; }
 .btn-row .btn-ghost { flex: 1; }
 
+/* Réglages › Application, mise à jour des serveurs MCP (mcp-update.js) : un
+   bloc par serveur, l'état en .hint, les sujets des nouveaux commits, les
+   boutons en .btn-row. Les sujets viennent du dépôt : une ligne longue ou un
+   identifiant sans espace se coupe plutôt que d'élargir le drawer. */
+.proxy-update-list { display: flex; flex-direction: column; gap: 12px; }
+.proxy-update-row { display: flex; flex-direction: column; gap: 6px; }
+.proxy-update-subjects {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.proxy-update-subjects .proxy-update-more { list-style: none; color: var(--text-3); }
+
 /* onglets du drawer combiné Résumés / Souvenirs.
    Même fonction que .space-tab-btn (sidebar.css) : naviguer entre panneaux,
    pas choisir une valeur de réglage (ça, c'est .seg-group plus haut). États :

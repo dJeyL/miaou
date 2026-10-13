@@ -987,6 +987,108 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
     - **Vérifié** : `verify-mcp-skills.mjs` (modèle stubé, proxy réel avec
       bench), rouge contre le code d'avant.
 
+22. **Mise à jour à la demande du proxy (extension `miaou/self-update`).**
+    Extension privée de miaou-mcp-servers, publiée seulement si le proxy a
+    `self_update` à `true` ; contrat dans son `docs/miaou-contract.md`
+    (« Mise à jour du proxy »), qui fait foi. Tout le côté MIAOU vit dans
+    `mcp-update.js` : purs, lecture de l'état, surfaces et déclenchement.
+    - **Déclaration** : même lecture que les skills (`mcpDeclaresUpdateExtension`,
+      présence de la clé, ère moderne seulement). État
+      `_remoteStatus[name].updateDeclared`, effacé avec la carte.
+    - **Lecture de l'état** : `miaou/update/status` (`readProxyUpdateStatus`),
+      réponse ENVELOPPÉE `{ status: {…} }`, normalisée à la frontière par
+      `normalizeProxyUpdateStatus` (snake_case → camelCase ; forme inattendue =
+      `null`, rien à signaler ; état inconnu gardé tel quel, sans mise à jour ;
+      mise à jour sans sha complet retirée). Rangée dans `_proxyUpdates[name]`,
+      en mémoire seulement, avec un numéro de lecture : une réponse plus
+      ancienne arrivée après une plus récente est jetée. **Chaque connexion
+      réussie relit l'état** (`onProxyUpdateServerConnected`, sans attente) :
+      c'est ce qui retire, dans un onglet voisin, la proposition d'une mise à
+      jour déjà faite ailleurs — le proxy a redémarré, l'onglet s'est
+      reconnecté. Aucun type de message multi-onglets.
+    - **Purs** (testés, `tests/test-mcp-update.js`) : `proxyUpdateAvailable`
+      (`behind` ou `dirty` avec une mise à jour) contre `proxyUpdateApplicable`
+      (`behind`, supervisé, aucune application en cours) ;
+      `proxyUpdateKindLabel` (le libellé suit le genre : « serveurs MCP » serait faux quand seul MIAOU change) ;
+      `isServedByProxy` (LE prédicat « MIAOU est servi par ce proxy » : page
+      servie ET `served_build` égal à `BUILD_ID`, jamais une comparaison
+      d'origines) ; `proxyUpdateAfterApply` ; `proxyRestartLanded` ;
+      `proxyUpdateFailureText` (code `UPDATE_*` testé par égalité, message du
+      proxy gardé).
+    - **Cadence** : le proxy sonde son dépôt toutes les 5 min et met le
+      résultat en cache, donc lire `status` ne coûte qu'un aller-retour local.
+      MIAOU lit à chaque connexion, sur un minuteur de la même période
+      (`startProxyUpdatePolling`, une lecture sautée tant que la page est
+      cachée) et au retour de focus ou de visibilité, au plus une fois par
+      minute (`checkProxyUpdates`, `shouldReadProxyUpdates`). Les serveurs
+      supprimés, désactivés ou reconnectés sans l'extension sont oubliés
+      (`pruneProxyUpdates`) ; un serveur en erreur garde son entrée — un proxy
+      qui redémarre n'a pas perdu sa mise à jour.
+    - **Surfaces** (critère de `docs/toasts.md` : l'état sur la surface
+      passive, le front en toast). **Réglages › Application** porte l'état
+      durable, serveur par serveur (`syncProxyUpdateSurface`, rendu à chaque
+      lecture et à l'ouverture des réglages) : texte de l'état
+      (`proxyUpdateStateText`, la cause en clair puis `detail` et `remedy` du
+      proxy), sujets des nouveaux commits, « Mettre à jour » si applicable,
+      « Vérifier maintenant » (`refresh: true`, que le proxy borne à une sonde
+      par 30 s). Le **toast** persistant (thème `update`, clé
+      `proxy-update:<nom>`) propose une mise à jour disponible, une fois par
+      cible et par session (`proxyUpdateToastAction`) : fermé à la croix, il ne
+      revient que si une AUTRE cible paraît. Action « Mettre à jour » si
+      applicable, sinon « Réglages › Application » (arbre sale, proxy non
+      supervisé). Seule une lecture LISIBLE qui ne propose plus rien le retire :
+      un proxy injoignable ne dit pas que la mise à jour a disparu.
+    - **Déclenchement** (`applyProxyUpdate`) : `apply` avec la cible AFFICHÉE,
+      jamais relue juste avant (le proxy n'avance qu'à elle). Le prédicat
+      « servi par ce proxy » est évalué AVANT, sur l'état affiché : l'empreinte
+      publiée change dès que la mise à jour touche MIAOU. Garde locale
+      (`proxyUpdateLocalBlock`) : une génération de cet onglet bloque une mise
+      à jour qui redémarre le proxy — le proxy refuse lui-même tant que des
+      appels d'outils sont en vol (`UPDATE_TOOLS_IN_FLIGHT`), mais une
+      génération ENTRE deux appels n'en a pas, et trouverait au suivant un
+      proxy en plein redémarrage. Délai propre à `apply`
+      (`PROXY_UPDATE_APPLY_TIMEOUT_S`) : il enchaîne des appels git bornés côté
+      proxy (réseau 30 s, merge 120 s), que le délai d'une carte couperait. Un
+      refus est dit en toast d'erreur avec la cause du proxy
+      (`proxyUpdateFailureText`), puis l'état est relu (`refresh`).
+    - **Après `apply`** (`afterProxyUpdateApplied`, décision par
+      `proxyUpdateAfterApply`). `restart: true` : la session meurt avec le
+      proxy, relancé par son superviseur via `uv run`. Reconnexion bornée
+      (`waitForProxyRestart` : `disconnectMcpServer` puis `connectMcpServer`
+      toutes les `PROXY_RESTART_POLL_MS`, au plus `PROXY_RESTART_WAIT_MS`).
+      Un proxy reconnecté n'est revenu que s'il est le NOUVEAU processus
+      (`proxyRestartLanded` : `head` ≠ sha d'avant) — l'ancien répond encore
+      pendant ses 5 s d'arrêt en douceur. Au-delà du délai : toast d'erreur
+      persistant, avec la cause probable (démarrage en échec après la mise à
+      jour) et le renvoi au journal du superviseur, qui donne la commande de
+      retour arrière. Puis, **si la page est servie par ce proxy ET que la mise
+      à jour touche MIAOU** (genre `miaou` ou `both`) : relecture immédiate de
+      `version.json`, hors throttle (`fetchNewerServedBuild`, pwa.js).
+      Empreinte nouvelle et rien à perdre : rechargement automatique ; un
+      brouillon, une file ou une génération (`reloadBlockReason`) : repli sur le
+      toast « Recharger » de la détection de version (`announceNewVersion`),
+      qui revérifie au clic (`proxyReloadDecision`, pur). Empreinte inchangée
+      (seules des icônes de `miaou_dist` ont bougé) : rien à recharger. Dans
+      tous les autres cas (`file://`, page servie par autre chose, genre
+      `proxy`), un toast de confirmation, sans rechargement. La décision de
+      recharger porte donc sur le changement de `version.json`, jamais sur le
+      redémarrage : `proxy` redémarre sans recharger, `miaou` recharge sans
+      redémarrer.
+    - **Vérifié** : `verify-proxy-update.mjs`, contre un VRAI proxy lancé par
+      `scripts/supervise.sh` depuis un clone jetable (dépôt nu comme remote,
+      port 18793, `self_update` à `true`), jamais le clone de travail.
+      Scénarios : page servie et genre `both` (redémarrage suivi, rechargement
+      automatique), genre `miaou` avec un brouillon (ni redémarrage ni
+      rechargement, repli « Recharger »), `file://` et genre `proxy`
+      (confirmation sans rechargement), arbre sale (bloquée, à la main).
+      Rejoué contre trois régressions injectées (prédicat « servi » toujours
+      faux, repli « Recharger » ignoré, arbre sale tenu pour applicable) :
+      rouge à chaque fois. Non couvert : l'ancien processus qui répondrait
+      pendant son arrêt (`proxyRestartLanded`), course que le montage ne
+      provoque pas ; seul le test QuickJS le garde. Le proxy reprend une
+      sonde de moins de 30 s telle quelle : le script reclique « Vérifier
+      maintenant » jusqu'à voir l'état publié.
+
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 
 Le lot V a rapatrié dans le navigateur ce que `mcp_docs` savait faire — le zip

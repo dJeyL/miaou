@@ -39,6 +39,7 @@ JS_ORDER = [
     'multitab.js',
     'stall.js',
     'pwa.js',
+    'mcp-update.js',
     'main.js',
 ]
 

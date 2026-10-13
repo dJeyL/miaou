@@ -126,7 +126,11 @@ Jamais en `file://` ni hors build. La lecture au démarrage couvre une page
 lancée depuis le cache du SW parce que le proxy tardait.
 
 Empreinte servie différente (`servedNewerBuild`, pur) : toast persistant
-« Nouvelle version de MIAOU disponible », thème `update`, action « Recharger ».
+« Nouvelle version de MIAOU disponible », thème `update`, action « Recharger »
+(`announceNewVersion`). La lecture elle-même (`fetchNewerServedBuild`) n'a ni
+throttle ni condition de signal : la mise à jour d'un proxy qui touche MIAOU la
+rappelle aussitôt après son `apply`, et recharge seule si rien n'est à perdre
+(cf. `docs/mcp.md`, point 22).
 Une annonce par version et par session : fermé à la croix, il ne revient pas à
 chaque retour dans la fenêtre, seulement si une autre version paraît. Limite
 assumée : un toast d'information peut être évincé par une rafale qui dépasse
@@ -233,6 +237,11 @@ tranché par un pur, `installSurfaceState`, et posé par `syncInstallSurface`
   impossible et la ligne le dit.
 - **file://** : MIAOU ne s'installe pas. Une ligne fixe rappelle que fichier et
   version servie ont chacun leur stockage, et renvoie à l'export/import complet.
+
+La même catégorie porte un second champ, « Mise à jour des serveurs MCP », qui
+ne dépend pas du mode de chargement : il dit l'état de chaque proxy qui publie
+l'extension `miaou/self-update` et propose sa mise à jour (`mcp-update.js`,
+cf. `docs/mcp.md`, point 22).
 
 **Sonde de la version servie depuis file://** (`probeServedApp`, au démarrage).
 Candidats : les origines http(s) des serveurs MCP configurés, suffixées de

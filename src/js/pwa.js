@@ -100,6 +100,16 @@ async function checkForNewVersion() {
   const now = Date.now();
   if (!shouldCheckVersion(pageIsServed(), BUILD_ID, _lastVersionCheck, now, VERSION_CHECK_MIN_INTERVAL_MS)) return;
   _lastVersionCheck = now;
+  announceNewVersion(await fetchNewerServedBuild());
+}
+
+// L'empreinte servie si elle désigne une AUTRE version que celle qui tourne,
+// '' sinon. Lecture bornée, sans cache ni throttle : c'est l'appelant qui
+// décide quand lire (`checkForNewVersion` aux signaux de retour, la mise à
+// jour d'un proxy juste après son `apply`, cf. mcp-update.js). Proxy coupé,
+// délai dépassé, JSON illisible : '', silence.
+async function fetchNewerServedBuild() {
+  if (!pageIsServed() || !BUILD_ID) return '';
   const ctrl = new AbortController();
   const timer = setTimeout(function () { ctrl.abort(); }, VERSION_FETCH_TIMEOUT_MS);
   let served = null;
@@ -107,13 +117,17 @@ async function checkForNewVersion() {
     const r = await fetch('version.json', { cache: 'no-store', signal: ctrl.signal });
     if (r.ok) served = await r.json();
   } catch (e) {
-    return;   // proxy coupé, délai dépassé, JSON illisible : silence
+    return '';
   } finally {
     clearTimeout(timer);
   }
-  const id = servedNewerBuild(BUILD_ID, served);
-  // Une annonce par version : fermé à la croix, le toast ne revient pas à
-  // chaque retour dans la fenêtre — seulement si une AUTRE version paraît.
+  return servedNewerBuild(BUILD_ID, served);
+}
+
+// Toast « Nouvelle version de MIAOU disponible ».
+// Une annonce par version : fermé à la croix, le toast ne revient pas à
+// chaque retour dans la fenêtre — seulement si une AUTRE version paraît.
+function announceNewVersion(id) {
   if (!id || id === _announcedBuild) return;
   _announcedBuild = id;
   showToast({ key: 'app-update', level: 'info', theme: 'update', persistent: true,

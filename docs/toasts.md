@@ -200,6 +200,13 @@ quoi `error → connecting → ok` n'aurait jamais de « rétabli »), une atten
 d'autorisation n'annonce rien, et un serveur supprimé ou désactivé en erreur
 voit son toast retiré sans « rétabli ».
 
+**Mises à jour — émises hors de toasts.js.** Deux familles, chacune près de la
+décision qu'elle annonce : la nouvelle version de MIAOU servie (`app-update`,
+`app-update-wait`, pwa.js, cf. `docs/pwa.md`) et la mise à jour d'un proxy MCP
+(`proxy-update:<nom>` persistant, plus `…:result` pour l'issue d'un `apply` et
+`…:wait` pour la garde locale, mcp-update.js, cf. `docs/mcp.md`, point 22).
+Thème `update` dans les deux cas.
+
 ## Vérification
 
 Purs : `tests/test-utils.js` (file, durées, placement, fronts de santé).

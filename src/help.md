@@ -733,6 +733,34 @@ lit d'une skill de serveur est toujours présenté comme venant de ce serveur,
 jamais comme une de tes skills, et la trace de lecture dans la conversation
 porte le nom du serveur.
 
+**Quand un serveur peut se mettre à jour.** Le proxy de **miaou-mcp-servers**
+peut, si sa configuration le permet, vérifier lui-même s'il existe une version
+plus récente de son dépôt et l'installer à la demande. MIAOU le vérifie au
+démarrage, toutes les cinq minutes tant que la fenêtre est visible, et quand tu
+y reviens. Une mise à jour disponible s'annonce par une notification qui dit ce
+qu'elle apporte : une nouvelle version de MIAOU, une mise à jour des serveurs
+MCP, ou les deux. Fermée, elle ne revient que pour une version plus récente
+encore.
+
+L'état détaillé est dans Réglages › Application, « Mise à jour des serveurs
+MCP » : ce que la mise à jour apporte, les titres des modifications, un bouton
+**Mettre à jour** et un bouton **Vérifier maintenant**. Quand la mise à jour ne
+peut pas se faire d'ici, la raison y est écrite en clair : fichiers modifiés à
+la main dans le dossier du proxy, proxy démarré sans son script de relance
+(`scripts/supervise.sh`), dépôt injoignable, authentification à refaire… Elle
+se fait alors à la main, dans le dossier du proxy.
+
+Une mise à jour des serveurs redémarre le proxy : ses outils disparaissent
+quelques secondes, puis reviennent seuls. MIAOU attend son retour et le
+confirme ; s'il ne revient pas, une notification le dit, avec la cause
+probable. Le proxy refuse de redémarrer tant qu'un de ses outils est en train
+de travailler, et MIAOU attend qu'une réponse en cours soit terminée. Si la
+mise à jour apporte une nouvelle version de MIAOU et que c'est ce proxy qui le
+sert, MIAOU se recharge ensuite tout seul, sauf si un rechargement perdrait
+quelque chose (sujet `installation`). Ouvert depuis un fichier ou servi par
+autre chose, MIAOU ne se recharge pas : seule la mise à jour des serveurs
+compte.
+
 Pour l'accès au web, le projet compagnon **miaou-mcp-servers** fournit des
 serveurs prêts à l'emploi (téléchargement et recherche de pages web) : c'est la
 façon recommandée d'ajouter cette capacité à MIAOU. Il fournit aussi un serveur
@@ -1595,7 +1623,9 @@ disponible » reste à l'écran, avec « Recharger ». MIAOU refuse de recharger
 tant qu'un rechargement perdrait quelque chose — une réponse ou un agent en
 cours, des messages en file d'attente, un message en cours de rédaction ou des
 pièces jointes en attente — et dit ce qu'il faut attendre. La vérification se
-fait à l'ouverture et quand tu reviens dans la fenêtre.
+fait à l'ouverture et quand tu reviens dans la fenêtre. Quand c'est une mise à jour du proxy, déclenchée depuis MIAOU (sujet `mcp`),
+qui apporte la nouvelle version, MIAOU se recharge tout seul si rien n'est à
+perdre ; sinon, la même notification « Recharger » prend le relais.
 
 Ouvert depuis un fichier, MIAOU ne s'installe pas. S'il trouve un proxy MCP
 configuré qui le sert, il le signale une fois par session et Réglages ›

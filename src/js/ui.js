@@ -6721,6 +6721,7 @@ function openSettings() {
   }
   refreshStorageReport();  // asynchrone : le bloc se remplit après ouverture
   syncInstallSurface();    // catégorie Application : dépend du contexte (pwa.js)
+  syncProxyUpdateSurface(); // catégorie Application : mise à jour des serveurs MCP (mcp-update.js)
   updateSettingsDirty();   // des saisies non enregistrées peuvent survivre à une fermeture
   $('drawer').classList.add('show');
   $('backdrop').classList.add('show');

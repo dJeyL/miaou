@@ -1164,7 +1164,7 @@ function wireIdleSummaryActivity() {
   // reste vivante, seul l'onglet passe au second plan.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) summarizeIfNeeded(currentConvId);
-    else { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); ackDisplayedConvOnReturn(); }
+    else { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); checkProxyUpdates(); ackDisplayedConvOnReturn(); }
   });
 
   // DEUXIÈME signal de retour, et non un doublon du précédent : `visibilitychange`
@@ -1178,7 +1178,7 @@ function wireIdleSummaryActivity() {
   // ne fait rien quand aucun serveur n'est en défaut, et un double appel
   // rapproché relance au pire un handshake déjà en cours, que `connectMcpServer`
   // absorbe (il réécrit le statut, il n'accumule pas).
-  window.addEventListener('focus', () => { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); ackDisplayedConvOnReturn(); });
+  window.addEventListener('focus', () => { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); checkProxyUpdates(); ackDisplayedConvOnReturn(); });
 }
 
 // Le parcours d'autorisation se déroule entièrement côté proxy, dans un AUTRE
@@ -5981,6 +5981,7 @@ async function init() {
   registerServiceWorker();   // page servie seulement (pwa.js)
   checkForNewVersion();      // idem : une page lancée depuis le cache du SW (proxy lent) peut être en retard
   probeServedApp();         // file:// seulement : le proxy MCP sert-il MIAOU ?
+  startProxyUpdatePolling(); // minuteur de l'état des proxys MCP ; la première lecture suit chaque connexion (mcp-update.js)
 
   // L'UI est montée (.booted posée, sidebar décidée, thread rendu) : estompe
   // l'overlay de préchargement, en garantissant un temps d'affichage minimum
