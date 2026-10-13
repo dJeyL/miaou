@@ -37,6 +37,7 @@ JS_ORDER = [
     'acks.js',
     'export.js',
     'multitab.js',
+    'stall.js',
     'pwa.js',
     'main.js',
 ]

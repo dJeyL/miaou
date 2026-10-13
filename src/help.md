@@ -1124,6 +1124,20 @@ Quelques repères pour te déplacer dans MIAOU :
   Il redevient normal tout seul dès que le service répond de nouveau. Une
   installation neuve, pas encore configurée, ne le fait pas froncer : il n'y a
   rien de cassé, juste rien de réglé.
+- **Le serveur ne répond plus** : si une réponse ne reçoit plus rien pendant
+  {{STREAM_IDLE_S}} secondes, une fenêtre s'ouvre par-dessus
+  tout et demande quoi faire. **Attendre** relance l'écoute — un modèle qui se
+  charge ou qui lit un long contexte peut mettre du temps à commencer — et la
+  question revient si le silence dure encore ; tu peux attendre autant de fois
+  que tu veux. **Abandonner** arrête la réponse en gardant ce qui était déjà
+  arrivé (le bouton « Continuer » reste proposé). Échap vaut « Attendre ». La
+  fenêtre se ferme toute seule dès que la réponse repart. Tant qu'elle est
+  ouverte, rien d'autre n'est possible dans MIAOU ; si plusieurs conversations
+  sont bloquées en même temps, chacune a sa ligne, avec le nom de son Espace
+  quand ce n'est pas celui que tu regardes. Sans réponse de ta part, la réponse
+  est abandonnée d'elle-même au bout du compte à rebours affiché. Un **agent**
+  ne pose pas la question : il attend en silence, puis s'arrête après
+  {{STALL_CEILING_S}} secondes sans rien recevoir.
 - **Notifications** (en bas à droite, contre le bord de la fenêtre — au niveau
   de la zone de saisie quand la place le permet, juste au-dessus sinon ; à
   gauche d'un panneau ouvert) :
@@ -1563,7 +1577,9 @@ pas.
 
 **Un point sur l'icône quand une réponse t'attend** : dans l'application
 installée, l'icône du Dock (ou de la barre des tâches) porte un point tant
-qu'une réponse terminée n'a pas été lue, quel que soit l'Espace. Une réponse
+qu'une réponse terminée n'a pas été lue, quel que soit l'Espace — ou tant que
+MIAOU te demande, dans une fenêtre que tu ne regardes pas, s'il faut attendre
+un serveur qui ne répond plus (sujet `interface`). Une réponse
 qui finit pendant que tu es dans une autre application compte comme non lue,
 même dans la conversation affichée ; en revenant dans la fenêtre, elle passe
 en lue si la fin de la réponse est déjà à l'écran — sinon en descendant

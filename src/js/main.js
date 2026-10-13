@@ -5810,6 +5810,8 @@ async function init() {
   };
   window.addEventListener('pagehide', onTabLeaving);
   window.addEventListener('beforeunload', onTabLeaving);
+  // Modale de silence (stall.js) : clavier, focus de fenêtre, adieu aux pairs.
+  initStallDialog();
   const s = loadSettings();
   $('set-system').value = s.systemPrompt || '';
   $('set-highlight').checked = s.highlight !== false;

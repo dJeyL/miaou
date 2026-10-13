@@ -10,6 +10,12 @@
 // chien de garde d'inactivité de streamCompletion coupe le flux mort et rend la
 // main.
 //
+// Depuis la modale de silence (stall.js), la première expiration ne coupe plus
+// une conversation racine : elle pose la question. Personne n'y répond ici —
+// c'est exactement le cas « fenêtre désertée » que le PLAFOND de la modale
+// borne. Ce script raccourcit donc aussi ce plafond, et ses contrôles
+// vérifient que la borne dure tient même sans réponse.
+//
 // Checklist :
 //   A. le chien de garde libère la génération bloquée
 //   B. la conversation concernée finit par être résumée
@@ -63,9 +69,11 @@ await page.evaluate(() => {
   // raccourcissait plus rien dès que la config posait une autre valeur — le
   // chien de garde gardait ses minutes et les trois contrôles rougissaient.
   const idleCycle = IDLE_SUMMARY_MS, watchdog = STREAM_IDLE_TIMEOUT_MS;
+  const ceiling = STREAM_IDLE_TIMEOUT_MS * STALL_CEILING_PERIODS;   // plafond de la modale
   window.setTimeout = function (fn, ms, ...rest) {
     if (ms === idleCycle) ms = window.__IDLE_MS;
-    else if (ms === watchdog) ms = 2500;
+    else if (ms === watchdog) ms = 2000;
+    else if (ms === ceiling) ms = 1500;
     return realST(fn, ms, ...rest);
   };
 });
@@ -89,7 +97,7 @@ await page.type('#composer-text', 'Relance qui va pendre pour toujours.', { dela
 // l'ouverture (cycle d'inactivité), ce qui masquerait le défaut testé.
 await page.evaluate(() => { removeSummaryRecord('bloquee'); removeSummaryRecord('temoin'); });
 await page.evaluate(() => onSendBtn());
-await page.waitForTimeout(6000);   // > watchdog (2,5 s) + plusieurs cycles de résumé
+await page.waitForTimeout(6000);   // > watchdog (2 s) + plafond (1,5 s) + plusieurs cycles de résumé
 
 const state = await page.evaluate(() => ({
   generating: isGenerating('bloquee'),
@@ -110,7 +118,7 @@ const after = await page.evaluate(() => ({
 await browser.close();
 
 const results = [
-  ['A. le chien de garde libère la génération bloquée', !state.generating && state.activeCount === 0, 'isGenerating=' + state.generating + ', registre=' + state.activeCount],
+  ['A. le chien de garde libère la génération bloquée (plafond d\'une modale sans réponse)', !state.generating && state.activeCount === 0, 'isGenerating=' + state.generating + ', registre=' + state.activeCount],
   ['B. la conversation bloquée finit par être résumée', state.sumBloquee || after.sumBloquee, 'résumé=' + (state.sumBloquee || after.sumBloquee)],
   ['C. aucune génération fantôme ne subsiste', !after.stillGenerating, 'isGenerating=' + after.stillGenerating],
   ['D. la conversation témoin est résumée elle aussi', after.sumTemoin, 'résumé témoin=' + after.sumTemoin],

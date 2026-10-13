@@ -244,9 +244,9 @@ HTML, ou à la synchro multi-onglets.
     — un reclic ne doit pas sembler sans effet, il doit être impossible.
 
     **Chien de garde d'inactivité (2026-09-01).** Le même `AbortController`
-    porte une seconde cause d'arrêt : `STREAM_IDLE_TIMEOUT_MS` (storage.js, défaut 180 s, configurable par
+    porte une seconde cause d'arrêt : `STREAM_IDLE_TIMEOUT_MS` (storage.js, défaut 90 s, configurable par
     `stream_idle_timeout_s`)
-    coupe un flux qui se tait trop longtemps. C'est un timeout d'**inactivité**,
+    borne un flux qui se tait trop longtemps. C'est un timeout d'**inactivité**,
     pas de durée totale — armé avant le `fetch`, réarmé à **chaque chunk reçu** :
     une génération légitime peut streamer indéfiniment tant qu'elle produit
     quelque chose. Il couvre les DEUX phases (connexion et flux) ; l'armer
@@ -265,6 +265,36 @@ HTML, ou à la synchro multi-onglets.
     réseau non borné de la base — `silentCompletion`, `fetchModels` et l'appel
     MCP bornaient déjà le leur.
 
+    **Expiration = question, plafond = coupure (modale de silence, 2026-10-13).**
+    L'expiration d'une période ne coupe plus d'office : `watchdogExpiryAction`
+    (api.js, pur) décide. Une conversation **racine** reçoit des hooks
+    `onStall`/`onStallEnd` (`stallHooksFor`, stall.js — dérivés de la génération
+    dans `runConversation`, jamais passés par l'appelant : l'envoi ET le parent
+    réveillé les obtiennent sans liste de call-sites, un agent jamais) ; la
+    modale demande « Attendre » ou « Abandonner » SANS toucher au `fetch` en vol
+    — c'est ce qui rend l'attente possible. « Attendre » (ou Escape) réarme une
+    période, sans limite de nombre : un utilisateur présent attend autant qu'il
+    veut. Du trafic (en-têtes, chunk) remet le compte à zéro et retire la ligne
+    sans réponse ; une réponse arrivée après est ignorée.
+
+    La borne DURE est le **plafond**, `STALL_CEILING_PERIODS` périodes
+    (storage.js) : une ligne de modale restée sans réponse abandonne d'elle-même
+    au bout de ce délai après son apparition, et un agent (pas de modale) attend
+    en silence puis est coupé au même compte de périodes d'affilée. Sans
+    plafond, une modale laissée devant une fenêtre désertée recréerait
+    exactement le bug ci-dessus — génération jamais désenregistrée, conversation
+    jamais résumée. « Tout appel réseau reste borné » tient donc toujours, par
+    une seule définition. Une question qui lève ou rejette vaut abandon : la
+    borne ne dépend pas de l'interface qui la pose.
+
+    La modale est un `<dialog>` natif (`showModal()` : page inerte, focus piégé,
+    top layer), une ligne par conversation bloquée avec son compte à rebours ;
+    les touches n'en sortent pas (`stopPropagation`), sans quoi les raccourcis
+    globaux agiraient dessous. Une ligne d'un autre Espace porte son nom :
+    exception sanctionnée au piège 18, comme les toasts. Dans une fenêtre sans
+    focus, elle allume la pastille d'icône (cf. `docs/pwa.md`), état diffusé aux
+    autres fenêtres (`stall-attention`, `docs/multitab-sync.md`).
+
     La coupure emprunte le chemin d'un Stop (`aborted: true`, contenu partiel
     conservé, pas de rollback) et se distingue par `stalled`, propagé dans le
     **meta** de `onFinal` — jamais dans le sentinel, qui reste `'aborted'` pour
@@ -280,7 +310,12 @@ HTML, ou à la synchro multi-onglets.
     ~4 s) avec le watchdog raccourci à 1 s : chaque chunk le réarme, rien ne
     doit être interrompu. Le symptôme aval, lui, est couvert par
     `verify-idle-summary-stalled.mjs` (cf. piège 5), qui reproduit la
-    conversation jamais résumée derrière une génération bloquée.
+    conversation jamais résumée derrière une génération bloquée — sans répondre
+    à la modale, donc libérée par le plafond. `verify-stall-dialog.mjs` tient la
+    modale : page inerte et raccourcis bloqués, reprise du flux qui la ferme
+    stream encore en vol, Escape et « Attendre » répétés, abandon (partiel
+    gardé), plafond, deux lignes dont une d'un autre Espace, agent sans modale
+    coupé au plafond, et pastille d'icône entre deux fenêtres.
 <a id="p11"></a>
 
 11. **Recherche historique.** Filtre persistant module-level `convSearchFilter`

@@ -33,7 +33,10 @@ function registerServiceWorker() {
 
 // ── Pastille de l'icône d'application (Badging API) ──────────────────────────
 // Un point sur l'icône du Dock / de la barre des tâches tant qu'une réponse
-// terminée attend d'être lue, tous Espaces confondus. Un point et pas un
+// terminée attend d'être lue, tous Espaces confondus — ou qu'une modale de
+// silence attend une réponse dans une fenêtre sans focus, ici ou dans une
+// autre fenêtre (stallAttentionLit, stall.js). Le même point pour les deux :
+// son rôle est de faire revenir, la modale s'explique d'elle-même ensuite. Un point et pas un
 // nombre : la pastille `unread` de la sidebar ne compte rien non plus. Dérivé
 // de `aggregateBadgeState` sans exclusion — jamais de `_unreadConvs` lu ici :
 // l'agrégat ne retient que les racines existantes, le Set peut porter un id
@@ -54,7 +57,8 @@ function appBadgeAction(lit, shown) {
 
 function syncAppBadge() {
   if (typeof navigator === 'undefined' || typeof navigator.setAppBadge !== 'function') return;
-  const lit = aggregateBadgeState(null, null) === 'unread';
+  const lit = aggregateBadgeState(null, null) === 'unread'
+    || (typeof stallAttentionLit === 'function' && stallAttentionLit());
   const action = appBadgeAction(lit, _appBadgeLit);
   if (!action) return;
   _appBadgeLit = lit;

@@ -203,7 +203,7 @@ finit par afficher un état que l'autre ne peut pas justifier.
 | Ligne d'Espace (menu déplié) | `renderSpaceMenu` (ui.js) | cet Espace | reconstruit à chaque ouverture |
 | Sélecteur replié | `#space-select-btn` | **hors** Espace actif | `syncActivityBadges()` |
 | Hamburger | `#sidebar-toggle` | **tout**, Espace actif compris | `syncActivityBadges()` |
-| Icône d'application (PWA) | `syncAppBadge` (pwa.js, Badging API) | **tout**, sans exclusion, `unread` seul | `syncActivityBadges()` |
+| Icône d'application (PWA) | `syncAppBadge` (pwa.js, Badging API) | **tout**, sans exclusion, `unread` seul — ou une modale de silence en attente sans focus (`docs/pwa.md`) | `syncActivityBadges()`, et `syncStallAttention()` (stall.js) |
 
 Les deux premières sont reconstruites intégralement à chaque rendu : aucun état
 DOM à préserver. Le sélecteur et le hamburger vivent en permanence dans le DOM,

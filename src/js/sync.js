@@ -48,6 +48,7 @@ const SYNC_MESSAGE_TYPES = [
   'storage-state',            // { full } — quota IndexedDB atteint (pose) ou place libérée (levée), lot AG
   'unread-updated',           // { } — conversations non lues (badges) modifiées : relire le stockage
   'usage-updated',            // { } — statistiques d'usage enregistrées : relire le store si le drawer est affiché
+  'stall-attention',          // { on } — modale de silence en attente dans une fenêtre sans focus (pastille d'icône) ; heartbeat + TTL
 ];
 
 // Construit une enveloppe bien formée. `rand` injecté (déterminisme) n'est PAS
@@ -103,6 +104,7 @@ function validateEnvelope(obj) {
 //     'readonly-off'   — génération terminée ailleurs.
 //     'storage-state'  — le stockage est plein (`full`) ou ne l'est plus.
 //     'unread-list'    — relire les conversations non lues et repeindre les badges.
+//     'stall-attention' — un pair a (ou n'a plus) une modale de silence en attente.
 //
 // Le contexte porte aussi, pour les décisions liées à la conv, de quoi trancher
 // « affichée ? » (convId === ctx.currentConvId) — l'herméticité de Space
@@ -212,6 +214,12 @@ function routeMessage(env, ctx) {
       // Même forme que les non-lus : rien dans le payload, le récepteur relit
       // le store entier (un agrégat incrémenté ne se transmet pas en delta).
       return { action: 'usage-refresh' };
+    case 'stall-attention':
+      // Indépendant de la conv et du Space : la pastille d'icône est unique
+      // pour l'appli. Tout ce qui n'est pas exactement `true` vaut levée, comme
+      // pour `storage-state` : un payload abîmé ne doit pas allumer un état que
+      // seul le TTL éteindrait.
+      return { action: 'stall-attention', tabId: env.tabId, on: p.on === true };
     default:
       return { action: 'ignore' };
   }

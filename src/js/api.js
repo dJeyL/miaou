@@ -17,12 +17,24 @@
 // couperet sur du travail légitime, et un échange coupé au milieu coûte plus
 // cher que quelques tours de trop.
 //
-// Le défaut de STREAM_IDLE_TIMEOUT_MS (180 s) est un silence maximal ENTRE DEUX
-// CHUNKS, pas une durée totale : un échange légitime peut streamer bien plus
-// longtemps, le borner couperait du travail en cours. Large à dessein — un
-// backend chargé peut mettre longtemps à produire son premier token (prompt
-// volumineux, modèle qui se charge, file d'attente) ; on vise la connexion
-// morte, pas la lenteur.
+// STREAM_IDLE_TIMEOUT_MS est un silence maximal ENTRE DEUX CHUNKS, pas une
+// durée totale : un échange légitime peut streamer bien plus longtemps, le
+// borner couperait du travail en cours. Son expiration n'est plus une coupure
+// d'office pour une conversation racine : elle pose la question à
+// l'utilisateur (modale de silence, stall.js). La coupure sèche n'a lieu
+// qu'au plafond (STALL_CEILING_PERIODS périodes), pour un agent ou une
+// modale laissée sans réponse — un backend chargé peut mettre longtemps à
+// produire son premier token (prompt volumineux, modèle qui se charge, file
+// d'attente) ; on vise la connexion morte, pas la lenteur.
+
+// Pur : que faire à l'expiration n° `expiries` (1, 2…) du chien de garde,
+// comptée depuis le dernier trafic ? 'prompt' = demander à l'utilisateur (la
+// modale porte alors son propre plafond) ; 'rearm' = repartir pour une période
+// en silence ; 'abort' = plafond atteint, couper.
+function watchdogExpiryAction(expiries, canPrompt, ceiling) {
+  if (canPrompt) return 'prompt';
+  return expiries >= ceiling ? 'abort' : 'rearm';
+}
 
 // L'AbortController d'un stream appartient à SA génération (lot T-1a), jamais au
 // module : avec N générations concurrentes, un singleton ferait écraser le
@@ -896,7 +908,11 @@ async function streamCompletion(messages, opts) {
   // Chien de garde d'INACTIVITÉ (pas de durée totale : une génération légitime
   // peut streamer très longtemps, la borner serait la tuer en plein travail).
   // Réarmé à chaque octet reçu ; ne se déclenche que si le flux se tait pendant
-  // STREAM_IDLE_TIMEOUT_MS d'affilée.
+  // STREAM_IDLE_TIMEOUT_MS d'affilée. Son expiration ne coupe plus d'office
+  // (watchdogExpiryAction) : avec `o.onStall` (conversation racine), elle
+  // demande à l'utilisateur d'attendre ou d'abandonner, SANS toucher au fetch
+  // en vol — c'est ce qui rend l'attente possible ; sans, elle repart en
+  // silence jusqu'au plafond STALL_CEILING_PERIODS.
   //
   // Sans lui, une connexion perdue SANS FIN TCP propre (bascule Wi-Fi, VPN qui
   // tombe, backend tué, machine qui retrouve le réseau après coupure) laisse
@@ -914,10 +930,47 @@ async function streamCompletion(messages, opts) {
   // (piège 10) — la même issue qu'une interruption manuelle.
   let stalled = false;
   let idleTimer = null;
+  let expiries = 0;         // expirations d'affilée depuis le dernier trafic
+  let stallAsked = false;   // une question (o.onStall) attend sa réponse
   const clearIdleWatchdog = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
+  const cutStalled = () => { stalled = true; ctrl.abort(); };
+  // Fin d'une question en suspens SANS réponse de l'utilisateur : le flux a
+  // repris, ou le stream s'est terminé par un autre chemin. La modale retire
+  // alors la ligne ; une réponse qui arriverait ensuite est ignorée.
+  const settleStallAsked = () => {
+    if (!stallAsked) return;
+    stallAsked = false;
+    if (o.onStallEnd) o.onStallEnd();
+  };
+  const onIdleExpiry = () => {
+    idleTimer = null;
+    expiries++;
+    const action = watchdogExpiryAction(expiries, !!o.onStall, STALL_CEILING_PERIODS);
+    if (action === 'rearm') { armIdleWatchdog(); return; }
+    if (action === 'abort') { cutStalled(); return; }
+    stallAsked = true;
+    // Une question qui lève ou rejette vaut abandon : la borne doit tenir même
+    // si l'interface qui la pose est cassée.
+    Promise.resolve()
+      .then(() => o.onStall({ silentMs: expiries * STREAM_IDLE_TIMEOUT_MS }))
+      .catch(() => 'abort')
+      .then((choice) => {
+        if (!stallAsked) return;   // le flux a repris, ou le stream est fini
+        stallAsked = false;
+        if (choice === 'wait') armIdleWatchdog();
+        else cutStalled();
+      });
+  };
   const armIdleWatchdog = () => {
     clearIdleWatchdog();
-    idleTimer = setTimeout(() => { stalled = true; ctrl.abort(); }, STREAM_IDLE_TIMEOUT_MS);
+    idleTimer = setTimeout(onIdleExpiry, STREAM_IDLE_TIMEOUT_MS);
+  };
+  // Du trafic : le silence est rompu, on repart d'un cycle plein et le compte
+  // d'expirations retombe à zéro ; une question en suspens devient sans objet.
+  const onTraffic = () => {
+    expiries = 0;
+    settleStallAsked();
+    armIdleWatchdog();
   };
 
   let contentBuffer = '';
@@ -949,6 +1002,9 @@ async function streamCompletion(messages, opts) {
       body: JSON.stringify(body),
       signal: ctrl.signal,
     }).catch((e) => { if (e && e.name !== 'AbortError') e.network = true; throw e; });
+    // En-têtes reçus, quel que soit le statut : le serveur a répondu, une
+    // question de silence en suspens n'a plus d'objet.
+    onTraffic();
     // Les deux dégradations ci-dessous ne se tirent que d'un VERDICT (4xx hors
     // 408/429, `httpStatusIsVerdict`) : un 5xx marquait sinon reasoning_effort
     // ou la vision comme rejetés pour toute la session, sur un simple incident
@@ -990,12 +1046,11 @@ async function streamCompletion(messages, opts) {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    armIdleWatchdog();   // réponse reçue : on repart d'un cycle plein pour le flux
     while (true) {
       const { value, done } = await reader.read()
         .catch((e) => { if (e && e.name !== 'AbortError') e.network = true; throw e; });
       if (done) break;
-      armIdleWatchdog();   // du trafic : le flux est vivant, on repart pour un tour
+      onTraffic();   // du trafic : le flux est vivant, on repart pour un tour
       buffer += decoder.decode(value, { stream: true });
 
       let nl;
@@ -1071,6 +1126,7 @@ async function streamCompletion(messages, opts) {
     }
   } finally {
     clearIdleWatchdog();
+    settleStallAsked();
     // Ne retirer le controller de la génération que s'il est encore le nôtre :
     // un rejeu (reasoning_effort/vision rejetés, appels récursifs ci-dessus) en
     // a déjà posé un plus récent qu'il ne faut pas effacer.
@@ -1137,6 +1193,9 @@ async function runConversation(messages, hooks) {
   // raisonnement accumulé sur tout l'échange (les tours tool_calls peuvent en
   // produire avant l'appel d'outil) ; relayé en live avec ce préfixe.
   let reasoningAcc = '';
+  // Hooks de la modale de silence pour cette génération, ou null (agent, pas de
+  // génération). Garde `typeof` : stall.js n'est pas chargé sous QuickJS.
+  const stallHooks = (h.gen && typeof stallHooksFor === 'function') ? stallHooksFor(h.gen) : null;
 
   for (let tour = 1; tour <= MAX_TURNS; tour++) {
     const result = await streamCompletion(messages, {
@@ -1162,6 +1221,13 @@ async function runConversation(messages, hooks) {
       tools: h.noTools ? undefined : toolDefinitions(h.agentTools, toolExecContext),
       onDelta: h.onDelta,
       onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,
+      // Question posée à l'expiration du chien de garde (stall.js) : ses
+      // hooks sont dérivés de la génération, jamais passés par l'appelant —
+      // tous les chemins d'une conversation racine (envoi, parent réveillé)
+      // l'obtiennent ainsi sans liste de call-sites à tenir, et un agent n'en
+      // a jamais (stallHooksFor rend null).
+      onStall: stallHooks ? stallHooks.onStall : undefined,
+      onStallEnd: stallHooks ? stallHooks.onStallEnd : undefined,
     });
 
     // Interruption volontaire : on fige le contenu déjà reçu (pas de rollback)

@@ -280,6 +280,12 @@ function applySyncDecision(d) {
       scheduleUsageStatsRefresh();
       return;
 
+    case 'stall-attention':
+      // Un pair a une modale de silence que personne ne regarde (ou plus) :
+      // seule la pastille d'icône en dépend (stall.js).
+      applyPeerStallAttention(d.tabId, d.on);
+      return;
+
     case 'soft-lock': {
       // Un pair (d.tabId) affiche la même conv que nous. L'ajouter au set. Si
       // c'est un pair INCONNU, se re-signaler une fois (handshake) pour que le

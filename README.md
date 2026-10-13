@@ -318,7 +318,7 @@ cf. [docs/build.md](docs/build.md).
   "max_agent_turns":         20,
   "js_eval_max_inputs":      10,
   "js_eval_timeout_s":       10,
-  "stream_idle_timeout_s":   180,
+  "stream_idle_timeout_s":   90,
   "mcp_default_timeout_s":   30,
   "attachment_image_max_bytes": 10485760,
   "attachment_max_images":   4,
@@ -377,10 +377,12 @@ est faite au seul point de lecture.
 - `js_eval_timeout_s` : temps d'exécution maximum d'un `js__eval` (défaut 10 s).
   La garde n'est pas désactivable : une valeur nulle ou négative retombe sur le
   défaut.
-- `stream_idle_timeout_s` : silence maximum toléré **entre deux fragments** d'un
-  flux avant de le tenir pour mort (défaut 180 s). Ce n'est pas une durée totale
-  — un échange légitime peut streamer bien plus longtemps. À relever derrière un
-  backend lent à produire son premier token.
+- `stream_idle_timeout_s` : silence toléré **entre deux fragments** d'un flux
+  avant de demander s'il faut attendre ou abandonner (défaut 90 s). Ce n'est pas
+  une durée totale — un échange légitime peut streamer bien plus longtemps. Sans
+  réponse à la question, ou pour un agent, la coupure intervient après trois
+  fois ce délai. À relever derrière un backend lent à produire son premier
+  token.
 - `mcp_default_timeout_s` : délai d'attente **par défaut** d'un appel à un
   serveur MCP (défaut 30 s). Reste modifiable serveur par serveur dans l'UI.
 - `mcp_servers` / `mcp_server` : serveurs MCP pré-configurés, ajoutés

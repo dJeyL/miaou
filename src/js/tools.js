@@ -65,6 +65,8 @@ function helpPlaceholderValues() {
     JS_EVAL_TIMEOUT_S: String(Math.round(JS_EVAL_TIMEOUT_MS / 1000)),
     MAX_AGENTS_PER_CONV: String(MAX_AGENTS_PER_CONV),
     MAX_AGENTS_TOTAL: String(MAX_AGENTS_TOTAL),
+    STREAM_IDLE_S: String(Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)),
+    STALL_CEILING_S: String(Math.round(STREAM_IDLE_TIMEOUT_MS * STALL_CEILING_PERIODS / 1000)),
   };
 }
 

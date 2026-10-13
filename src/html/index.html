@@ -933,6 +933,16 @@ if (window.requestAnimationFrame) {
     </div>
   </div>
 
+  <!-- Modale de silence (stall.js) : le serveur ne répond plus sur une
+       conversation racine — attendre ou abandonner. `<dialog>` natif ouvert
+       par showModal() : page inerte, focus piégé, top layer. Une ligne par
+       conversation bloquée, remplie par renderStallDialog. -->
+  <dialog id="stall-dialog" class="stall-dialog" aria-labelledby="stall-dialog-title" aria-describedby="stall-dialog-desc">
+    <h2 id="stall-dialog-title" class="stall-dialog-title">Le serveur ne répond plus</h2>
+    <p id="stall-dialog-desc" class="stall-dialog-desc">Rien n'arrive du serveur. Le modèle peut être en train de se charger ou de lire un long contexte. «&nbsp;Attendre&nbsp;» relance l'écoute ; «&nbsp;Abandonner&nbsp;» arrête la réponse en gardant ce qui a déjà été reçu.</p>
+    <ul class="stall-rows"></ul>
+  </dialog>
+
   <!-- Inspecteur d'appel d'outil (lot Z) : détail complet d'UN appel, ouvert
        depuis la loupe d'un ack. `drawer-wide` comme les drawers Outils et
        Skills — un payload MCP a besoin de largeur. Corps rempli par

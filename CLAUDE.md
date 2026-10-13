@@ -166,7 +166,9 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   l'inspecteur d'appel, cf. `docs/tools.md` ; `multitab.js` porte la couche
   APPLICATIVE de la synchro multi-onglets — réception, soft-lock, relais
   readonly —, là où `sync.js` garde le noyau pur et l'adaptateur, cf.
-  `docs/multitab-sync.md` ; `pwa.js` porte ce qui ne s'active qu'en page
+  `docs/multitab-sync.md` ; `stall.js` porte la modale de silence du chien de
+  garde du stream — la question « attendre ou abandonner » et son plafond —,
+  cf. piège 10 et `docs/pitfalls-detail.md` ; `pwa.js` porte ce qui ne s'active qu'en page
   servie — enregistrement du service worker, cf. `docs/pwa.md`).
 
   **Les deux listes ne sont recopiées nulle part** — la seule énumération est
@@ -367,8 +369,11 @@ geste ; le développement est dans la doc pointée.
     controller porte le **chien de garde d'inactivité** (`STREAM_IDLE_TIMEOUT_MS`,
     api.js) : réarmé à chaque chunk, il couvre connexion ET flux — sans lui une
     connexion morte sans FIN laisse la génération enregistrée à jamais et
-    `isGenerating()` vrai (conversation jamais résumée, payé en prod). Tout
-    appel réseau reste borné, sans exception.
+    `isGenerating()` vrai (conversation jamais résumée, payé en prod). Son
+    expiration POSE LA QUESTION (modale de silence, `stall.js`) pour une
+    conversation racine ; la borne dure est le plafond `STALL_CEILING_PERIODS`
+    — une modale sans réponse ou un agent y est coupé. Tout appel réseau reste
+    borné, sans exception : jamais d'attente sans plafond.
 11. **Recherche historique.** Filtre persistant `convSearchFilter` ;
     `renderConvList()` reste sans argument exprès.
 12. **Édition d'un message utilisateur.** `sendMessage`/`editUserMessage`

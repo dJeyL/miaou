@@ -196,3 +196,80 @@
   text-align: center;
 }
 .cmdk-empty[hidden] { display: none; }
+
+/* ── Modale de silence (stall.js) ────────────────────────────────────────────
+   `<dialog>` natif en top layer : aucun z-index à régler, le ::backdrop
+   couvre tout (drawers, palette, toasts compris). Mêmes jetons de surface que
+   la palette, sa voisine de fichier. */
+.stall-dialog {
+  /* Le centrage d'un dialog modal vient du `margin: auto` de la feuille du
+     navigateur, que le reset global (`*` à margin 0, base.css) écrase : sans
+     cette ligne, la modale se colle en haut à gauche. */
+  margin: auto;
+  width: min(480px, 92vw);
+  padding: 18px 20px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .45);
+  color: var(--text);
+  font-family: var(--float-font);
+}
+.stall-dialog::backdrop { background: rgba(0, 0, 0, .5); }
+.stall-dialog-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.stall-dialog-desc {
+  margin: 0 0 12px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.stall-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stall-row {
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+.stall-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.stall-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  font-size: 13px;
+}
+.stall-row-space {
+  flex: 0 0 auto;
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.stall-row-status {
+  margin-top: 3px;
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.stall-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}

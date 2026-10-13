@@ -192,6 +192,14 @@ allume, et pourquoi c'est l'agrégat plutôt que `_unreadConvs` : cf.
 fenêtre sans focus est non lue, même sur la conversation affichée) et
 l'effacement au retour.
 
+Le même point s'allume quand une **modale de silence** (le serveur ne répond
+plus, cf. `docs/pitfalls-detail.md`, piège 10) attend une réponse dans une
+fenêtre sans focus — ici ou dans une autre fenêtre (`stallAttentionLit`,
+stall.js, état diffusé par `stall-attention`). Un seul point pour les deux
+causes, décidé : son rôle est de faire revenir, la modale s'explique d'elle-même
+une fois la fenêtre au premier plan. Si un nombre vient un jour, ce sera celui
+des conversations non lues.
+
 API absente (Firefox, file://) : rien. Dans un onglet, le navigateur ignore
 l'appel ou l'applique à l'appli installée du même site. Aucune permission
 requise : constaté le 2026-10-10 sur macOS avec Chrome, appli installée sans

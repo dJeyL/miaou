@@ -107,7 +107,18 @@ const BUILD_DEFAULT_CONTEXT_WINDOW =
 // modèle à long raisonnement avant premier token peut légitimement dépasser la
 // valeur calibrée pour un Ollama local — sans cette clé, la tentation face à un
 // faux positif serait de retirer la garde, ce que le piège 10 interdit.
-const STREAM_IDLE_TIMEOUT_MS = (typeof BUILD_CONFIG.stream_idle_timeout_s === 'number') ? BUILD_CONFIG.stream_idle_timeout_s * 1000 : 180000;
+// Depuis la modale de silence (stall.js), l'expiration n'est plus une coupure
+// pour une conversation racine : c'est une QUESTION posée à l'utilisateur
+// (attendre ou abandonner). D'où un défaut plus court qu'avant (180 s) — la
+// question vient plus tôt, sans rien couper.
+const STREAM_IDLE_TIMEOUT_MS = (typeof BUILD_CONFIG.stream_idle_timeout_s === 'number') ? BUILD_CONFIG.stream_idle_timeout_s * 1000 : 90000;
+// Plafond de silence, en nombre de périodes STREAM_IDLE_TIMEOUT_MS : la seule
+// borne DURE du flux. Un agent (pas de modale) est coupé après ce nombre de
+// périodes de silence d'affilée ; une modale restée sans réponse abandonne
+// d'elle-même au bout de ce nombre de périodes après son apparition. Sans lui,
+// une modale laissée ouverte devant une fenêtre désertée recréerait exactement
+// le bug que le chien de garde corrige (génération jamais désenregistrée).
+const STALL_CEILING_PERIODS = 3;
 // Délai avant de demander l'astuce de l'écran d'accueil.
 // Défaut 0 : l'astuce part dès l'affichage. Le délai reste réglable pour qui
 // veut épargner l'appel quand la conversation vierge n'est qu'une étape de

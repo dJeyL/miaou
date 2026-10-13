@@ -119,6 +119,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `storage-state` | `{ full }` | `storage-state` — indépendant de la conv et du Space ; tout `full` autre que `true` vaut levée |
 | `unread-updated` | `{}` | `unread-list` — relire `miaou-unread` en entier, indépendant de la conv et du Space |
 | `usage-updated` | `{}` | `usage-refresh` — relire le store `usage_stats` si le drawer des statistiques est affiché, indépendant de la conv et du Space |
+| `stall-attention` | `{ on }` | `stall-attention` — un pair a (ou n'a plus) une modale de silence que personne ne regarde ; seule la pastille d'icône en dépend. Tout `on` autre que `true` vaut levée |
 
 ### Émetteurs (livrés)
 
@@ -147,6 +148,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 
 | `saveUnreadConvIds` (storage.js), via `markConvUnread`/`markConvRead` (main.js) | localStorage | `unread-updated` | `{}` — seulement si l'état a changé ; l'élagage de démarrage écrit avant le branchement du canal, donc sans diffuser |
 | `recordModelUsage` (storage.js), via `noteModelUsage` | IDB `tx.oncomplete` | `usage-updated` | `{}` — un message par appel au modèle, le récepteur regroupe ses relectures |
+| `syncStallAttention` (stall.js) | aucun stockage : état d'écran | `stall-attention` | `{ on }` — au changement (ligne de modale ajoutée/retirée, focus de fenêtre), heartbeat toutes les `SYNC_HEARTBEAT_MS` tant qu'il est vrai, `{ on: false }` sur `pagehide` ; le récepteur oublie un pair muet depuis `SYNC_HEARTBEAT_TTL_MS` (onglet mort sans adieu). Diffusé parce que la pastille est unique pour l'appli mais recalculée par chaque fenêtre : sans lui, une fenêtre sans modale l'éteindrait à sa prochaine repeinture |
 
 **Ne diffusent PAS** (décidés, pas des oublis) :
 - `miaou-active-space` (`setActiveSpaceId`) — état **par onglet** ; deux onglets
