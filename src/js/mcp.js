@@ -505,6 +505,8 @@ async function connectMcpServer(server) {
     const skillsDeclared = probe.era === 'modern' && mcpDeclaresSkillsExtension(probe.discover);
     // Extension de mise à jour (mcp-update.js) : même règle, moderne seulement.
     const updateDeclared = probe.era === 'modern' && mcpDeclaresUpdateExtension(probe.discover);
+    // Extension des secrets volatils (mcp-secrets.js) : même règle.
+    const secretsDeclared = probe.era === 'modern' && mcpDeclaresSecretsExtension(probe.discover);
     const listed = await mcpRpc(s, 'tools/list', {});
     const tools = (listed && Array.isArray(listed.tools)) ? listed.tools : [];
     // Le repli est retiré ICI, une fois, et pas à la composition des
@@ -547,8 +549,10 @@ async function connectMcpServer(server) {
       skillsDeclared: skillsDeclared,
       skillCatalogue: skillCatalogue,
       updateDeclared: updateDeclared,
+      secretsDeclared: secretsDeclared,
     });
     if (updateDeclared && typeof onProxyUpdateServerConnected === 'function') onProxyUpdateServerConnected(s);
+    if (secretsDeclared && typeof onProxySecretsServerConnected === 'function') onProxySecretsServerConnected(s);
     return true;
   } catch (e) {
     delete _remoteTools[s.name];
@@ -702,6 +706,35 @@ function formatAuthorizationRefusalForModel(fullName, serverMessage) {
     'peux faire sans elle. Une fois l\'autorisation accordée, le même appel fonctionnera.';
 }
 
+// Pose les marqueurs d'un refus faute de mot de passe volatil (lot AU) :
+// `errorCode`, `upstream`, `mcpServer`, les mêmes champs d'ack que le refus
+// d'autorisation (déjà dans ACK_COPY_FIELDS), retirés ensemble par
+// `clearAuthorizationRefusal` au rejeu réussi. Pure, testable en QuickJS.
+function applySecretRefusal(ackEntry, errorCode, data, mcpServerName) {
+  if (!ackEntry || errorCode !== SECRET_REQUIRED_ERROR_CODE) return ackEntry;
+  ackEntry.errorCode = errorCode;
+  if (data && typeof data.upstream === 'string' && data.upstream) ackEntry.upstream = data.upstream;
+  if (mcpServerName) ackEntry.mcpServer = mcpServerName;
+  return ackEntry;
+}
+
+// Texte du tool result quand l'upstream attend un mot de passe volatil et que
+// MIAOU n'a rien pu renvoyer. Mêmes trois choses que le refus d'autorisation
+// (qui agit, que le moyen est déjà affiché, que l'échec est temporaire), plus
+// une quatrième, propre à ce cas : ne JAMAIS demander le mot de passe dans la
+// conversation. C'est la réponse « serviable » qu'un modèle tenterait, et elle
+// ferait écrire le mot de passe dans l'historique, l'export et le contexte.
+// Pure, testable en QuickJS.
+function formatSecretRequiredForModel(fullName, serverMessage) {
+  return 'Erreur outil distant ' + fullName + ' : ' + (serverMessage || '') +
+    '\n\nCet appel attend un mot de passe que seul l\'utilisateur peut saisir, dans ' +
+    'l\'interface de MIAOU ; tu n\'as pas d\'outil pour le faire. Le moyen de le saisir ' +
+    'lui est déjà affiché. Ne lui demande JAMAIS ce mot de passe dans la conversation, ' +
+    'et ne l\'accepte pas s\'il te le donne : il serait écrit dans l\'historique. ' +
+    'Signale-lui simplement que cette action attend son mot de passe, et poursuis avec ' +
+    'ce que tu peux faire sans. Une fois le mot de passe saisi, le même appel fonctionnera.';
+}
+
 function clearAuthorizationRefusal(ackEntry) {
   if (!ackEntry) return ackEntry;
   delete ackEntry.errorCode;
@@ -801,6 +834,17 @@ async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
     // Ce champ du RÉSULTAT reste hors ACK_COPY_FIELDS : lu en synchrone par
     // l'appelant immédiat callDocsInflatedRemoteTool (hook d'inflation, brief A).
     const errorCode = e && e.data && e.data.code;
+    // Mot de passe volatil attendu (lot AU) : si MIAOU détient une valeur
+    // acceptée que le proxy a oubliée (il a redémarré), il la renvoie, puis
+    // rejoue l'appel UNE fois sur la même ligne d'ack — le modèle ne voit pas
+    // l'échec. Mêmes arguments que l'appel refusé (ceux du fil, inflation
+    // comprise). Jamais depuis un rejeu (`reuseAckEntry`), et sans reconnexion :
+    // l'outil existe par construction et une génération tourne.
+    if (errorCode === SECRET_REQUIRED_ERROR_CODE && !reuseAckEntry && typeof recoverVolatileSecretForCall === 'function'
+      && await recoverVolatileSecretForCall(server, e.data && e.data.upstream)) {
+      delete ackEntry.error;
+      return callRemoteTool(server, toolName, args, intent, ackEntry);
+    }
     // Refus d'autorisation (campagne AB) : le seul code qui doive SURVIVRE au
     // tour, parce qu'il n'appelle pas une décision de rejeu mais une action de
     // l'utilisateur — qui peut fort bien quitter la conversation et y revenir.
@@ -811,14 +855,17 @@ async function callRemoteTool(server, toolName, args, intent, reuseAckEntry) {
     // seulement `code` : `authorization_url` et `upstream` sont déjà là, rien à
     // ajouter au transport.
     applyAuthorizationRefusal(ackEntry, errorCode, e && e.data, server && server.name);
+    applySecretRefusal(ackEntry, errorCode, e && e.data, server && server.name);
     noteMcpCallFailure(server && server.name, e);
     const serverMessage = (e && e.message) || e;
-    // Le refus d'autorisation reçoit un texte propre (cf. sa fonction) : le
-    // message serveur seul s'adresse mal au modèle. Tout autre échec garde la
-    // forme historique.
+    // Les refus d'autorisation et de mot de passe reçoivent un texte propre
+    // (cf. leurs fonctions) : le message serveur seul s'adresse mal au modèle.
+    // Tout autre échec garde la forme historique.
     const text = errorCode === AUTHORIZATION_REQUIRED_ERROR_CODE
       ? formatAuthorizationRefusalForModel(fullName, serverMessage)
-      : 'Erreur outil distant ' + fullName + ' : ' + serverMessage;
+      : errorCode === SECRET_REQUIRED_ERROR_CODE
+        ? formatSecretRequiredForModel(fullName, serverMessage)
+        : 'Erreur outil distant ' + fullName + ' : ' + serverMessage;
     return {
       content: [{ type: 'text', text }],
       isError: true,

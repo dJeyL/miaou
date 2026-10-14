@@ -4716,7 +4716,7 @@ function setConnDot(state, serverId) {
 function syncWorriedLogo() {
   const expr = resolveLogoExpression(
     resolveBackendHealth(activeApiConfig(), REQUIRE_API_KEY, _backendProbe),
-    resolveAuthorizationPending(mcpStatusSnapshot()).severity,
+    resolveAuthorizationPending(mcpStatusSnapshot(), volatileSecretWaitingByServer()).severity,
     isStorageFull());
   document.body.classList.toggle('miaou-worried', expr === 'worried');
   document.body.classList.toggle('miaou-storage', expr === 'storage');
@@ -8709,7 +8709,7 @@ function renderApiServersIfOpen() {
 function syncAuthorizationPending() {
   const el = $('auth-pending');
   if (!el) return;
-  const pending = resolveAuthorizationPending(mcpStatusSnapshot());
+  const pending = resolveAuthorizationPending(mcpStatusSnapshot(), volatileSecretWaitingByServer());
   el.hidden = !pending.visible;
   // Sévérité posée en classe, jamais en style inline : c'est le CSS qui décide
   // de quelle couleur est « injoignable ». Les deux classes sont retirées puis
@@ -8718,7 +8718,9 @@ function syncAuthorizationPending() {
   // l'erreur est réparée et que l'attente d'autorisation réapparaît).
   el.classList.remove('is-error', 'is-pending');
   if (pending.severity === 'error') el.classList.add('is-error');
-  else if (pending.severity === 'pending') el.classList.add('is-pending');
+  // Mot de passe à saisir (lot AU) : même jaune que l'autorisation, une action
+  // à faire et non une panne.
+  else if (pending.severity === 'secret' || pending.severity === 'pending') el.classList.add('is-pending');
   // Libellé AVANT l'infobulle : la règle ARIA de setTip lit le texte visible
   // au moment de l'appel. Le libellé de la pilule dit déjà l'état, donc la
   // bulle porte le geste, et en erreur un second étage (lot AH).
@@ -8756,6 +8758,9 @@ function renderMcpServers() {
   syncAuthorizationPending();
   const wrap = $('mcp-list');
   if (!wrap) return;
+  // Frappe en cours dans un champ de mot de passe volatil : remise après la
+  // reconstruction (mcp-secrets.js).
+  const typing = captureVolatileSecretInputs(wrap);
   wrap.innerHTML = '';
   const servers = loadMcpServers();
   if (!servers.length) {
@@ -8766,6 +8771,7 @@ function renderMcpServers() {
   } else {
     for (const s of servers) wrap.appendChild(buildMcpCard(s, false));
   }
+  restoreVolatileSecretInputs(wrap, typing);
 }
 
 // Ajoute une carte vierge (nouveau serveur) en tête de liste.
@@ -8936,7 +8942,7 @@ function buildMcpCard(server, isNew) {
   const viewStatus = document.createElement('div');
   viewStatus.className = 'mcp-status';
   const liveStatus = (!isNew && server.enabled !== false) ? getMcpStatus(originalName) : null;
-  const pill = mcpStatusPill(liveStatus);
+  const pill = mcpStatusPill(liveStatus, liveStatus ? volatileSecretWaitingFor(originalName) : 0);
   if (pill) {
     if (pill.tone !== 'connecting') viewStatus.classList.add(pill.tone);
     viewStatus.textContent = pill.text;
@@ -9009,6 +9015,9 @@ function buildMcpCard(server, isNew) {
     viewSection.appendChild(row);
   }
 
+  // Mots de passe volatils attendus par le proxy (mcp-secrets.js) : avant les
+  // skills, parce qu'ils conditionnent des outils.
+  if (!isNew) appendVolatileSecretRows(viewSection, originalName, liveStatus);
   appendMcpSkillRows(viewSection, originalName, isNew ? null : liveStatus);
 
   card.appendChild(viewSection);
@@ -9524,7 +9533,7 @@ function openMcpServerCard(name) {
 // rendu de la pastille : la liste a pu changer depuis, et la pastille ne garde
 // aucun état (resolveAuthorizationPending la recalcule à chaque fois).
 function onAuthPendingClick() {
-  const names = resolveAuthorizationPending(mcpStatusSnapshot()).servers;
+  const names = resolveAuthorizationPending(mcpStatusSnapshot(), volatileSecretWaitingByServer()).servers;
   openMcpServers();
   revealServerCard(function() { return mcpCardEls(names); });
 }

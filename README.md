@@ -228,9 +228,10 @@ Détail : [docs/skills.md](docs/skills.md).
 - Configuration dans un sous-écran dédié : nom (= préfixe), URL (transport streamable-http), jeton
   bearer optionnel, timeout (en secondes), listes blanche/noire d'outils. Un serveur
   injoignable n'expose aucun outil, le reste continue de fonctionner.
-- Un serveur tombé ou en attente d'autorisation est signalé en topbar et retenté
-  au retour dans MIAOU ; chaque carte porte un bouton de reconnexion, qui sert
-  aussi à relire la liste d'outils d'un serveur sain (cf. `docs/mcp.md`).
+- Un serveur tombé, en attente d'un mot de passe ou d'une autorisation est
+  signalé en topbar ; un serveur tombé est retenté au retour dans MIAOU ;
+  chaque carte porte un bouton de reconnexion, qui sert aussi à relire la
+  liste d'outils d'un serveur sain (cf. `docs/mcp.md`).
 - Les résultats non-textuels (image, ressource, binaire) sont stockés localement
   et rendus dans la réponse ; les octets récupérés du web ou extraits d'une
   archive deviennent des ressources de première classe, analysables par le calcul
@@ -248,6 +249,10 @@ Détail : [docs/skills.md](docs/skills.md).
   la carte du serveur, contenu vérifié contre ses empreintes, et les voit
   listées comme les skills à déclenchement automatique une fois approuvées — cf.
   [docs/skills.md](docs/skills.md).
+- Un serveur peut attendre un **mot de passe saisi dans MIAOU** (servi par le
+  proxy sous `/app/`) et tenu en mémoire seulement par le proxy : MIAOU le
+  demande, le garde pour la session de l'onglet et le renvoie quand le proxy
+  redémarre — cf. `docs/mcp.md`.
 - Le proxy de miaou-mcp-servers, lancé par son superviseur avec `self_update`,
   propose ses mises à jour : MIAOU les annonce, les déclenche, attend le retour
   du proxy et se recharge s'il est servi par lui — cf. `docs/mcp.md`.

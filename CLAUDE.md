@@ -171,7 +171,9 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   cf. piège 10 et `docs/pitfalls-detail.md` ; `pwa.js` porte ce qui ne s'active qu'en page
   servie — enregistrement du service worker, cf. `docs/pwa.md` ; `mcp-update.js` porte la
   mise à jour à la demande du proxy MCP — extension `miaou/self-update`, de la
-  lecture de l'état au rechargement —, cf. `docs/mcp.md`, point 22).
+  lecture de l'état au rechargement —, cf. `docs/mcp.md`, point 22 ;
+  `mcp-secrets.js` porte les mots de passe volatils tenus par le proxy —
+  extension `miaou/volatile-secrets` —, cf. `docs/mcp.md`, point 23).
 
   **Les deux listes ne sont recopiées nulle part** — la seule énumération est
   celle de `build.py` (constantes en tête de fichier), à lire là-bas. Elles
@@ -607,9 +609,9 @@ ligne qui énumérait des clés `localStorage` migrées depuis vers IndexedDB.
   composer, bulle `_acksOnly` (piège 27), reflux et file échouée.
 - **`docs/mcp.md`** — agrégation MCP distante (`mcp.js` contre `tools.js`) :
   transport, handshake et révision 2026-07-28 (`server/discover`,
-  `mcpProbeVerdict`), contrats d'erreur `REF_UNKNOWN` et
-  `AUTHORIZATION_REQUIRED`, `_meta`, consignes `instructions`, pastille et
-  reprise, skills servies (`skills/list`), mise à jour du proxy (`mcp-update.js`).
+  `mcpProbeVerdict`), erreurs `REF_UNKNOWN` et `AUTHORIZATION_REQUIRED`, `_meta`,
+  `instructions`, pastille et reprise, skills servies, extensions privées du
+  proxy : mise à jour (`mcp-update.js`), secrets volatils (`mcp-secrets.js`).
 - **`docs/model-props.md`** — propriétés déclarées des modèles (fenêtre,
   capacités, niveaux de raisonnement) lues dans les réponses `/models`,
   `/api/tags`, `/api/show`, `/api/ps` ; `resolveContextWindow`,

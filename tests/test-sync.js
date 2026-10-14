@@ -266,3 +266,24 @@ describe('unread-updated — non-lus partagés entre onglets', function() {
     expect(storageEventDecision(UNREAD_CONVS_KEY, '[]', '["c1"]')).toEqual({ action: 'unread-list' });
   });
 });
+
+describe('secrets-changed — mot de passe volatil déposé ou oublié ailleurs', function() {
+  var CTX = { tabId: 'me', currentConvId: 'c1' };
+  it('type accepté par la liste fermée', function() {
+    expect(!!validateEnvelope({ v: 1, type: 'secrets-changed', tabId: 'tab_a', payload: { server: 'proxy' } })).toBe(true);
+  });
+  it('dépôt : relire l\'état de la carte, rien à oublier', function() {
+    expect(routeMessage(makeEnvelope('secrets-changed', 'other', { server: 'proxy' }), CTX)).toEqual({ action: 'secrets-changed', server: 'proxy', forget: null });
+  });
+  it('oubli : la clef à retirer de la garde de session', function() {
+    expect(routeMessage(makeEnvelope('secrets-changed', 'other', { server: 'proxy', forget: 'Mot de passe' }), CTX)).toEqual({ action: 'secrets-changed', server: 'proxy', forget: 'Mot de passe' });
+  });
+  it('seuls la carte et la clef passent : un champ de plus n\'est pas relayé', function() {
+    var d = routeMessage(makeEnvelope('secrets-changed', 'other', { server: 'proxy', value: 'x' }), CTX);
+    expect(Object.keys(d).sort()).toEqual(['action', 'forget', 'server']);
+  });
+  it('sans carte : ignoré ; de soi : ignore-self', function() {
+    expect(routeMessage(makeEnvelope('secrets-changed', 'other', {}), CTX)).toEqual({ action: 'ignore' });
+    expect(routeMessage(makeEnvelope('secrets-changed', 'me', { server: 'p' }), CTX)).toEqual({ action: 'ignore-self' });
+  });
+});

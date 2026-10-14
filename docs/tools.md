@@ -1110,6 +1110,23 @@ qu'ils émettent et n'en font rien — épinglé par un test qui vérifie **auss
 l'ack lui-même est bien rendu, sans quoi les assertions négatives passeraient sur
 un export vide.
 
+### « Saisir le mot de passe » sur un ack refusé (lot AU)
+
+Même patron que le lien d'autorisation : prédicat unique et pur
+`ackSecretTarget(m, cardExists)` (utils.js) → `{ server, upstream }` ou `null`,
+lu par les deux chemins de rendu (`buildToolAck` et
+`refreshAckAuthorizationAffordance`, qui pose l'affordance après le
+round-trip sur un ack peint tôt), jamais un test de code dans le rendu. Requis :
+`errorCode === 'SECRET_REQUIRED'` et `mcpServer` d'une carte qui existe encore
+(résolu par `_ackSecretTarget`, impure). Marqueurs posés par
+`applySecretRefusal` (mcp.js), les mêmes champs d'ack que le refus
+d'autorisation, retirés ensemble par `clearAuthorizationRefusal` au rejeu
+réussi. **Un bouton, pas un lien** : l'action reste dans MIAOU, elle ouvre la
+carte du serveur (`openMcpServerCard`), où sont le formulaire et les services
+en attente ; même puce et même place que le lien d'autorisation (classes
+`ack-authorize ack-secret`). Absent des exports, comme ses voisines. Contrat et
+rejeu : `docs/mcp.md`, point 23.
+
 ### Lien vers la page visée
 
 **Prédicat : `ackPageLink(m)`** (utils.js, pur, testé) → `{url, domain}` ou

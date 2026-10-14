@@ -105,6 +105,9 @@
   transition: color 120ms var(--ease);
 }
 .toast-action svg { width: 11px; height: 11px; flex-shrink: 0; }
+/* Contenu fourni par l'appelant (formulaire de saisie d'un mot de passe
+   volatil) : sous le texte, sur toute la largeur de la colonne. */
+.toast-content { margin-top: 6px; }
 .toast.has-action:hover .toast-action,
 .toast.has-action .toast-body:focus-visible .toast-action { color: var(--accent); }
 

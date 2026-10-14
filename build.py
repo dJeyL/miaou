@@ -40,6 +40,7 @@ JS_ORDER = [
     'stall.js',
     'pwa.js',
     'mcp-update.js',
+    'mcp-secrets.js',
     'main.js',
 ]
 

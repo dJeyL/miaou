@@ -286,6 +286,13 @@ function applySyncDecision(d) {
       applyPeerStallAttention(d.tabId, d.on);
       return;
 
+    case 'secrets-changed':
+      // Un pair a déposé ou oublié un mot de passe volatil : retirer la valeur
+      // oubliée de la garde de session de CET onglet, relire l'état du serveur
+      // (mcp-secrets.js). Pas de file pendant une génération : rien du fil.
+      applyPeerSecretsChanged(d.server, d.forget);
+      return;
+
     case 'soft-lock': {
       // Un pair (d.tabId) affiche la même conv que nous. L'ajouter au set. Si
       // c'est un pair INCONNU, se re-signaler une fois (handshake) pour que le

@@ -691,6 +691,44 @@ lien n'apparaît, la ligne reste rouge avec son message. Le bouton de la liste
 des serveurs, lui, ne prend au serveur que la fin de l'adresse : le début est
 celui que tu as toi-même saisi en configurant ce serveur.
 
+**Quand un serveur attend un mot de passe.** Un serveur compagnon peut être
+configuré pour ne garder aucun mot de passe sur disque : c'est toi qui le
+saisis dans MIAOU, le proxy le garde en mémoire seulement, le temps de sa
+session. Tant qu'il manque, la pastille en haut à droite l'annonce
+(« 1 mot de passe requis ») et une notification te propose directement le
+champ de saisie ; la carte du serveur porte le même champ, la liste des
+services qui attendent ce mot de passe et l'état de chacun.
+
+La saisie n'est possible que dans MIAOU ouvert depuis le proxy lui-même,
+sous `/app/`, avec une carte qui vise la même adresse que la barre
+d'adresse (`127.0.0.1` et `localhost` comptent comme deux adresses
+distinctes). Ouvert autrement, la carte du serveur indique l'adresse à
+ouvrir.
+
+Après l'envoi : un mot de passe accepté fait disparaître la notification et
+les outils du service deviennent utilisables ; un mot de passe refusé est dit
+« incorrect », le champ est vidé pour une nouvelle saisie, et cette même
+valeur ne sera plus jamais essayée (de quoi éviter de verrouiller ton
+compte) ; si la vérification n'a pas pu avoir lieu (service injoignable,
+par exemple), la cause est affichée et il n'y a rien à ressaisir.
+
+MIAOU garde le mot de passe accepté pour la durée de l'onglet seulement, et
+le renvoie tout seul quand le proxy redémarre (mise à jour, relance) :
+d'ordinaire on ne le tape qu'une fois par session. Il n'est jamais écrit
+dans tes données, jamais transmis au modèle, jamais montré dans une
+conversation ni un export. Si ton navigateur propose de l'enregistrer, c'est
+ton choix. Le bouton **Oublier** de la carte le fait oublier au proxy et à
+tous les onglets de MIAOU ; il faudra alors le saisir de nouveau.
+
+Si le modèle appelle un outil de ce service avant que le mot de passe soit
+saisi, l'appel échoue proprement : la ligne d'appel devient rouge et porte un
+bouton **Saisir le mot de passe**, qui ouvre la carte du serveur. Une fois le
+mot de passe accepté, il suffit de redemander la même chose. Le modèle sait
+qu'il ne peut pas le saisir à ta place et qu'il ne doit pas te le demander
+dans la conversation : ne le tape jamais dans un message. Si MIAOU a déjà le
+mot de passe en main (le proxy a seulement redémarré), il le renvoie et
+relance l'appel de lui-même, sans que rien n'y paraisse.
+
 **Quand un serveur donne des consignes d'usage.** Un serveur compagnon peut
 publier, en se connectant, une consigne qui vaut pour l'ensemble de ses outils —
 par exemple « lis telle documentation avant d'utiliser ces outils », ou « signale
@@ -1395,11 +1433,13 @@ sans perdre ta place.
   qu'il se lit.
 - **Serveurs compagnons** : en haut à droite également, une pastille signale ce
   qui demande ton attention côté serveurs. Rouge (« 1 serveur injoignable »)
-  quand un serveur ne répond pas ; jaune (« 1 serveur à autoriser ») quand un
-  serveur donne accès à un service qui attend que tu t'identifies. Un clic ouvre
-  la liste des serveurs, où chaque carte porte son état et ses actions. Quand un
-  serveur est tombé, c'est ce qu'elle affiche en priorité ; les autorisations en
-  attente réapparaissent une fois le problème réglé. Quand tout va bien, elle ne
+  quand un serveur ne répond pas ; jaune (« 1 mot de passe requis ») quand un
+  serveur attend un mot de passe à saisir dans MIAOU, ou (« 1 serveur à
+  autoriser ») quand un serveur donne accès à un service qui attend que tu
+  t'identifies. Un clic ouvre la liste des serveurs, où chaque carte porte son
+  état et ses actions. Quand un serveur est tombé, c'est ce qu'elle affiche en
+  priorité, puis les mots de passe, puis les autorisations : chaque attente
+  réapparaît une fois la précédente réglée. Quand tout va bien, elle ne
   s'affiche pas. Voir le sujet `mcp`.
 - **Plusieurs onglets** : tu peux ouvrir MIAOU dans plusieurs onglets du même
   navigateur ; ils restent synchronisés. Une modification faite dans un onglet

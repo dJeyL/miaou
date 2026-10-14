@@ -263,6 +263,12 @@ function ackAgentConvTarget(m) {
 // évite la paire « constante d'un côté, test de l'autre » qui dérive.
 const AUTHORIZATION_REQUIRED_ERROR_CODE = 'AUTHORIZATION_REQUIRED';
 
+// Code d'erreur machine du proxy de miaou-mcp-servers pour un appel d'outil
+// dont l'upstream attend un mot de passe volatil (mcp-secrets.js). `error.data`
+// porte `{ code, upstream }`, sans la clef : un appel d'outil n'est pas gardé
+// par l'origine. Même slot applicatif que les deux codes voisins.
+const SECRET_REQUIRED_ERROR_CODE = 'SECRET_REQUIRED';
+
 // Origine d'une URL d'autorisation, SI elle est recevable — `null` sinon.
 // Renvoie l'origine plutôt qu'un booléen : l'appelant doit l'AFFICHER en clair
 // (l'utilisateur voit vers où il part avant de cliquer), et un prédicat booléen
@@ -612,13 +618,25 @@ function classifyStorageError(err) {
 // jaune est masquée tant qu'un serveur est KO, et l'utilisateur mené au drawer
 // par la rouge y voit de toute façon la cause de la jaune sur la carte voisine.
 //
-// `severity` ('error' | 'pending') porte la classe CSS ; `servers` ne liste que
-// les serveurs du niveau retenu (c'est ce que le compte désigne, et ce que
-// `recheckMcpServers` doit reconnecter).
+// Trois causes, dans cet ordre de priorité : 'error' (serveur injoignable),
+// 'secret' (mot de passe volatil à saisir, lot AU), 'pending' (upstream à
+// autoriser). Le mot de passe passe avant l'autorisation : c'est le geste le
+// plus court, et ses appels sont refusés tant qu'il manque. `secretWaiting`
+// (facultatif) = `{ <carte>: <nombre de clefs en attente> }`, calculé par
+// mcp-secrets.js ; le libellé compte alors des MOTS DE PASSE (l'unité du
+// geste), et `servers` les cartes qui les attendent. Un serveur en erreur n'y
+// compte pas : l'erreur le classe déjà.
+//
+// `severity` ('error' | 'secret' | 'pending') porte la classe CSS ; `servers`
+// ne liste que les serveurs du niveau retenu (c'est ce que le compte désigne,
+// et ce que `recheckMcpServers` doit reconnecter).
 // Pure, testable en QuickJS.
-function resolveAuthorizationPending(statuses) {
+function resolveAuthorizationPending(statuses, secretWaiting) {
   const errored = [];
   const pendingAuth = [];
+  const pendingSecret = [];
+  let secretCount = 0;
+  const waiting = secretWaiting && typeof secretWaiting === 'object' ? secretWaiting : {};
   if (statuses && typeof statuses === 'object') {
     for (const name of Object.keys(statuses)) {
       const st = statuses[name];
@@ -627,12 +645,15 @@ function resolveAuthorizationPending(statuses) {
       // table de statut a été réécrite en entier (donc sans upstreams) — mais
       // on ne dépend pas de ça pour trancher, l'ordre du test suffit.
       if (st.state === 'error') { errored.push(name); continue; }
+      const n = Object.prototype.hasOwnProperty.call(waiting, name) && waiting[name] > 0 ? Math.floor(waiting[name]) : 0;
+      if (n) { pendingSecret.push(name); secretCount += n; }
       const up = Array.isArray(st.unauthorizedUpstreams) ? st.unauthorizedUpstreams : [];
       if (up.length) pendingAuth.push(name);
     }
   }
   errored.sort();
   pendingAuth.sort();
+  pendingSecret.sort();
   if (errored.length) {
     const n = errored.length;
     return {
@@ -641,6 +662,15 @@ function resolveAuthorizationPending(statuses) {
       count: n,
       servers: errored,
       label: n + ' serveur' + (n > 1 ? 's' : '') + ' injoignable' + (n > 1 ? 's' : ''),
+    };
+  }
+  if (pendingSecret.length) {
+    return {
+      visible: true,
+      severity: 'secret',
+      count: secretCount,
+      servers: pendingSecret,
+      label: secretCount + (secretCount > 1 ? ' mots' : ' mot') + ' de passe requis',
     };
   }
   if (pendingAuth.length) {
@@ -673,8 +703,12 @@ function resolveAuthorizationPending(statuses) {
 // parlée (lot AM). Diagnostic, d'où l'infobulle plutôt que le
 // libellé : savoir qu'un serveur est resté sur le handshake explique qu'il
 // n'offre pas ce que seule la révision 2026-07-28 porte.
+//
+// `secretWaiting` (facultatif) : nombre de mots de passe volatils que le
+// serveur attend (mcp-secrets.js) ; annoncé avant les services à autoriser,
+// dans le même ton (une action à faire, pas une panne).
 // Pure, testable en QuickJS.
-function mcpStatusPill(status) {
+function mcpStatusPill(status, secretWaiting) {
   if (!status) return null;
   if (status.state === 'connecting') return { tone: 'connecting', text: '● connexion…' };
   if (status.state !== 'ok') {
@@ -687,7 +721,10 @@ function mcpStatusPill(status) {
   let text = '● Connecté — ' + count + ' outil' + (count > 1 ? 's' : '');
   const tip = status.protocolVersion ? 'Protocole MCP ' + status.protocolVersion : '';
   const pending = Array.isArray(status.unauthorizedUpstreams) ? status.unauthorizedUpstreams : [];
-  if (!pending.length) return tip ? { tone: 'ok', text: text, tip: tip } : { tone: 'ok', text: text };
+  const secrets = secretWaiting > 0 ? Math.floor(secretWaiting) : 0;
+  if (secrets) text += ', ' + secrets + (secrets > 1 ? ' mots' : ' mot') + ' de passe requis';
+  if (!pending.length && !secrets) return tip ? { tone: 'ok', text: text, tip: tip } : { tone: 'ok', text: text };
+  if (!pending.length) return tip ? { tone: 'pending', text: text, tip: tip } : { tone: 'pending', text: text };
   // « service » et non « serveur » : ce compte-ci porte sur les UPSTREAMS d'une
   // carte, quand celui de la pastille de topbar porte sur les SERVEURS
   // configurés. Le même mot aux deux endroits désignerait deux niveaux
@@ -863,6 +900,19 @@ function mcpInstructionsByPrefix(servers) {
     }
   }
   return out;
+}
+
+// Prédicat UNIQUE « cet ack porte-t-il un refus faute de mot de passe
+// volatil ? » (lot AU). Cible `{ server, upstream }` ou `null`, comme
+// `ackAuthorizationTarget` : l'appelant ouvre la carte du serveur. Pas d'URL
+// ici, rien qui vienne du réseau : la cible est le nom de la carte, figé à
+// l'appel. `cardExists` (résolu par l'appelant, impur) : une carte supprimée
+// ou renommée depuis ne mène nulle part, pas de lien.
+// Pure, testable en QuickJS.
+function ackSecretTarget(m, cardExists) {
+  if (!m || m.errorCode !== SECRET_REQUIRED_ERROR_CODE) return null;
+  if (typeof m.mcpServer !== 'string' || !m.mcpServer || !cardExists) return null;
+  return { server: m.mcpServer, upstream: typeof m.upstream === 'string' && m.upstream ? m.upstream : null };
 }
 
 // Prédicat UNIQUE « cet ack porte-t-il un refus d'autorisation présentable ? »

@@ -49,10 +49,13 @@ const _toastLive = new Map();   // key → { el, timer, remaining, startedAt, pa
 let _toastLayoutWired = false;
 
 // Affiche (ou remplace, par sa clé) un toast.
-//   opts = { key, level: 'info'|'warn'|'error', theme, text, action?, persistent? }
+//   opts = { key, level: 'info'|'warn'|'error', theme, text, action?, body?, persistent? }
 //   action = { label, run } : le clic sur le corps appelle `run()`, puis ferme
 //   — sauf si `run()` rend exactement `false` : l'action a refusé (elle a dit
 //   pourquoi), le toast reste pour qu'on puisse la retenter.
+//   body = nœud DOM fourni par l'appelant (un formulaire de saisie), placé sous
+//   le texte. Exclusif d'`action` : un champ ne peut pas vivre dans le
+//   <button> d'un corps cliquable, le corps reste donc un <div>.
 // `text` et `action.label` sont posés en textContent, jamais en HTML : ils
 // citent des noms de conversation ou des messages d'erreur venus d'ailleurs.
 // Ne vole JAMAIS le focus (D10) : la frappe dans le composer continue.
@@ -98,7 +101,8 @@ function buildToastEl(item, opts) {
   // Rôle par niveau (D10) : une erreur interrompt le lecteur d'écran, le reste
   // attend son tour.
   el.setAttribute('role', item.level === 'error' ? 'alert' : 'status');
-  const action = opts.action && typeof opts.action.run === 'function' ? opts.action : null;
+  const content = opts.body && typeof opts.body === 'object' && opts.body.nodeType === 1 ? opts.body : null;
+  const action = !content && opts.action && typeof opts.action.run === 'function' ? opts.action : null;
   const body = document.createElement(action ? 'button' : 'div');
   body.className = 'toast-body';
   if (action) {
@@ -119,6 +123,11 @@ function buildToastEl(item, opts) {
   text.className = 'toast-text';
   text.textContent = String(opts.text || '');
   main.appendChild(text);
+  if (content) {
+    el.classList.add('has-content');
+    content.classList.add('toast-content');
+    main.appendChild(content);
+  }
   if (action && action.label) {
     const line = document.createElement('span');
     line.className = 'toast-action';

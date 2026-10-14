@@ -1071,6 +1071,33 @@
 .mcp-skill-desc { color: var(--text-2); font-size: 11.5px; line-height: 1.45; }
 .mcp-skill-note { color: var(--text-3); font-size: 11px; line-height: 1.45; }
 
+/* Mots de passe volatils attendus par le proxy : rangées de la même famille
+   que les skills (titre, tête, état coloré), plus la liste des services qui
+   attendent la clef et le formulaire de saisie. */
+.mcp-secrets { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.mcp-secret-consumers { margin: 0; padding-left: 16px; color: var(--text-2); font-size: 11.5px; line-height: 1.45; }
+
+/* Formulaire de saisie, partagé par la carte et le toast. L'identifiant reste
+   dans le DOM (le gestionnaire de mots de passe l'associe au champ) mais hors
+   de la vue et du parcours clavier. */
+.volatile-secret-form { display: flex; gap: 6px; align-items: center; margin-top: 2px; }
+.volatile-secret-form .volatile-secret-user {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); border: 0; white-space: nowrap;
+}
+.volatile-secret-form .volatile-secret-pw {
+  flex: 1; min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 6px 9px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--text);
+}
+.volatile-secret-form .volatile-secret-pw:focus { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); outline: none; }
+.volatile-secret-form .volatile-secret-send { flex-shrink: 0; }
+
 /* Lecture d'une skill MCP (drawer empilé sur la fiche) : réutilise les volets
    de l'inspecteur d'appel (`.inspect-body`, `.inspect-section`, `.inspect-note`). */
 .inspect-note.is-error { color: var(--err); border-left-color: var(--err); }

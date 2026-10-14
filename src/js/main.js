@@ -625,6 +625,10 @@ function unregisterGeneration(gen) {
   // génération mute encore son thread). La condition est bien « aucune
   // génération », pas « pas celle-ci » : une action différée relit le storage.
   if (!_activeGenerations.size) drainPendingSync();
+  // Même condition pour les reconnexions qu'une acceptation de mot de passe
+  // volatil a dû différer (mcp-secrets.js) : elles retirent les outils du
+  // serveur pendant leur aller-retour.
+  if (!_activeGenerations.size && typeof flushVolatileSecretReconnects === 'function') flushVolatileSecretReconnects();
 }
 
 // LE prédicat de génération en vol. Un seul, jamais réécrit localement (même
@@ -1164,7 +1168,7 @@ function wireIdleSummaryActivity() {
   // reste vivante, seul l'onglet passe au second plan.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) summarizeIfNeeded(currentConvId);
-    else { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); checkProxyUpdates(); ackDisplayedConvOnReturn(); }
+    else { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); checkProxyUpdates(); checkVolatileSecrets(); ackDisplayedConvOnReturn(); }
   });
 
   // DEUXIÈME signal de retour, et non un doublon du précédent : `visibilitychange`
@@ -1178,7 +1182,7 @@ function wireIdleSummaryActivity() {
   // ne fait rien quand aucun serveur n'est en défaut, et un double appel
   // rapproché relance au pire un handshake déjà en cours, que `connectMcpServer`
   // absorbe (il réécrit le statut, il n'accumule pas).
-  window.addEventListener('focus', () => { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); checkProxyUpdates(); ackDisplayedConvOnReturn(); });
+  window.addEventListener('focus', () => { recheckMcpServers(); maybeProbeBackend(); checkForNewVersion(); checkProxyUpdates(); checkVolatileSecrets(); ackDisplayedConvOnReturn(); });
 }
 
 // Le parcours d'autorisation se déroule entièrement côté proxy, dans un AUTRE
@@ -2496,6 +2500,7 @@ async function onDeleteMcpCard(cardEl, originalName) {
     disconnectMcpServer(originalName);
     updateMcpSkillApprovals(all => removeMcpSkillApprovals(all, originalName));
     removeMcpSkillSessionApprovals(originalName);
+    pruneVolatileSecrets();   // valeurs gardées en session : supprimées avec la carte
   }
   renderMcpServers();
 }
@@ -5982,6 +5987,7 @@ async function init() {
   checkForNewVersion();      // idem : une page lancée depuis le cache du SW (proxy lent) peut être en retard
   probeServedApp();         // file:// seulement : le proxy MCP sert-il MIAOU ?
   startProxyUpdatePolling(); // minuteur de l'état des proxys MCP ; la première lecture suit chaque connexion (mcp-update.js)
+  startVolatileSecretsPolling(); // minuteur des mots de passe volatils ; la première lecture suit chaque connexion (mcp-secrets.js)
 
   // L'UI est montée (.booted posée, sidebar décidée, thread rendu) : estompe
   // l'overlay de préchargement, en garantissant un temps d'affichage minimum

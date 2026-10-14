@@ -23,7 +23,7 @@ rétabli », qui referme un incident annoncé.
 ## API
 
 ```js
-showToast({ key, level, theme, text, action, persistent })
+showToast({ key, level, theme, text, action, body, persistent })
 dismissToast(key)
 ```
 
@@ -58,6 +58,14 @@ dismissToast(key)
   `revealAndFlashCards`, partagé avec la bibliothèque de fichiers d'Espace
   (arrivant, carte déplacée par le tri, cf. `docs/spaces.md`) : un seul signal
   à la fois, toutes surfaces confondues.
+- `body` — optionnel, un nœud DOM fourni par l'appelant, posé sous le texte
+  (classe `toast-content`, toast `.has-content`). **Exclusif d'`action`** : un
+  champ ne peut pas vivre dans le `<button>` d'un corps cliquable, le corps
+  reste donc un `<div>` et `action` est ignorée. Seul usage : la saisie d'un
+  mot de passe volatil (`volatile-secret:<carte>:<clef>`, mcp-secrets.js, cf.
+  `docs/mcp.md`, point 23). Remplacer un tel toast par sa clé remplace aussi
+  son champ : l'appelant ne ré-émet donc jamais par-dessus une frappe en cours
+  (focus ou contenu dans le champ).
 - `persistent` — erreur de perte de données (P1) : pas d'auto-fermeture. Aussi
   posé sur l'annonce de nouvelle version, qui n'est pas une erreur mais attend
   un geste.
@@ -134,6 +142,11 @@ Le conteneur `#toasts` vit hors de la topbar (qui isole les z-index), à
   interrompt) ou `role="status"`.
 - **Jamais de vol de focus** : la frappe dans le composer continue. Le corps
   cliquable est un `<button>`, la croix aussi : atteignables au clavier.
+  **Une exception** : le toast de saisie d'un mot de passe volatil, ré-émis
+  après une soumission faite DEPUIS son propre champ (mot de passe refusé,
+  vérification impossible), focalise son nouveau champ vidé. Ce n'est pas un
+  vol : la frappe était déjà là, et le remplacement par clé a détruit le
+  champ qui avait le focus. Aucune autre émission de ce toast ne focalise.
 - Minuteur **en pause au survol et au focus** ; au départ du pointeur, il reprend
   avec au moins 1,5 s.
 - Hors de la pile d'Échap : Échap garde son sens (drawers).
@@ -206,6 +219,19 @@ décision qu'elle annonce : la nouvelle version de MIAOU servie (`app-update`,
 (`proxy-update:<nom>` persistant, plus `…:result` pour l'issue d'un `apply` et
 `…:wait` pour la garde locale, mcp-update.js, cf. `docs/mcp.md`, point 22).
 Thème `update` dans les deux cas.
+
+**Mots de passe volatils — émis hors de toasts.js** (mcp-secrets.js, cf.
+`docs/mcp.md`, point 23). Un toast persistant par clef en attente, clé
+`volatile-secret:<carte>:<clef>`, thème `services`, niveau `info` tant que
+rien n'a été essayé, `warn` après un refus ou une vérification impossible.
+Il porte la saisie (`body`) : la clef peut être demandée par un appel venu
+de n'importe où, alors que la carte est dans un drawer fermé. Ré-émis
+seulement si son texte change (fermé à la croix, il ne revient qu'avec un
+fait nouveau), jamais pendant une frappe, ni quand un renvoi automatique est
+dû ; retiré dès que la clef n'attend plus, et pas émis après « Oublier »
+dans l'onglet qui a oublié. Un échec de l'extension elle-même (refus
+d'origine, proxy muet) part dans un second toast d'erreur,
+`…:error`.
 
 ## Vérification
 

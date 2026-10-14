@@ -1088,6 +1088,153 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       provoque pas ; seul le test QuickJS le garde. Le proxy reprend une
       sonde de moins de 30 s telle quelle : le script reclique « Vérifier
       maintenant » jusqu'à voir l'état publié.
+23. **Secrets volatils (extension `miaou/volatile-secrets`, lot AU).** Un mot
+    de passe que l'utilisateur saisit dans MIAOU et que le proxy substitue au
+    marqueur `{"volatile": "<clef>"}` de la config d'un upstream `inprocess`
+    avant de le construire ; le proxy ne le garde qu'en mémoire et l'oublie à
+    chaque redémarrage. Contrat dans `docs/miaou-contract.md` de
+    miaou-mcp-servers (« Secrets volatils »), qui fait foi. Le côté MIAOU vit
+    dans `mcp-secrets.js`.
+    - **Déclaration** : même lecture que la mise à jour
+      (`mcpDeclaresSecretsExtension`, ère moderne seulement), état
+      `_remoteStatus[name].secretsDeclared`. Le proxy ne la publie que s'il
+      reste un upstream consommateur ; sans elle, les trois méthodes rendent
+      `-32601`. Crochet `onProxySecretsServerConnected` appelé par
+      `connectMcpServer`.
+    - **Normalisation à la frontière** : `normalizeVolatileSecretsStatus`
+      (`{ status: { instance, secrets } }`, sans `instance` = illisible),
+      `normalizeVolatileSecretEntry` (clef illisible retirée seule ; verdict
+      inconnu lu comme `indeterminate`, qui ne dit jamais « incorrect » ;
+      `state` autre que `pending` lu `ready`), `normalizeVolatileSecretResult`
+      pour `submit`/`forget` (`{ secret: entrée }`).
+    - **Disponibilité** (`secretsAvailability`, pur) : le proxy n'accepte les
+      trois méthodes, `status` compris, que d'une page qu'il sert ET dont
+      l'origine est celle de la carte. MIAOU évalue le même prédicat avant
+      d'appeler : `not-served` (`file://`), `other-origin` (autre page, ou
+      même proxy sous un autre nom : 127.0.0.1 et localhost sont deux
+      origines), `insecure` (`isSecureContext` faux : le mot de passe
+      passerait en clair). Origine lue par MOTIF (`volatileSecretOrigin`,
+      `new URL` étant absent du moteur des tests), ports par défaut et
+      userinfo retirés. `appUrl` (origine de la carte + `/app/`) est l'adresse
+      que dit la carte (`secretsUnavailableText`).
+    - **État d'une clef** (`volatileSecretKeyState`) : en attente si un
+      consommateur est `pending` ; phase lue sur les consommateurs en
+      attente — `rejected` (seul cas « incorrect »), puis `indeterminate` et
+      `incomplete` (cause dite, rien à ressaisir), puis `untested` et
+      `required`. Un consommateur PRÊT qui a refusé la dernière saisie est un
+      remplacement refusé (l'ancienne instance sert toujours) : dit dans la
+      carte (`volatileSecretConsumerText`), jamais en toast.
+    - **Pilule** : troisième cause de `resolveAuthorizationPending`, second
+      argument `{ <carte>: <clefs en attente> }`
+      (`volatileSecretsWaitingCount`). Ordre : `error` > `secret` > `pending`
+      (le mot de passe avant l'autorisation : geste le plus court, appels
+      refusés tant qu'il manque). Le libellé compte des MOTS DE PASSE,
+      `servers` les cartes qui les attendent ; `secret` est peint du même jaune
+      que `pending`, et `resolveLogoExpression` n'en tient pas compte (une
+      action à faire, pas une panne). `mcpStatusPill` (carte) annonce le même
+      compte avant les services à autoriser.
+    - **Garde en session et renvoi** (purs) : une entrée `sessionStorage` par
+      (carte, URL normalisée de la carte, clef) — `volatileSecretSessionKey` ;
+      l'URL y entre pour qu'une carte dont l'adresse change ne renvoie pas la
+      valeur à un autre serveur. `volatileSecretShouldResend` : valeur gardée,
+      un consommateur `pending` sans verdict, `instance` différente de celle
+      qui l'a acceptée (même instance = « Oublier » fait ailleurs, respecté)
+      et de celle à laquelle on l'a déjà renvoyée (un renvoi par redémarrage
+      constaté). `volatileSecretAfterSubmit` : un refus oublie la valeur
+      gardée si c'est elle qui a été soumise, laisse la gardée en place si
+      c'en était une nouvelle (remplacement refusé) ; une acceptation sans
+      aucun refus garde la valeur soumise (acceptée par un consommateur puis
+      refusée par le suivant : pas gardée, un renvoi la ferait refuser de
+      nouveau au prix d'un échec à l'annuaire) ; indéterminé seul : rien ne
+      change. Refus de l'extension : `volatileSecretFailureText`
+      (`SECRET_ORIGIN_REFUSED`, `SECRET_UNKNOWN_KEY`, `SECRET_INVALID_PARAMS`,
+      par égalité).
+    - **Lecture de l'état** (`readVolatileSecretsStatus`) : à chaque connexion
+      d'un serveur qui déclare l'extension (`onProxySecretsServerConnected`,
+      sans attente), au retour de focus ou de visibilité au plus une fois par
+      minute (`checkVolatileSecrets`), et sur un minuteur de 5 min suspendu
+      page cachée (`startVolatileSecretsPolling`) — c'est lui qui voit un
+      redémarrage du proxy pendant que l'onglet reste au premier plan. Hors du
+      cas servi, aucun appel : l'état est `unavailable` (la disponibilité),
+      la pilule ne compte rien. État en mémoire par serveur, lectures
+      numérotées comme celles de la mise à jour.
+    - **Garde en session** : `sessionStorage`, donc PROPRE À L'ONGLET (un
+      onglet voisin a sa propre copie, ou rien). Purgée des cartes supprimées
+      ou dont l'URL a changé (`pruneVolatileSecrets`, à la suppression, à la
+      connexion et à chaque relecture cadencée). Jamais localStorage ni
+      IndexedDB.
+    - **Dépôt** (`submitVolatileSecret`) : `status` relu juste avant, pour
+      l'`instance` qui jugera la valeur (celle qu'on garde comme « acceptée
+      par »), puis `submit`, puis `volatileSecretAfterSubmit`. **Renvoi**
+      (`resendVolatileSecrets`, après chaque lecture) : `resentFor` posé AVANT
+      l'envoi, une clef à la fois. **Oubli** (`forgetVolatileSecret`) : valeur
+      retirée de la session d'abord, puis `forget`.
+    - **Reconnexion après acceptation** : sans `notifications/tools/list_changed`,
+      c'est `connectMcpServer` qui fait paraître les outils au tout premier
+      démarrage (cache vide côté proxy) et les `instructions` de l'upstream.
+      Différée tant qu'une génération tourne (`connectMcpServer` retire les
+      outils du serveur pendant son aller-retour) et rejouée à la fin de la
+      dernière (`flushVolatileSecretReconnects`, appelé par
+      `unregisterGeneration`).
+    - **Onglets voisins** : type `secrets-changed { server, forget? }` après
+      chaque dépôt ou oubli — jamais la valeur. Le récepteur retire la clef
+      oubliée de SA session et relit l'état du serveur
+      (`applyPeerSecretsChanged`) ; sans lui, un onglet voisin garderait
+      « mot de passe requis » jusqu'à sa prochaine lecture.
+    - **Surfaces** (`syncVolatileSecretSurfaces`, point de passage unique
+      après tout changement) : la pilule, la carte et un toast par clef. Les
+      cartes ne sont re-rendues que si l'état montré a changé (signature de
+      l'état et des gestes en cours, sans l'heure de lecture) : une lecture
+      cadencée qui ne change rien ne reconstruit rien. **Toast** : cf.
+      `docs/toasts.md` (forme à contenu `body`, exception de focus après une
+      soumission depuis le toast, pas d'annonce quand un renvoi est dû).
+      **Carte** (`appendVolatileSecretRows`, section « Mots de passe » avant les
+      skills) : une rangée par clef (état court `volatileSecretRowLabel`,
+      services et leur verdict), le formulaire (« Envoyer », ou « Remplacer »
+      quand la clef est en service : remplacement à chaud), « Oublier » dès
+      qu'un service est en service ou qu'une valeur est gardée ; hors du cas
+      servi, la phrase de `secretsUnavailableText`. **Formulaire**
+      (`buildVolatileSecretForm`, partagé) : identifiant visuellement caché
+      dont la valeur est la clef (`autocomplete="username"`, hors du parcours
+      clavier), champ `current-password` — de quoi laisser le gestionnaire de
+      mots de passe du navigateur associer et proposer d'enregistrer la
+      valeur, au choix de l'utilisateur. **Frappe préservée** : la liste des
+      cartes est reconstruite en entier à chaque rendu ; `renderMcpServers`
+      relève la frappe des champs de mot de passe (valeur, focus, sélection)
+      et la remet après (`captureVolatileSecretInputs` /
+      `restoreVolatileSecretInputs`). Rien n'est gardé au-delà du rendu.
+    - **Refus à l'appel d'outil** (`SECRET_REQUIRED`, `error.data = { code,
+      upstream }`, sans la clef). Dans `callRemoteTool`, avant de marquer
+      l'échec : `recoverVolatileSecretForCall` relit l'état (pilule, carte et
+      toast suivent), renvoie la valeur gardée si un renvoi est dû, SANS
+      reconnexion (l'outil existe, une génération tourne), et rend vrai si le
+      consommateur nommé est désormais prêt. Alors l'appel est rejoué UNE fois
+      avec les mêmes arguments du fil (inflation comprise) sur la même ligne
+      d'ack (`reuseAckEntry`) : le modèle ne voit pas l'échec. Jamais depuis
+      un rejeu, donc pas de boucle. Sinon : marqueurs d'ack
+      (`applySecretRefusal`), bouton « Saisir le mot de passe » (cf.
+      `docs/tools.md`), et un texte au modèle (`formatSecretRequiredForModel`)
+      qui dit qui agit, que le moyen est déjà affiché, que le même appel
+      marchera ensuite — et de ne JAMAIS demander le mot de passe dans la
+      conversation, la réponse « serviable » qui l'écrirait dans l'historique,
+      l'export et le contexte.
+    - Tests : `tests/test-mcp-secrets.js` (purs, et câblage avec `mcpRpc` et
+      `connectMcpServer` stubés, rejeu de `callRemoteTool` compris).
+    - **Vérifié** : `verify-volatile-secrets.mjs`, contre un VRAI proxy de
+      miaou-mcp-servers lancé sur 18765 avec une chaîne de config jetable
+      (`--config config.defaults.json --config <tmp>`, serveur
+      `secret_demo` activé avec une valeur propre au run, état du proxy sous
+      le dossier temporaire, donc cache vide au premier démarrage), redémarré
+      en visant le pid qui écoute sur le port. Scénarios : toast et pilule,
+      refus (champ vidé et focalisé), panne simulée, acceptation (outils
+      apparus par la reconnexion, toast retiré aussi dans un second onglet),
+      frappe gardée à travers un re-rendu, redémarrage (renvoi unique, aucun
+      toast à aucun moment), « Oublier », absence de la valeur (console,
+      localStorage, IndexedDB, DOM, journal du proxy), `file://` et
+      `localhost` contre `127.0.0.1`, et un appel d'outil par un modèle stubé
+      (refus sans valeur, bouton qui ouvre la carte, texte au modèle ; puis,
+      valeur acceptée et proxy redémarré, renvoi et rejeu sans trace). Rejoué
+      contre neuf régressions injectées : rouge à chaque fois.
 
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 

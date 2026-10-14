@@ -1008,8 +1008,43 @@ function _ackMcpServerUrl(entry) {
   return (srv && srv.url) || null;
 }
 
+// Lien « Saisir le mot de passe » d'un appel refusé faute de mot de passe
+// volatil (lot AU) : un bouton, pas un lien — l'action reste DANS MIAOU, elle
+// ouvre la carte du serveur (formulaire, services en attente). Même place
+// que le lien d'autorisation dans la colonne d'icônes.
+function _appendAckSecretBtn(wrap, target) {
+  const box = document.createElement('span');
+  box.className = 'ack-authorize ack-secret';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ack-authorize-link ack-secret-btn';
+  const icon = document.createElement('span');
+  icon.className = 'ack-authorize-icon';
+  icon.innerHTML = ICON_KEY;   // SVG statique author-controlled uniquement
+  btn.appendChild(icon);
+  btn.appendChild(document.createTextNode('Saisir le mot de passe'));
+  setTip(btn, target.upstream
+    ? 'Ouvrir la carte du serveur «\u00a0' + target.server + '\u00a0» (service ' + target.upstream + ')'
+    : 'Ouvrir la carte du serveur «\u00a0' + target.server + '\u00a0»');
+  btn.addEventListener('click', () => openMcpServerCard(target.server));
+  box.appendChild(btn);
+  const after = wrap.querySelector('.ack-undo, .ack-resolved');
+  if (after) wrap.insertBefore(box, after);
+  else wrap.appendChild(box);
+  return box;
+}
+
+function _ackSecretTarget(entry) {
+  return ackSecretTarget(entry, !!(entry && entry.mcpServer && getMcpServer(entry.mcpServer)));
+}
+
 function refreshAckAuthorizationAffordance(node, entry) {
   if (!node || !entry) return;
+  const secret = _ackSecretTarget(entry);
+  if (secret) {
+    if (!node.querySelector('.ack-secret')) _appendAckSecretBtn(node, secret);
+    return;
+  }
   const target = ackAuthorizationTarget(entry, _ackMcpServerUrl(entry));
   if (!target) return;
   if (node.querySelector('.ack-authorize')) return;
@@ -1293,6 +1328,10 @@ function buildToolAck(m) {
   // l'émet pas — vérifié, pas supposé (cf. tests d'export).
   const authTarget = ackAuthorizationTarget(m, _ackMcpServerUrl(m));
   if (authTarget) _appendAckAuthorizeLink(wrap, authTarget);
+  // Mot de passe volatil attendu (lot AU) : même doctrine, prédicat unique
+  // `ackSecretTarget`, absent des exports pour la même raison.
+  const secretTarget = _ackSecretTarget(m);
+  if (secretTarget) _appendAckSecretBtn(wrap, secretTarget);
   if (spec.undo) {
     if (m.resolved) {
       const s = document.createElement('span');
