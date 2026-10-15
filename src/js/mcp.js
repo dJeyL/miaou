@@ -57,7 +57,7 @@ const MCP_CLIENT_INFO = { name: 'miaou', version: '2' };
 const REF_UNKNOWN_ERROR_CODE = 'REF_UNKNOWN';
 
 let _remoteTools = {};   // { servername: [ { name:'servername__x', description, inputSchema }, … ] }
-let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId?, era?, protocolVersion?, unauthorizedUpstreams?, instructions?, skillsDeclared?, skillCatalogue?, updateDeclared? } }
+let _remoteStatus = {};  // { servername: { state:'connecting'|'ok'|'error', count, error?, sessionId?, era?, protocolVersion?, unauthorizedUpstreams?, instructions?, skillsDeclared?, skillCatalogue?, updateDeclared?, lifecycleDeclared?, secretsDeclared? } }
 
 // Dernière tentative de handshake, par serveur : { servername: timestamp }.
 // Registre SÉPARÉ de `_remoteStatus` et non un champ de plus, parce que la
@@ -505,6 +505,8 @@ async function connectMcpServer(server) {
     const skillsDeclared = probe.era === 'modern' && mcpDeclaresSkillsExtension(probe.discover);
     // Extension de mise à jour (mcp-update.js) : même règle, moderne seulement.
     const updateDeclared = probe.era === 'modern' && mcpDeclaresUpdateExtension(probe.discover);
+    // Cycle de vie du proxy (mcp-update.js aussi) : même règle.
+    const lifecycleDeclared = probe.era === 'modern' && mcpDeclaresLifecycleExtension(probe.discover);
     // Extension des secrets volatils (mcp-secrets.js) : même règle.
     const secretsDeclared = probe.era === 'modern' && mcpDeclaresSecretsExtension(probe.discover);
     const listed = await mcpRpc(s, 'tools/list', {});
@@ -549,9 +551,11 @@ async function connectMcpServer(server) {
       skillsDeclared: skillsDeclared,
       skillCatalogue: skillCatalogue,
       updateDeclared: updateDeclared,
+      lifecycleDeclared: lifecycleDeclared,
       secretsDeclared: secretsDeclared,
     });
     if (updateDeclared && typeof onProxyUpdateServerConnected === 'function') onProxyUpdateServerConnected(s);
+    if (lifecycleDeclared && typeof onProxyLifecycleServerConnected === 'function') onProxyLifecycleServerConnected(s);
     if (secretsDeclared && typeof onProxySecretsServerConnected === 'function') onProxySecretsServerConnected(s);
     return true;
   } catch (e) {

@@ -171,7 +171,9 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   cf. piège 10 et `docs/pitfalls-detail.md` ; `pwa.js` porte ce qui ne s'active qu'en page
   servie — enregistrement du service worker, cf. `docs/pwa.md` ; `mcp-update.js` porte la
   mise à jour à la demande du proxy MCP — extension `miaou/self-update`, de la
-  lecture de l'état au rechargement —, cf. `docs/mcp.md`, point 22 ;
+  lecture de l'état au rechargement — et son cycle de vie — extension
+  `miaou/lifecycle`, config modifiée, redémarrage, retour par `instance` —,
+  cf. `docs/mcp.md`, points 22 et 24 ;
   `mcp-secrets.js` porte les mots de passe volatils tenus par le proxy —
   extension `miaou/volatile-secrets` —, cf. `docs/mcp.md`, point 23).
 
@@ -610,8 +612,8 @@ ligne qui énumérait des clés `localStorage` migrées depuis vers IndexedDB.
 - **`docs/mcp.md`** — agrégation MCP distante (`mcp.js` contre `tools.js`) :
   transport, handshake et révision 2026-07-28 (`server/discover`,
   `mcpProbeVerdict`), erreurs `REF_UNKNOWN` et `AUTHORIZATION_REQUIRED`, `_meta`,
-  `instructions`, pastille et reprise, skills servies, extensions privées du
-  proxy : mise à jour (`mcp-update.js`), secrets volatils (`mcp-secrets.js`).
+  `instructions`, pastille et reprise, skills servies, extensions du proxy :
+  mise à jour et cycle de vie (`mcp-update.js`), secrets (`mcp-secrets.js`).
 - **`docs/model-props.md`** — propriétés déclarées des modèles (fenêtre,
   capacités, niveaux de raisonnement) lues dans les réponses `/models`,
   `/api/tags`, `/api/show`, `/api/ps` ; `resolveContextWindow`,

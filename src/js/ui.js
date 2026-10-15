@@ -8966,6 +8966,11 @@ function buildMcpCard(server, isNew) {
     viewRow.appendChild(refreshBtn);
   }
 
+  // Redémarrage du proxy, s'il publie son cycle de vie et que son superviseur
+  // le relance (mcp-update.js). Reconnecter ne relit que la liste d'outils ;
+  // redémarrer relit aussi la configuration du proxy.
+  if (!isNew) appendProxyRestartButton(viewRow, originalName, liveStatus);
+
   // Bouton Modifier — pattern .drawer-btn de la gestion des souvenirs
   const modBtn = document.createElement('button');
   modBtn.className = 'drawer-btn';

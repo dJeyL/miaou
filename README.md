@@ -256,6 +256,8 @@ Détail : [docs/skills.md](docs/skills.md).
 - Le proxy de miaou-mcp-servers, lancé par son superviseur avec `self_update`,
   propose ses mises à jour : MIAOU les annonce, les déclenche, attend le retour
   du proxy et se recharge s'il est servi par lui — cf. `docs/mcp.md`.
+- MIAOU signale une configuration du proxy modifiée depuis son démarrage et le
+  redémarre à la demande, sous superviseur — cf. `docs/mcp.md`.
 - Posture de sécurité assumée non-prod : le jeton est stocké en clair dans le
   navigateur (`localStorage`). Pour un usage exposé, passer par un proxy qui
   détient le secret côté serveur — c'est ce que fait le proxy du projet

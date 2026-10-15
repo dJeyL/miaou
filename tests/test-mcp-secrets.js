@@ -540,3 +540,25 @@ describe('callRemoteTool sur SECRET_REQUIRED — renvoi puis rejeu unique', func
     } finally { clearPendingToolAcks(); m.done(); }
   });
 });
+
+describe('volatileSecretAcceptedNotice — confirmation d\'une saisie acceptée', function() {
+  it('acceptée par un service : nommé, au singulier, info', function() {
+    expect(volatileSecretAcceptedNotice({ key: 'K', consumers: [consumer('api', 'ready', 'accepted')] }))
+      .toEqual({ level: 'info', text: 'Mot de passe «\u00a0K\u00a0» accepté\u00a0: api prêt.' });
+  });
+  it('acceptée par plusieurs : tous nommés, au pluriel, info', function() {
+    expect(volatileSecretAcceptedNotice({ key: 'K', consumers: [consumer('api', 'ready', 'accepted'), consumer('wiki', 'ready', 'accepted')] }))
+      .toEqual({ level: 'info', text: 'Mot de passe «\u00a0K\u00a0» accepté\u00a0: api, wiki prêts.' });
+  });
+  it('succès partiel (un service non vérifié) : avertissement qui le nomme avec son état', function() {
+    expect(volatileSecretAcceptedNotice({ key: 'K', consumers: [consumer('api', 'ready', 'accepted'), consumer('wiki', 'pending', 'indeterminate'), consumer('mail', 'pending', 'incomplete')] }))
+      .toEqual({ level: 'warn', text: 'Mot de passe «\u00a0K\u00a0» accepté\u00a0: api prêt\u00a0; wiki\u00a0: vérification impossible, mail\u00a0: configuration incomplète.' });
+  });
+  it('refusée par l\'un, acceptée par l\'autre : rien (le toast de saisie dit « incorrect »)', function() {
+    expect(volatileSecretAcceptedNotice({ key: 'K', consumers: [consumer('api', 'ready', 'accepted'), consumer('wiki', 'pending', 'rejected')] })).toBe(null);
+  });
+  it('aucun accepté, ou rien d\'envoyé : rien', function() {
+    expect(volatileSecretAcceptedNotice({ key: 'K', consumers: [consumer('api', 'pending', 'indeterminate')] })).toBe(null);
+    expect(volatileSecretAcceptedNotice(null)).toBe(null);
+  });
+});

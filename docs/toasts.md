@@ -218,7 +218,11 @@ décision qu'elle annonce : la nouvelle version de MIAOU servie (`app-update`,
 `app-update-wait`, pwa.js, cf. `docs/pwa.md`) et la mise à jour d'un proxy MCP
 (`proxy-update:<nom>` persistant, plus `…:result` pour l'issue d'un `apply` et
 `…:wait` pour la garde locale, mcp-update.js, cf. `docs/mcp.md`, point 22).
-Thème `update` dans les deux cas.
+Le même fichier émet ceux du cycle de vie d'un proxy (point 24) :
+`proxy-lifecycle:<nom>` persistant, une fois par modification de sa config
+(erreur sans action si elle est invalide), et `proxy-restart:<nom>` suivi de
+`…:confirm` (avertissement de coupure, appels en vol à couper : l'action
+relance le geste confirmé), `…:result` et `…:wait`. Thème `update` partout.
 
 **Mots de passe volatils — émis hors de toasts.js** (mcp-secrets.js, cf.
 `docs/mcp.md`, point 23). Un toast persistant par clef en attente, clé
@@ -231,7 +235,12 @@ fait nouveau), jamais pendant une frappe, ni quand un renvoi automatique est
 dû ; retiré dès que la clef n'attend plus, et pas émis après « Oublier »
 dans l'onglet qui a oublié. Un échec de l'extension elle-même (refus
 d'origine, proxy muet) part dans un second toast d'erreur,
-`…:error`.
+`…:error`. Une saisie acceptée par tous les services qui ont rendu un verdict
+est confirmée par un toast éphémère `…:accepted` (`volatileSecretAcceptedNotice`,
+services nommés ; `warn` pour un succès partiel, quand un autre service n'a
+pas rendu « accepté », nommé avec son état), dans l'onglet qui a saisi seulement, et jamais pour un
+renvoi automatique : la disparition du toast de saisie et de la pilule ne se
+remarquait guère.
 
 ## Vérification
 

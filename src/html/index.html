@@ -777,11 +777,11 @@ if (window.requestAnimationFrame) {
         <button class="btn-ghost" id="served-app-btn" onclick="openServedApp()" hidden>Ouvrir la version servie</button>
         <span class="hint">Fichier ouvert directement et version servie ne partagent pas leurs données&nbsp;: chacun a son propre stockage, de même que deux adresses du même proxy (localhost et 127.0.0.1). Pour passer de l'un à l'autre, exporter puis importer (catégorie Données, «&nbsp;Export / import complet&nbsp;»).</span>
       </div>
-      <!-- Mise à jour à la demande des serveurs MCP : un bloc par serveur qui
-           publie l'extension miaou/self-update, posé par
-           syncProxyUpdateSurface (mcp-update.js). -->
+      <!-- Mise à jour et redémarrage à la demande des serveurs MCP : un bloc
+           par serveur qui publie l'extension miaou/self-update ou
+           miaou/lifecycle, posé par syncProxyUpdateSurface (mcp-update.js). -->
       <div class="field">
-        <label>Mise à jour des serveurs MCP</label>
+        <label>Serveurs MCP&nbsp;: mise à jour et redémarrage</label>
         <div class="proxy-update-list" id="proxy-update-list"></div>
       </div>
           </div>

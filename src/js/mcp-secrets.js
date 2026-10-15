@@ -243,6 +243,26 @@ function volatileSecretAfterSubmit(entry, submittedIsKept) {
   return 'none';
 }
 
+// Confirmation d'une saisie acceptée : `{ level, text }`, ou null. Acceptée =
+// au moins un service l'a acceptée et aucun ne l'a refusée (un refus garde son
+// toast de saisie, « incorrect », que la confirmation contredirait). Si
+// d'autres services n'ont pas rendu « accepté » (vérification impossible,
+// configuration incomplète…), c'est un succès PARTIEL : avertissement, qui les
+// nomme avec leur état, pour ne pas se lire comme un succès total.
+function volatileSecretAcceptedNotice(entry) {
+  const consumers = entry && Array.isArray(entry.consumers) ? entry.consumers : [];
+  if (consumers.some(c => c.verdict === 'rejected')) return null;
+  const ok = consumers.filter(c => c.verdict === 'accepted').map(c => c.upstream);
+  if (!ok.length) return null;
+  const rest = consumers.filter(c => c.verdict !== 'accepted').map(c => c.upstream + '\u00a0: '
+    + (c.verdict === 'indeterminate' ? 'vérification impossible'
+      : c.verdict === 'incomplete' ? 'configuration incomplète'
+      : c.verdict === 'untested' ? 'non testé' : 'en attente'));
+  const text = 'Mot de passe «\u00a0' + entry.key + '\u00a0» accepté\u00a0: ' + ok.join(', ')
+    + (ok.length > 1 ? ' prêts' : ' prêt') + (rest.length ? '\u00a0; ' + rest.join(', ') : '') + '.';
+  return { level: rest.length ? 'warn' : 'info', text: text };
+}
+
 // Texte d'un refus de l'extension elle-même (garde d'origine, paramètres,
 // clef inconnue), cause gardée. Code testé par ÉGALITÉ.
 function volatileSecretFailureText(err) {
@@ -527,6 +547,13 @@ async function submitVolatileSecret(name, key, value) {
     }
     const kept = loadKeptVolatileSecret(server, key);
     const r = await _depositVolatileSecret(server, key, value, instance, !!(kept && kept.value === value));
+    // Confirmation du geste, dans cet onglet seulement : le toast de saisie et
+    // la pilule disparaissent, ce qui ne se remarque guère. Jamais pour un
+    // renvoi automatique (resendVolatileSecrets), qui doit rester invisible.
+    const accepted = volatileSecretAcceptedNotice(r.entry);
+    if (accepted && typeof showToast === 'function') {
+      showToast({ key: volatileSecretToastKey(name, key) + ':accepted', level: accepted.level, theme: 'services', text: accepted.text });
+    }
     return { entry: r.entry, error: r.error };
   } finally {
     delete _volatileSecretBusy[busy];

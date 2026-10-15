@@ -238,10 +238,12 @@ tranché par un pur, `installSurfaceState`, et posé par `syncInstallSurface`
 - **file://** : MIAOU ne s'installe pas. Une ligne fixe rappelle que fichier et
   version servie ont chacun leur stockage, et renvoie à l'export/import complet.
 
-La même catégorie porte un second champ, « Mise à jour des serveurs MCP », qui
-ne dépend pas du mode de chargement : il dit l'état de chaque proxy qui publie
-l'extension `miaou/self-update` et propose sa mise à jour (`mcp-update.js`,
-cf. `docs/mcp.md`, point 22).
+La même catégorie porte un second champ, « Serveurs MCP : mise à jour et
+redémarrage », qui ne dépend pas du mode de chargement : il dit l'état de
+chaque proxy qui publie l'extension `miaou/self-update` et propose sa mise à
+jour, et, pour chaque proxy qui publie `miaou/lifecycle`, si sa config a
+changé depuis son démarrage, avec un bouton « Redémarrer » sous superviseur
+(`mcp-update.js`, cf. `docs/mcp.md`, points 22 et 24).
 
 **Sonde de la version servie depuis file://** (`probeServedApp`, au démarrage).
 Candidats : les origines http(s) des serveurs MCP configurés, suffixées de

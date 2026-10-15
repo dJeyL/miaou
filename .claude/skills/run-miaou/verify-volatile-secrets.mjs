@@ -14,13 +14,13 @@
 //      passe requis », toast de saisie ; un second onglet voit le même toast ;
 //   B. valeur fausse depuis le toast : « incorrect », champ vidé et focalisé,
 //      rien gardé en session ; valeur « injoignable » : non vérifié, cause dite ;
-//   C. bonne valeur : toast retiré (ici ET dans l'onglet voisin), pilule
-//      éteinte, valeur gardée en session, serveur reconnecté (outils du
+//   C. bonne valeur : toast retiré (ici ET dans l'onglet voisin), toast de
+//      confirmation dans l'onglet qui a saisi seulement, pilule éteinte, valeur gardée en session, serveur reconnecté (outils du
 //      service, absents au premier démarrage, désormais listés) ;
 //   D. carte : section « Mots de passe », frappe en cours conservée à travers
 //      un re-rendu ;
 //   E. redémarrage du proxy : nouvelle instance, valeur RENVOYÉE sans geste,
-//      aucun toast ;
+//      aucun toast, ni de saisie ni de confirmation ;
 //   F. « Oublier » depuis la carte : valeur retirée de la session, service en
 //      attente, pas de toast dans cet onglet (geste délibéré) ;
 //   G. la valeur n'apparaît ni dans la console, ni dans localStorage, ni dans
@@ -55,6 +55,7 @@ const KEY = 'Mot de passe de démonstration';
 const VALUE = 'Zq7-volatil-' + Math.random().toString(36).slice(2, 8);
 const WRONG = 'faux-' + VALUE.slice(-6);
 const TOAST = `volatile-secret:${CARD}:${KEY}`;
+const ACCEPTED_SEL = `.toast[data-key="${TOAST}:accepted"]`;
 
 const failures = [];
 let passed = 0;
@@ -197,6 +198,7 @@ try {
   await page.waitForFunction((s) => { const t = document.querySelector(s); return t && /non vérifié/.test(t.textContent); }, toastSel, { timeout: 10000 }).catch(() => {});
   const tB = await toastText(page) || '';
   check('B : panne : « non vérifié », jamais « incorrect », cause dite', /non vérifié/.test(tB) && !/incorrect/.test(tB) && /Cause/.test(tB), tB);
+  check('B : ni le refus ni la panne ne sont confirmés', !(await page.$(ACCEPTED_SEL)));
 
   // ── C ─────────────────────────────────────────────────────────────────────
   console.log('\nC. bonne valeur');
@@ -204,6 +206,10 @@ try {
   await waitConsumer(page, "c.verdict === 'accepted' && c.state === 'ready'", 'acceptation');
   await page.waitForFunction((s) => !document.querySelector(s), toastSel, { timeout: 10000 }).catch(() => {});
   check('C : toast retiré', !(await page.$(toastSel)));
+  await page.waitForSelector(ACCEPTED_SEL, { timeout: 10000 }).catch(() => {});
+  const accC = await page.evaluate((s) => { const t = document.querySelector(s); return t ? { text: t.querySelector('.toast-text').textContent, level: t.dataset.level } : null; }, ACCEPTED_SEL);
+  check('C : toast de confirmation, service nommé, niveau info',
+    !!accC && accC.text === `Mot de passe «\u00a0${KEY}\u00a0» accepté\u00a0: secret_demo prêt.` && accC.level === 'info', accC);
   check('C : pilule éteinte', await page.evaluate(() => document.getElementById('auth-pending').hidden));
   check('C : valeur gardée en session, acceptée par l\'instance courante', await page.evaluate((v) => {
     const k = Object.keys(sessionStorage).find(x => x.indexOf('miaou-volatile-secret:') === 0);
@@ -214,6 +220,7 @@ try {
   check('C : serveur reconnecté, outils du service désormais listés', toolsC);
   const gone2 = await page2.waitForFunction((s) => !document.querySelector(s), toastSel, { timeout: 15000 }).then(() => true, () => false);
   check('C : toast retiré aussi dans l\'onglet voisin (signal sans valeur)', gone2);
+  check('C : pas de confirmation dans l\'onglet voisin (il n\'a rien saisi)', !(await page2.$(ACCEPTED_SEL)));
   check('C : l\'onglet voisin n\'a rien en session (garde propre à l\'onglet)', await page2.evaluate(() => Object.keys(sessionStorage).every(k => k.indexOf('miaou-volatile-secret:') !== 0)));
 
   // ── D ─────────────────────────────────────────────────────────────────────
@@ -238,12 +245,18 @@ try {
   await stopProxy();
   check('E : proxy arrêté', !listeningPid());
   check('E : redémarré', await startProxy());
-  await page.evaluate((s) => {
+  // La confirmation de C est éphémère : retirée avant d'observer, pour que
+  // toute apparition pendant E soit celle du renvoi.
+  await page.evaluate((a) => { const t = document.querySelector(a); if (t) dismissToast(t.dataset.key); }, ACCEPTED_SEL);
+  await page.evaluate(({ s, a }) => {
     window.__secretCalls = [];
     window.__toastSeen = false;
-    new MutationObserver(() => { if (document.querySelector(s)) window.__toastSeen = true; })
-      .observe(document.getElementById('toasts'), { childList: true, subtree: true });
-  }, toastSel);
+    window.__acceptedSeen = false;
+    new MutationObserver(() => {
+      if (document.querySelector(s)) window.__toastSeen = true;
+      if (document.querySelector(a)) window.__acceptedSeen = true;
+    }).observe(document.getElementById('toasts'), { childList: true, subtree: true });
+  }, { s: toastSel, a: ACCEPTED_SEL });
   // Ce que fait le retour de focus : reconnexion du serveur, puis lecture.
   await page.evaluate(() => connectMcpServer(getMcpServer('sec')));
   const resent = await page.waitForFunction((b) => {
@@ -254,6 +267,7 @@ try {
   check('E : nouvelle instance, valeur renvoyée sans geste, service prêt', resent);
   check('E : un seul dépôt', await page.evaluate(() => window.__secretCalls.filter(m => m === 'miaou/secrets/submit').length === 1), await page.evaluate(() => window.__secretCalls));
   check('E : aucun toast de saisie, à aucun moment (pas d\'annonce avant le renvoi)', await page.evaluate(() => !window.__toastSeen));
+  check('E : aucune confirmation pour un renvoi automatique', await page.evaluate(() => !window.__acceptedSeen));
 
   // ── F ─────────────────────────────────────────────────────────────────────
   console.log('\nF. Oublier');

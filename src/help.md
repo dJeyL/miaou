@@ -705,8 +705,10 @@ d'adresse (`127.0.0.1` et `localhost` comptent comme deux adresses
 distinctes). Ouvert autrement, la carte du serveur indique l'adresse à
 ouvrir.
 
-Après l'envoi : un mot de passe accepté fait disparaître la notification et
-les outils du service deviennent utilisables ; un mot de passe refusé est dit
+Après l'envoi : un mot de passe accepté fait disparaître la notification de
+saisie, une courte notification confirme qu'il est accepté et quels services
+sont prêts (en avertissement si un autre service n'a pas pu le vérifier, avec
+son état), et les outils des services prêts deviennent utilisables ; un mot de passe refusé est dit
 « incorrect », le champ est vidé pour une nouvelle saisie, et cette même
 valeur ne sera plus jamais essayée (de quoi éviter de verrouiller ton
 compte) ; si la vérification n'a pas pu avoir lieu (service injoignable,
@@ -780,8 +782,8 @@ qu'elle apporte : une nouvelle version de MIAOU, une mise à jour des serveurs
 MCP, ou les deux. Fermée, elle ne revient que pour une version plus récente
 encore.
 
-L'état détaillé est dans Réglages › Application, « Mise à jour des serveurs
-MCP » : ce que la mise à jour apporte, les titres des modifications, un bouton
+L'état détaillé est dans Réglages › Application, « Serveurs MCP : mise à jour
+et redémarrage » : ce que la mise à jour apporte, les titres des modifications, un bouton
 **Mettre à jour** et un bouton **Vérifier maintenant**. Quand la mise à jour ne
 peut pas se faire d'ici, la raison y est écrite en clair : fichiers modifiés à
 la main dans le dossier du proxy, proxy démarré sans son script de relance
@@ -798,6 +800,41 @@ sert, MIAOU se recharge ensuite tout seul, sauf si un rechargement perdrait
 quelque chose (sujet `installation`). Ouvert depuis un fichier ou servi par
 autre chose, MIAOU ne se recharge pas : seule la mise à jour des serveurs
 compte.
+
+**Quand la configuration du proxy change.** Le proxy de **miaou-mcp-servers**
+lit sa configuration (`config.json` et les fichiers qui l'accompagnent) une
+seule fois, à son démarrage. Si tu la modifies ensuite, MIAOU le remarque :
+au démarrage, toutes les cinq minutes, et surtout quand tu reviens dans la
+fenêtre après l'avoir éditée. Une notification annonce « Configuration du
+proxy MCP modifiée », avec un bouton **Redémarrer** ; fermée, elle ne revient
+que pour une autre modification. Une configuration qui ne permettrait pas au
+proxy de redémarrer (fichier mal formé, valeur refusée) s'annonce en erreur,
+avec la cause : le proxy refuse alors de redémarrer, de quoi ne pas le perdre
+sur une faute de frappe. Changer un simple commentaire ne compte pas.
+
+Réglages › Application dit, pour chaque proxy, si sa configuration est
+inchangée depuis son démarrage, ce qui a changé (les serveurs ou réglages
+concernés, jamais leurs valeurs) ou pourquoi elle est invalide, avec un bouton
+**Redémarrer** et un bouton **Vérifier maintenant**. Le même bouton
+**Redémarrer** figure sur la carte du serveur (Paramètres → Serveurs MCP), à
+côté du glyphe de rafraîchissement : rafraîchir relit la liste des outils,
+redémarrer relit aussi la configuration du proxy. Le redémarrage reste possible
+sans aucune modification, par exemple pour débloquer un service qui ne répond
+plus. Il n'est proposé que si le proxy a été lancé par son script de relance
+(`scripts/supervise.sh`) ; sinon, c'est à faire à la main, et la ligne le dit.
+
+Avant de redémarrer, MIAOU prévient quand la modification touche l'adresse du
+proxy (`port`, `host`), son authentification (`auth`), ou le dossier de MIAOU
+qu'il sert alors que c'est lui qui sert cette page : après le redémarrage, la
+carte du serveur pourrait viser une adresse ou un jeton qui ne marchent plus,
+et il faudrait la modifier. L'avertissement peut être de trop (une option du
+lancement peut rendre le changement sans effet) ; un second clic confirme. Si
+des outils du proxy sont en train de travailler, chez toi ou chez un autre
+client, MIAOU indique combien d'appels seraient coupés et demande
+confirmation ; une réponse en cours dans MIAOU doit, elle, être terminée ou
+arrêtée d'abord. Comme pour une mise à jour, les outils disparaissent quelques
+secondes, MIAOU attend le retour du proxy et le confirme, et les mots de passe
+déjà saisis sont renvoyés tout seuls.
 
 Pour l'accès au web, le projet compagnon **miaou-mcp-servers** fournit des
 serveurs prêts à l'emploi (téléchargement et recherche de pages web) : c'est la

@@ -23,6 +23,21 @@
 //      « proxy MCP revenu », jamais de rechargement ;
 //   D. fichier suivi modifié dans le clone du proxy : mise à jour bloquée,
 //      toast « à faire à la main » vers Réglages, aucun bouton « Mettre à jour ».
+// Cycle de vie (extension miaou/lifecycle), sur la même page file://, en
+// éditant le config.json du clone (jamais celui de Julien) :
+//   E. config inchangée (un commentaire seul modifié ne compte pas), bouton
+//      « Redémarrer » dans Réglages › Application ET sur la carte du drawer ;
+//   F. config modifiée : ligne et toast, une fois par modification (fermé, il
+//      ne revient pas ; une AUTRE modification le ramène) ;
+//   G. port changé : avertissement de coupure AVANT tout redémarrage, rien
+//      n'est demandé au proxy tant qu'il n'est pas confirmé ;
+//   H. config invalide (JSON tronqué) : toast d'erreur avec la cause, redémarrage
+//      refusé par le proxy (RESTART_CONFIG_INVALID), proxy toujours en marche ;
+//   I. appel d'outil en vol : refus, confirmation avec le compte du refus,
+//      « Couper et redémarrer » (force) depuis la carte → retour reconnu à
+//      l'instance, config relue inchangée, toast retiré ;
+//   J. redémarrage volontaire sans aucune modification, depuis Application.
+// Les phases A et C attendent elles aussi le retour par `instance`.
 //
 // Usage : node verify-proxy-update.mjs [--headed] [--keep]
 // --keep laisse le dossier temporaire (journal du superviseur compris).
@@ -88,6 +103,10 @@ function publish(subject, fn) {
   return git(pub, 'rev-parse', 'HEAD');
 }
 
+function rebootCount() {
+  try { return (readFileSync(logPath, 'utf-8').match(/^supervise: redémarrage demandé/gm) || []).length; } catch (e) { return 0; }
+}
+
 function relaunchCount() {
   try { return (readFileSync(logPath, 'utf-8').match(/relance du proxy/g) || []).length; } catch (e) { return 0; }
 }
@@ -137,15 +156,23 @@ async function configureServer(page) {
   await waitUpToDate(page);
 }
 
+// Boucle côté Node, pas un prédicat async dans waitForFunction : en phase F, un
+// tel prédicat est passé au vert sans que sa condition soit vraie.
 async function waitUpToDate(page) {
-  await page.waitForFunction(async (name) => {
-    const st = getMcpStatus(name);
-    if (!st || st.state !== 'ok' || !st.updateDeclared) return false;
-    const e = proxyUpdateEntry(name);
-    if (e && e.status && e.status.state === 'up_to_date') return true;
-    await readProxyUpdateStatus(getMcpServer(name), true);
-    return false;
-  }, SERVER, { timeout: 90000, polling: 2000 });
+  const deadline = Date.now() + 90000;
+  while (Date.now() < deadline) {
+    const ok = await page.evaluate(async (name) => {
+      const st = getMcpStatus(name);
+      if (!st || st.state !== 'ok' || !st.updateDeclared) return false;
+      const e = proxyUpdateEntry(name);
+      if (e && e.status && e.status.state === 'up_to_date') return true;
+      await readProxyUpdateStatus(getMcpServer(name), true);
+      return false;
+    }, SERVER);
+    if (ok) return;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  throw new Error('waitUpToDate : le proxy n\'est pas revenu à up_to_date');
 }
 
 // « Vérifier maintenant » par la surface, puis attente du texte attendu.
@@ -283,6 +310,159 @@ try {
   const tD = await toastText(fpage, 'proxy-update:upd') || '';
   check('D : toast « à faire à la main », action vers les réglages',
     tD.includes('à faire à la main') && tD.includes('Réglages › Application') && !tD.includes('Mettre à jour'), tD);
+
+  // ── Cycle de vie ───────────────────────────────────────────────────────────
+  const cfgPath = path.join(work, 'config.json');
+  const baseCfg = { port: PORT, self_update: true, miaou_dist: 'miaou_dist' };
+  const writeCfg = (extra) => writeFileSync(cfgPath, JSON.stringify(Object.assign({}, baseCfg, extra || {})));
+  const lc = (p) => p.evaluate(() => { const e = proxyLifecycleEntry('upd'); return e && e.status ? JSON.parse(JSON.stringify(e.status)) : null; });
+  const appText = (p) => p.evaluate(() => document.getElementById('proxy-update-list').textContent || '');
+  // « Vérifier maintenant » jusqu'à ce que la ligne de config dise `expect`.
+  async function checkLifecycle(p, expect) {
+    await p.evaluate(() => openSettingsCategory('application'));
+    await p.waitForFunction((t) => {
+      const l = document.getElementById('proxy-update-list');
+      if ((l.textContent || '').includes(t)) return true;
+      const b = [...l.querySelectorAll('button')].find(x => x.textContent === 'Vérifier maintenant');
+      if (b && !b.disabled) b.click();
+      return false;
+    }, expect, { timeout: 60000, polling: 1500 });
+  }
+  const closeToast = (p, key) => p.evaluate((s) => { const t = document.querySelector(s + ' .toast-x'); if (t) t.click(); }, toastSel(key));
+  async function clickAppRestart(p) {
+    await p.evaluate(() => openSettingsCategory('application'));
+    await p.evaluate(() => {
+      const b = [...document.querySelectorAll('#proxy-update-list button')].find(x => x.textContent === 'Redémarrer');
+      if (!b) throw new Error('pas de bouton Redémarrer dans Application');
+      b.click();
+    });
+  }
+
+  console.log('\nE. cycle de vie : config inchangée');
+  // D a laissé l'arbre sale ; sans effet sur la config.
+  await fpage.waitForFunction(() => { const st = getMcpStatus('upd'); return !!(st && st.state === 'ok' && st.lifecycleDeclared); }, null, { timeout: 30000 });
+  check('E : prémisse, la carte déclare miaou/lifecycle', true);
+  writeCfg({ _comment: 'note ajoutée, sans effet' });
+  await checkLifecycle(fpage, 'Configuration inchangée depuis le démarrage du proxy');
+  const e0 = await lc(fpage);
+  check('E : un commentaire seul modifié laisse la config inchangée, proxy relançable',
+    !!e0 && e0.config.state === 'unchanged' && e0.restartable === true, e0);
+  check('E : bouton « Redémarrer » dans Réglages › Application',
+    await fpage.evaluate(() => [...document.querySelectorAll('#proxy-update-list button')].some(b => b.textContent === 'Redémarrer')));
+  await fpage.evaluate(() => { closeSettings(); openMcpServers(); });
+  await fpage.waitForSelector('.mcp-card[data-server-name="upd"] .mcp-restart', { timeout: 10000 }).catch(() => {});
+  check('E : bouton « Redémarrer » sur la carte du serveur',
+    await fpage.evaluate(() => { const b = document.querySelector('.mcp-card[data-server-name="upd"] .mcp-restart'); return !!b && b.getClientRects().length > 0; }));
+  await fpage.evaluate(() => closeMcpServers());
+  check('E : aucun toast de config', (await toastText(fpage, 'proxy-lifecycle:upd')) === null);
+
+  console.log('\nF. config modifiée, un toast par modification');
+  writeCfg({ mcpServers: { weather: { disabled: true } } });
+  await checkLifecycle(fpage, 'Configuration modifiée');
+  check('F : la ligne nomme le chemin changé', (await appText(fpage)).includes('mcpServers.weather'), await appText(fpage));
+  await fpage.evaluate(() => closeSettings());
+  await fpage.waitForSelector(toastSel('proxy-lifecycle:upd'), { timeout: 10000 }).catch(() => {});
+  const tF = await toastText(fpage, 'proxy-lifecycle:upd') || '';
+  check('F : toast « Configuration du proxy MCP modifiée », action « Redémarrer »',
+    tF.startsWith('Configuration du proxy MCP modifiée.') && tF.includes('Redémarrer'), tF);
+  await closeToast(fpage, 'proxy-lifecycle:upd');
+  await fpage.waitForFunction((s) => !document.querySelector(s), toastSel('proxy-lifecycle:upd'), { timeout: 5000 });
+  await fpage.evaluate(() => readProxyLifecycleStatus(getMcpServer('upd')));
+  await fpage.evaluate(() => readProxyLifecycleStatus(getMcpServer('upd')));
+  check('F : fermé, le toast ne revient pas pour la même modification', (await toastText(fpage, 'proxy-lifecycle:upd')) === null);
+  // `bench` est actif par défaut (duckduckgo, lui, est déjà désactivé dans
+  // config.defaults.json : le désactiver ne change rien à la config fusionnée).
+  writeCfg({ mcpServers: { weather: { disabled: true }, bench: { disabled: true } } });
+  // Boucle côté Node : un prédicat async de waitForFunction n'a pas été attendu
+  // ici (passé au vert sans que la condition soit vraie).
+  for (let i = 0; i < 20; i++) {
+    const st = await fpage.evaluate(() => readProxyLifecycleStatus(getMcpServer('upd')).then(s => s && s.config.changed));
+    if (st && st.indexOf('mcpServers.bench') >= 0) break;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  await fpage.waitForSelector(toastSel('proxy-lifecycle:upd'), { timeout: 5000 }).catch(() => {});
+  check('F : une autre modification ramène le toast', !!(await toastText(fpage, 'proxy-lifecycle:upd')),
+    await fpage.evaluate(() => ({ announced: _proxyLifecycleAnnounced.upd, sig: proxyLifecycleSignature(proxyLifecycleEntry('upd').status), busy: _proxyUpdateBusy.upd || '' })));
+
+  console.log('\nG. port changé : avertissement avant le redémarrage');
+  writeCfg({ port: PORT + 1 });
+  await checkLifecycle(fpage, 'port');
+  const instG = (await lc(fpage)).instance;
+  const rebootsG = rebootCount();
+  await clickAppRestart(fpage);
+  await fpage.waitForSelector(toastSel('proxy-restart:upd:confirm'), { timeout: 10000 }).catch(() => {});
+  const tG = await toastText(fpage, 'proxy-restart:upd:confirm') || '';
+  check('G : avertissement qui nomme port et dit quoi faire', tG.includes('touche port') && tG.includes('URL de sa carte'), tG);
+  check('G : action « Redémarrer quand même »', tG.includes('Redémarrer quand même'), tG);
+  await new Promise(r => setTimeout(r, 3000));
+  check('G : rien n\'est demandé au proxy sans confirmation',
+    rebootCount() === rebootsG && (await fpage.evaluate(() => readProxyLifecycleStatus(getMcpServer('upd')).then(s => s && s.instance))) === instG);
+  await closeToast(fpage, 'proxy-restart:upd:confirm');
+  await fpage.evaluate(() => closeSettings());
+
+  console.log('\nH. config invalide');
+  writeFileSync(cfgPath, '{ "port": ' + PORT + ', "self_update": tr');
+  await checkLifecycle(fpage, 'invalide');
+  const tH = await toastText(fpage, 'proxy-lifecycle:upd') || '';
+  const lH = await lc(fpage);
+  check('H : toast d\'erreur « invalide » avec la cause du proxy',
+    tH.startsWith('Configuration du proxy MCP invalide') && !!lH.config.detail && tH.includes(lH.config.detail.slice(0, 20)), { tH, detail: lH.config.detail });
+  check('H : toast sans action', !(await fpage.evaluate((s) => document.querySelector(s).classList.contains('has-action'), toastSel('proxy-lifecycle:upd'))));
+  const rebootsH = rebootCount();
+  await clickAppRestart(fpage);
+  await fpage.waitForFunction(() => { const t = document.querySelector('.toast[data-key="proxy-restart:upd:result"]'); return t && t.textContent.includes('refusé'); }, null, { timeout: 20000 }).catch(() => {});
+  const rH = await toastText(fpage, 'proxy-restart:upd:result') || '';
+  check('H : redémarrage refusé, configuration invalide, cause gardée', rH.startsWith('Redémarrage refusé, configuration invalide'), rH);
+  check('H : le proxy n\'a pas redémarré', rebootCount() === rebootsH && (await lc(fpage)).instance === lH.instance);
+  await fpage.evaluate(() => closeSettings());
+
+  console.log('\nI. appel d\'outil en vol : forçage depuis la carte');
+  writeCfg({ mcpServers: { weather: { disabled: true } } });
+  await checkLifecycle(fpage, 'Configuration modifiée');
+  await fpage.evaluate(() => closeSettings());
+  const instI = (await lc(fpage)).instance;
+  const sleepTool = await fpage.evaluate(() => {
+    const t = (_remoteTools.upd || []).find(d => /sleep$/.test(d.name));
+    return t ? t.name.slice('upd__'.length) : null;
+  });
+  check('I : prémisse, l\'outil sleep du bench est exposé', !!sleepTool, sleepTool);
+  await fpage.evaluate((tool) => {
+    window.__sleepCall = 'pending';
+    const s = Object.assign({}, getMcpServer('upd'), { timeout_s: 60 });
+    mcpRpc(s, 'tools/call', { name: tool, arguments: { seconds: 40 } })
+      .then(() => { window.__sleepCall = 'done'; }, () => { window.__sleepCall = 'cut'; });
+  }, sleepTool);
+  await new Promise(r => setTimeout(r, 1500));
+  const rebootsI = rebootCount();
+  await fpage.evaluate(() => openMcpServers());
+  await fpage.waitForSelector('.mcp-card[data-server-name="upd"] .mcp-restart', { timeout: 10000 });
+  await fpage.click('.mcp-card[data-server-name="upd"] .mcp-restart');
+  await fpage.waitForFunction(() => { const t = document.querySelector('.toast[data-key="proxy-restart:upd:confirm"]'); return t && t.textContent.includes('coupé'); }, null, { timeout: 20000 }).catch(() => {});
+  const cI = await toastText(fpage, 'proxy-restart:upd:confirm') || '';
+  check('I : confirmation avec le compte lu dans le refus', cI.startsWith('1 appel d’outil en cours sera coupé'), cI);
+  check('I : action « Couper et redémarrer », rien de redémarré avant', cI.includes('Couper et redémarrer') && rebootCount() === rebootsI, cI);
+  await fpage.click(toastSel('proxy-restart:upd:confirm') + ' .toast-body');
+  await fpage.waitForFunction(() => { const t = document.querySelector('.toast[data-key="proxy-restart:upd:result"]'); return t && /redémarré\.|pas revenu/.test(t.textContent); }, null, { timeout: 240000, polling: 500 });
+  const rI = await toastText(fpage, 'proxy-restart:upd:result') || '';
+  check('I : « Proxy MCP redémarré. »', rI.startsWith('Proxy MCP redémarré.'), rI);
+  const lI = await lc(fpage);
+  check('I : un autre processus (instance), relancé une fois par le superviseur',
+    !!lI && lI.instance !== instI && rebootCount() === rebootsI + 1, { before: instI, after: lI && lI.instance, reboots: rebootCount() - rebootsI });
+  check('I : config relue inchangée par le nouveau processus, toast retiré',
+    lI.config.state === 'unchanged' && (await toastText(fpage, 'proxy-lifecycle:upd')) === null, lI.config);
+  check('I : l\'appel en vol a été coupé', await fpage.evaluate(() => window.__sleepCall === 'cut'), await fpage.evaluate(() => window.__sleepCall));
+  await fpage.evaluate(() => closeMcpServers());
+
+  console.log('\nJ. redémarrage volontaire, config inchangée');
+  const instJ = lI.instance;
+  const rebootsJ = rebootCount();
+  await clickAppRestart(fpage);
+  await fpage.waitForFunction(() => { const t = document.querySelector('.toast[data-key="proxy-restart:upd:result"]'); return t && /redémarré\.|pas revenu|refusé/.test(t.textContent) && !document.querySelector('#proxy-update-list .proxy-busy'); }, null, { timeout: 240000, polling: 500 });
+  const lJ = await lc(fpage);
+  check('J : aucun avertissement (config inchangée), proxy revenu sous une autre instance',
+    (await toastText(fpage, 'proxy-restart:upd:confirm')) === null && !!lJ && lJ.instance !== instJ && rebootCount() === rebootsJ + 1,
+    { toast: await toastText(fpage, 'proxy-restart:upd:result'), reboots: rebootCount() - rebootsJ });
+  check('J : la carte est reconnectée', await fpage.evaluate(() => getMcpStatus('upd') && getMcpStatus('upd').state === 'ok'));
 
   check('aucune exception non rattrapée dans les pages', pageErrors.length === 0, pageErrors);
 } catch (e) {

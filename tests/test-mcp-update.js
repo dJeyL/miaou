@@ -245,3 +245,336 @@ describe('proxyReloadDecision — recharger automatiquement, sauf perte', functi
     expect(proxyReloadDecision('', 'Génération en cours…')).toBe('none');
   });
 });
+
+// ── Cycle de vie du proxy (extension miaou/lifecycle) ────────────────────────
+
+function wireLifecycle(over, config) {
+  var c = { state: 'unchanged', changed: [], changed_total: 0, detail: null,
+    layers: ['/srv/proxy/config.defaults.json', '/srv/proxy/config.json'], checked_at: '2026-10-15T10:05:00+00:00' };
+  for (var k in (config || {})) c[k] = config[k];
+  var s = { instance: '0123456789abcdef', started_at: '2026-10-15T10:00:00+00:00', restartable: true, restarting: false, config: c };
+  for (var j in (over || {})) s[j] = over[j];
+  // Le SDK ajoute ces deux clés à tout résultat : la lecture ne doit pas s'y fier.
+  return { status: s, _meta: { serverInfo: { name: 'miaou-proxy' } }, resultType: 'complete' };
+}
+
+describe('mcpDeclaresLifecycleExtension', function() {
+  it('présence de la clé, indépendante de miaou/self-update', function() {
+    expect(mcpDeclaresLifecycleExtension({ capabilities: { extensions: { 'miaou/lifecycle': {} } } })).toBe(true);
+    expect(mcpDeclaresLifecycleExtension({ capabilities: { extensions: { 'miaou/self-update': {} } } })).toBe(false);
+    expect(mcpDeclaresUpdateExtension({ capabilities: { extensions: { 'miaou/lifecycle': {} } } })).toBe(false);
+    expect(mcpDeclaresLifecycleExtension(null)).toBe(false);
+  });
+});
+
+describe('normalizeLifecycleStatus — lecture défensive à la frontière', function() {
+  it('réponse enveloppée, renommage en camelCase, _meta et resultType ignorés', function() {
+    var st = normalizeLifecycleStatus(wireLifecycle({}, { state: 'changed', changed: ['mcpServers.weather', 'port'], changed_total: 2 }));
+    expect(st.instance).toBe('0123456789abcdef');
+    expect(st.startedAt).toBe('2026-10-15T10:00:00+00:00');
+    expect(st.restartable).toBe(true);
+    expect(st.restarting).toBe(false);
+    expect(st.config).toEqual({ state: 'changed', changed: ['mcpServers.weather', 'port'], changedTotal: 2, detail: null,
+      layers: ['/srv/proxy/config.defaults.json', '/srv/proxy/config.json'], checkedAt: '2026-10-15T10:05:00+00:00' });
+  });
+  it('sans instance, à plat ou vide : illisible', function() {
+    expect(normalizeLifecycleStatus(wireLifecycle({ instance: '' }))).toBe(null);
+    expect(normalizeLifecycleStatus(wireLifecycle({ instance: 42 }))).toBe(null);
+    expect(normalizeLifecycleStatus(wireLifecycle().status)).toBe(null);
+    expect(normalizeLifecycleStatus(null)).toBe(null);
+  });
+  it('config absente : état nul, listes vides', function() {
+    var st = normalizeLifecycleStatus({ status: { instance: 'abc' } });
+    expect(st.config.state).toBe(null);
+    expect(st.config.changed).toEqual([]);
+    expect(st.config.layers).toEqual([]);
+    expect(st.restartable).toBe(false);
+  });
+  it('état inconnu gardé tel quel', function() {
+    expect(normalizeLifecycleStatus(wireLifecycle({}, { state: 'futur' })).config.state).toBe('futur');
+  });
+  it('changed_total jamais inférieur à la liste, entrées non textuelles retirées', function() {
+    var st = normalizeLifecycleStatus(wireLifecycle({}, { state: 'changed', changed: ['port', 3, '', 'auth'], changed_total: 1 }));
+    expect(st.config.changed).toEqual(['port', 'auth']);
+    expect(st.config.changedTotal).toBe(2);
+    expect(normalizeLifecycleStatus(wireLifecycle({}, { state: 'changed', changed: ['port'], changed_total: 25 })).config.changedTotal).toBe(25);
+  });
+  it('restartable et restarting : vrai seulement si booléen vrai', function() {
+    var st = normalizeLifecycleStatus(wireLifecycle({ restartable: 'true', restarting: 1 }));
+    expect(st.restartable).toBe(false);
+    expect(st.restarting).toBe(false);
+  });
+});
+
+describe('proxyInstanceChanged — un autre processus', function() {
+  it('instance différente : le nouveau', function() {
+    expect(proxyInstanceChanged({ instance: 'b' }, 'a')).toBe(true);
+  });
+  it('même instance : encore l\'ancien, qui s\'arrête', function() {
+    expect(proxyInstanceChanged({ instance: 'a' }, 'a')).toBe(false);
+  });
+  it('sans identité d\'avant, ou lecture illisible : non', function() {
+    expect(proxyInstanceChanged({ instance: 'b' }, null)).toBe(false);
+    expect(proxyInstanceChanged({ instance: 'b' }, '')).toBe(false);
+    expect(proxyInstanceChanged(null, 'a')).toBe(false);
+  });
+});
+
+describe('proxyRestartWaitPlan / proxyRestartLandedFor — par instance, repli sur head', function() {
+  it('instance connue : attente par instance, même quand head ne bouge pas (redémarrage sans mise à jour)', function() {
+    var plan = proxyRestartWaitPlan('a', SHA_A);
+    expect(plan).toEqual({ by: 'instance', before: 'a' });
+    expect(proxyRestartLandedFor(plan, true, { instance: 'b', head: SHA_A })).toBe(true);
+    expect(proxyRestartLandedFor(plan, true, { instance: 'a', head: SHA_B })).toBe(false);
+  });
+  it('instance inconnue (proxy antérieur à miaou/lifecycle) : repli sur head', function() {
+    var plan = proxyRestartWaitPlan(null, SHA_A);
+    expect(plan).toEqual({ by: 'head', before: SHA_A });
+    expect(proxyRestartLandedFor(plan, true, { head: SHA_A })).toBe(false);
+    expect(proxyRestartLandedFor(plan, true, { head: SHA_B })).toBe(true);
+  });
+  it('extension plus déclarée après reconnexion : revenu (l\'ancien la publiait)', function() {
+    expect(proxyRestartLandedFor(proxyRestartWaitPlan('a', SHA_A), false, null)).toBe(true);
+    expect(proxyRestartLandedFor(proxyRestartWaitPlan(null, SHA_A), false, null)).toBe(true);
+  });
+  it('lecture illisible : pas encore', function() {
+    expect(proxyRestartLandedFor(proxyRestartWaitPlan('a', SHA_A), true, null)).toBe(false);
+  });
+});
+
+var LC_CARD = { name: 'proxy', url: 'http://127.0.0.1:8765/mcp', enabled: true };
+
+function mountLifecycle(responses) {
+  var saved = mcpRpc;
+  var calls = [];
+  var queue = responses.slice();
+  localStorage.setItem('miaou-mcp-servers', JSON.stringify([LC_CARD]));
+  _remoteStatus.proxy = { state: 'ok', count: 1, lifecycleDeclared: true };
+  mcpRpc = function(server, method, params) {
+    calls.push({ method: method, params: params });
+    var r = queue.shift();
+    return r instanceof Error ? Promise.reject(r) : Promise.resolve(r);
+  };
+  return { calls: calls, done: function() {
+    mcpRpc = saved;
+    delete _remoteStatus.proxy;
+    _proxyLifecycle = {};
+    localStorage.removeItem('miaou-mcp-servers');
+  } };
+}
+
+describe('readProxyLifecycleStatus / proxyInstanceBeforeRestart', function() {
+  it('lit status sans paramètre, range l\'état normalisé', function() {
+    var m = mountLifecycle([wireLifecycle({}, { state: 'changed', changed: ['port'], changed_total: 1 })]);
+    try {
+      var st = runAsync(readProxyLifecycleStatus(LC_CARD));
+      expect(m.calls[0].method).toBe('miaou/lifecycle/status');
+      expect(m.calls[0].params).toEqual({});
+      expect(st.config.changed).toEqual(['port']);
+      expect(proxyLifecycleEntry('proxy').status.instance).toBe('0123456789abcdef');
+      expect(proxyLifecycleEntry('proxy').error).toBe(null);
+    } finally { m.done(); }
+  });
+  it('échec de lecture : état nul, cause gardée', function() {
+    var m = mountLifecycle([new Error('connexion refusée')]);
+    try {
+      expect(runAsync(readProxyLifecycleStatus(LC_CARD))).toBe(null);
+      expect(proxyLifecycleEntry('proxy').error).toBe('connexion refusée');
+    } finally { m.done(); }
+  });
+  it('identité d\'avant relue à l\'instant, jamais celle de la dernière lecture', function() {
+    var m = mountLifecycle([wireLifecycle({ instance: 'fedcba9876543210' })]);
+    try {
+      _proxyLifecycle.proxy = { status: normalizeLifecycleStatus(wireLifecycle()), error: null, readAt: 1 };
+      expect(runAsync(proxyInstanceBeforeRestart(LC_CARD))).toBe('fedcba9876543210');
+      expect(m.calls.length).toBe(1);
+    } finally { m.done(); }
+  });
+  it('extension non déclarée : null, sans appel', function() {
+    var m = mountLifecycle([]);
+    try {
+      _remoteStatus.proxy.lifecycleDeclared = false;
+      expect(runAsync(proxyInstanceBeforeRestart(LC_CARD))).toBe(null);
+      expect(m.calls.length).toBe(0);
+    } finally { m.done(); }
+  });
+});
+
+function lcStatus(over, config) { return normalizeLifecycleStatus(wireLifecycle(over, config)); }
+
+describe('proxyLifecycleCutPaths — ce qui coupera MIAOU du proxy relancé', function() {
+  it('port, host, auth toujours ; un serveur ou self_update jamais', function() {
+    expect(proxyLifecycleCutPaths(['auth', 'host', 'mcpServers.weather', 'port', 'self_update'], false)).toEqual(['auth', 'host', 'port']);
+  });
+  it('miaou_dist seulement si la page est servie par ce proxy', function() {
+    expect(proxyLifecycleCutPaths(['miaou_dist'], false)).toEqual([]);
+    expect(proxyLifecycleCutPaths(['miaou_dist'], true)).toEqual(['miaou_dist']);
+  });
+  it('liste absente : rien', function() {
+    expect(proxyLifecycleCutPaths(null, true)).toEqual([]);
+  });
+});
+
+describe('proxyMaybeServesPage — dans le doute, oui', function() {
+  it('file:// : jamais', function() {
+    expect(proxyMaybeServesPage(false, null, 'build1')).toBe(false);
+  });
+  it('page servie, empreinte du proxy inconnue (pas de self_update) : peut-être', function() {
+    expect(proxyMaybeServesPage(true, null, 'build1')).toBe(true);
+  });
+  it('page servie, empreinte connue : le prédicat d\'AT', function() {
+    expect(proxyMaybeServesPage(true, { servedBuild: 'build1' }, 'build1')).toBe(true);
+    expect(proxyMaybeServesPage(true, { servedBuild: 'autre' }, 'build1')).toBe(false);
+    expect(proxyMaybeServesPage(true, { servedBuild: null }, 'build1')).toBe(false);
+  });
+});
+
+describe('proxyRestartWarningText — dire quoi faire', function() {
+  it('rien à craindre : texte vide', function() {
+    expect(proxyRestartWarningText([])).toBe('');
+  });
+  it('port : l\'adresse, et où la modifier', function() {
+    var t = proxyRestartWarningText(['port']);
+    expect(t.indexOf('touche port :') > 0).toBe(true);
+    expect(t.indexOf('son adresse peut changer') > 0).toBe(true);
+    expect(t.indexOf('Serveurs MCP') > 0).toBe(true);
+  });
+  it('auth et miaou_dist : chacun sa phrase', function() {
+    var t = proxyRestartWarningText(['auth', 'miaou_dist']);
+    expect(t.indexOf('jeton') > 0).toBe(true);
+    expect(t.indexOf('cette page comprise') > 0).toBe(true);
+    expect(t.indexOf('adresse') < 0).toBe(true);
+  });
+});
+
+describe('proxyLifecycleStateText — la ligne d\'Application', function() {
+  it('inchangée, avec l\'heure du démarrage', function() {
+    expect(proxyLifecycleStateText(lcStatus(), null, '15/10 10:00', false)).toBe('Configuration inchangée depuis le démarrage du proxy (15/10 10:00).');
+  });
+  it('modifiée : les chemins, et le reste compté', function() {
+    var t = proxyLifecycleStateText(lcStatus({}, { state: 'changed', changed: ['mcpServers.weather', 'port'], changed_total: 23 }), null, '', false);
+    expect(t).toBe('Configuration modifiée depuis le démarrage du proxy : mcpServers.weather, port et 21 de plus.');
+  });
+  it('invalide : la cause brute du proxy', function() {
+    var t = proxyLifecycleStateText(lcStatus({}, { state: 'invalid', changed: ['port'], changed_total: 1, detail: 'config.json n\'est pas un JSON valide' }), null, '', false);
+    expect(t).toBe('Configuration modifiée mais invalide : le proxy ne redémarrerait pas. Cause : config.json n\'est pas un JSON valide');
+  });
+  it('non supervisé : redémarrage à faire à la main', function() {
+    var t = proxyLifecycleStateText(lcStatus({ restartable: false }), null, '', false);
+    expect(t.indexOf('Redémarrage à faire à la main') > 0).toBe(true);
+    expect(t.indexOf('scripts/supervise.sh') > 0).toBe(true);
+  });
+  it('mise à jour proposée qui redémarre : elle prendra aussi la config', function() {
+    var t = proxyLifecycleStateText(lcStatus({}, { state: 'changed', changed: ['port'], changed_total: 1 }), null, '', true);
+    expect(t.indexOf('La mise à jour proposée redémarrera aussi le proxy.') > 0).toBe(true);
+    expect(proxyLifecycleStateText(lcStatus(), null, '', true).indexOf('mise à jour') < 0).toBe(true);
+  });
+  it('lecture en échec, état inconnu, redémarrage en cours', function() {
+    expect(proxyLifecycleStateText(null, 'connexion refusée', '', false)).toBe('Configuration : état illisible : connexion refusée');
+    expect(proxyLifecycleStateText(lcStatus({}, { state: 'futur' }), null, '', false)).toBe('Configuration : état « futur ».');
+    expect(proxyLifecycleStateText(lcStatus({ restarting: true }), null, '', false).indexOf('Redémarrage du proxy en cours.') > 0).toBe(true);
+  });
+});
+
+describe('proxyLifecycleToastAction — un toast par modification', function() {
+  var changed = lcStatus({}, { state: 'changed', changed: ['port'], changed_total: 1 });
+  it('modifiée, pas encore annoncée : montrer', function() {
+    expect(proxyLifecycleToastAction(changed, undefined)).toBe('show');
+  });
+  it('même modification déjà annoncée (fermée à la croix) : rien', function() {
+    expect(proxyLifecycleToastAction(changed, proxyLifecycleSignature(changed))).toBe('');
+  });
+  it('autre modification : montrer de nouveau', function() {
+    var other = lcStatus({}, { state: 'changed', changed: ['mcpServers.weather', 'port'], changed_total: 2 });
+    expect(proxyLifecycleToastAction(other, proxyLifecycleSignature(changed))).toBe('show');
+  });
+  it('invalide : montrer, même chemins que la modification annoncée', function() {
+    var inv = lcStatus({}, { state: 'invalid', changed: ['port'], changed_total: 1, detail: 'JSON tronqué' });
+    expect(proxyLifecycleToastAction(inv, proxyLifecycleSignature(changed))).toBe('show');
+  });
+  it('revenue à l\'identique, ou redémarrage en cours : retirer', function() {
+    expect(proxyLifecycleToastAction(lcStatus(), proxyLifecycleSignature(changed))).toBe('dismiss');
+    expect(proxyLifecycleToastAction(lcStatus({ restarting: true }, { state: 'changed', changed: ['port'], changed_total: 1 }), '')).toBe('dismiss');
+  });
+  it('lecture en échec : rien ne change', function() {
+    expect(proxyLifecycleToastAction(null, proxyLifecycleSignature(changed))).toBe('');
+  });
+  it('autre processus, même config modifiée : nouvelle annonce', function() {
+    var again = lcStatus({ instance: 'fedcba9876543210' }, { state: 'changed', changed: ['port'], changed_total: 1 });
+    expect(proxyLifecycleToastAction(again, proxyLifecycleSignature(changed))).toBe('show');
+  });
+});
+
+describe('proxyLifecycleToastText', function() {
+  it('modifiée, superviseur ou non', function() {
+    expect(proxyLifecycleToastText(lcStatus({}, { state: 'changed' }), 'p', false)).toBe('Configuration du proxy MCP modifiée.');
+    expect(proxyLifecycleToastText(lcStatus({ restartable: false }, { state: 'changed' }), 'p', false)).toBe('Configuration du proxy MCP modifiée, redémarrage à faire à la main.');
+  });
+  it('invalide : la cause ; plusieurs serveurs : le nom', function() {
+    expect(proxyLifecycleToastText(lcStatus({}, { state: 'invalid', detail: 'port refusé' }), 'p', true)).toBe('Configuration du proxy MCP invalide (« p ») : port refusé');
+  });
+});
+
+describe('proxyRestartInFlight / proxyRestartForceText — le compte vient du refus', function() {
+  function rpcErr(message, data) { var e = new Error(message); e.data = data; return e; }
+  it('RESTART_TOOLS_IN_FLIGHT : data.count', function() {
+    expect(proxyRestartInFlight(rpcErr('3 appels en cours', { code: 'RESTART_TOOLS_IN_FLIGHT', count: 3 }))).toBe(3);
+  });
+  it('compte absent : 0, la confirmation reste due', function() {
+    expect(proxyRestartInFlight(rpcErr('appels en cours', { code: 'RESTART_TOOLS_IN_FLIGHT' }))).toBe(0);
+  });
+  it('autre refus, ou code voisin : null (égalité, pas sous-chaîne)', function() {
+    expect(proxyRestartInFlight(rpcErr('x', { code: 'RESTART_CONFIG_INVALID', count: 3 }))).toBe(null);
+    expect(proxyRestartInFlight(rpcErr('x', { code: 'RESTART_TOOLS_IN_FLIGHT_V2', count: 3 }))).toBe(null);
+    expect(proxyRestartInFlight(new Error('réseau'))).toBe(null);
+  });
+  it('texte : singulier, pluriel, inconnu', function() {
+    expect(proxyRestartForceText(1).indexOf('1 appel d’outil en cours sera coupé') === 0).toBe(true);
+    expect(proxyRestartForceText(4).indexOf('4 appels d’outils en cours seront coupés') === 0).toBe(true);
+    expect(proxyRestartForceText(0).indexOf('Des appels d’outils') === 0).toBe(true);
+    expect(proxyRestartForceText(2).indexOf('tous clients du proxy MCP confondus') > 0).toBe(true);
+  });
+});
+
+describe('proxyRestartFailureText — la cause est gardée', function() {
+  function rpcErr(message, data) { var e = new Error(message); e.data = data; return e; }
+  it('config invalide : le message du proxy, qui porte la cause', function() {
+    expect(proxyRestartFailureText(rpcErr('Config invalide : port refusé', { code: 'RESTART_CONFIG_INVALID', detail: 'port refusé' })))
+      .toBe('Redémarrage refusé, configuration invalide : Config invalide : port refusé');
+  });
+  it('non supervisé, mise à jour en cours : refusé, message repris', function() {
+    expect(proxyRestartFailureText(rpcErr('Pas de superviseur.', { code: 'RESTART_NOT_SUPERVISED' }))).toBe('Redémarrage refusé : Pas de superviseur.');
+    expect(proxyRestartFailureText(rpcErr('Mise à jour en cours.', { code: 'RESTART_UPDATE_IN_PROGRESS' }))).toBe('Redémarrage refusé : Mise à jour en cours.');
+  });
+  it('délai dépassé, autre échec', function() {
+    var t = new Error('délai'); t.timeout = true;
+    expect(proxyRestartFailureText(t)).toBe('Le proxy n’a pas répondu à la demande de redémarrage : délai');
+    expect(proxyRestartFailureText(rpcErr('x', { code: 'RESTART_INCONNU' }))).toBe('Redémarrage impossible : x');
+  });
+});
+
+describe('proxyRestartAcceptedInstance / proxyRestartLocalBlock / proxyBusyHoldsOffers', function() {
+  it('l\'instance rendue par restart, sinon la dernière lue', function() {
+    expect(proxyRestartAcceptedInstance({ restarting: true, instance: 'aaaa', _meta: {} }, 'bbbb')).toBe('aaaa');
+    expect(proxyRestartAcceptedInstance({ restarting: true }, 'bbbb')).toBe('bbbb');
+  });
+  it('génération en cours : bloqué, sans forçage', function() {
+    expect(proxyRestartLocalBlock(0)).toBe('');
+    expect(proxyRestartLocalBlock(1).indexOf('Génération en cours') === 0).toBe(true);
+  });
+  it('les trois gestes qui redémarrent suspendent les propositions, pas la vérification', function() {
+    expect(proxyBusyHoldsOffers('reboot')).toBe(true);
+    expect(proxyBusyHoldsOffers('apply')).toBe(true);
+    expect(proxyBusyHoldsOffers('restart')).toBe(true);
+    expect(proxyBusyHoldsOffers('check')).toBe(false);
+    expect(proxyBusyHoldsOffers(undefined)).toBe(false);
+  });
+});
+
+describe('proxyRestartTimeoutText', function() {
+  it('chemins de coupure : la carte d\'abord', function() {
+    expect(proxyRestartTimeoutText(3, ['port']).indexOf('modifier sa carte') > 0).toBe(true);
+    expect(proxyRestartTimeoutText(3, []).indexOf('modifier sa carte') < 0).toBe(true);
+    expect(proxyRestartTimeoutText(3, []).indexOf('après 3 minutes') > 0).toBe(true);
+  });
+});

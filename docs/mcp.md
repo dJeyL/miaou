@@ -1013,7 +1013,8 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       `proxyUpdateKindLabel` (le libellé suit le genre : « serveurs MCP » serait faux quand seul MIAOU change) ;
       `isServedByProxy` (LE prédicat « MIAOU est servi par ce proxy » : page
       servie ET `served_build` égal à `BUILD_ID`, jamais une comparaison
-      d'origines) ; `proxyUpdateAfterApply` ; `proxyRestartLanded` ;
+      d'origines) ; `proxyUpdateAfterApply` ; `proxyRestartLanded` (repli
+      du retour, cf. point 24) ;
       `proxyUpdateFailureText` (code `UPDATE_*` testé par égalité, message du
       proxy gardé).
     - **Cadence** : le proxy sonde son dépôt toutes les 5 min et met le
@@ -1032,7 +1033,7 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       (`proxyUpdateStateText`, la cause en clair puis `detail` et `remedy` du
       proxy), sujets des nouveaux commits, « Mettre à jour » si applicable,
       « Vérifier maintenant » (`refresh: true`, que le proxy borne à une sonde
-      par 30 s). Le **toast** persistant (thème `update`, clé
+      par 30 s ; relit aussi la config, point 24). Le **toast** persistant (thème `update`, clé
       `proxy-update:<nom>`) propose une mise à jour disponible, une fois par
       cible et par session (`proxyUpdateToastAction`) : fermé à la croix, il ne
       revient que si une AUTRE cible paraît. Action « Mettre à jour » si
@@ -1057,9 +1058,13 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       proxy, relancé par son superviseur via `uv run`. Reconnexion bornée
       (`waitForProxyRestart` : `disconnectMcpServer` puis `connectMcpServer`
       toutes les `PROXY_RESTART_POLL_MS`, au plus `PROXY_RESTART_WAIT_MS`).
-      Un proxy reconnecté n'est revenu que s'il est le NOUVEAU processus
-      (`proxyRestartLanded` : `head` ≠ sha d'avant) — l'ancien répond encore
-      pendant ses 5 s d'arrêt en douceur. Au-delà du délai : toast d'erreur
+      Un proxy reconnecté n'est revenu que s'il est le NOUVEAU processus —
+      l'ancien répond encore pendant ses 5 s d'arrêt en douceur. Reconnu à son
+      `instance` (`miaou/lifecycle`, point 24), relue juste avant `apply`
+      (`proxyInstanceBeforeRestart`) ; en repli, pour un proxy qui ne déclare
+      pas cette extension, à `head` ≠ sha d'avant (`proxyRestartLanded`). Le
+      plan est choisi par `proxyRestartWaitPlan`, le verdict rendu par
+      `proxyRestartLandedFor`. Au-delà du délai : toast d'erreur
       persistant, avec la cause probable (démarrage en échec après la mise à
       jour) et le renvoi au journal du superviseur, qui donne la commande de
       retour arrière. Puis, **si la page est servie par ce proxy ET que la mise
@@ -1186,7 +1191,10 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       après tout changement) : la pilule, la carte et un toast par clef. Les
       cartes ne sont re-rendues que si l'état montré a changé (signature de
       l'état et des gestes en cours, sans l'heure de lecture) : une lecture
-      cadencée qui ne change rien ne reconstruit rien. **Toast** : cf.
+      cadencée qui ne change rien ne reconstruit rien. Une saisie acceptée
+      (`submitVolatileSecret`, jamais le renvoi) est confirmée par un toast
+      éphémère `…:accepted` (`volatileSecretAcceptedNotice`, `warn` pour un
+      succès partiel). **Toast** : cf.
       `docs/toasts.md` (forme à contenu `body`, exception de focus après une
       soumission depuis le toast, pas d'annonce quand un renvoi est dû).
       **Carte** (`appendVolatileSecretRows`, section « Mots de passe » avant les
@@ -1235,7 +1243,136 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       `localhost` contre `127.0.0.1`, et un appel d'outil par un modèle stubé
       (refus sans valeur, bouton qui ouvre la carte, texte au modèle ; puis,
       valeur acceptée et proxy redémarré, renvoi et rejeu sans trace). Rejoué
-      contre neuf régressions injectées : rouge à chaque fois.
+      contre neuf régressions injectées : rouge à chaque fois. Puis la
+      confirmation d'une saisie acceptée : présente dans l'onglet qui a saisi,
+      absente de l'onglet voisin, après un refus ou une panne, et pendant le
+      renvoi qui suit un redémarrage ; rouge contre deux régressions (aucun
+      toast, toast émis aussi au renvoi). Le succès partiel (`warn`) n'est
+      gardé que par les tests QuickJS : `secret_demo` n'a qu'un consommateur.
+
+24. **Cycle de vie du proxy (extension `miaou/lifecycle`, lot AV).** Sa
+    config a-t-elle changé depuis son démarrage, et redémarrage à la demande
+    sous superviseur. Extension privée de miaou-mcp-servers, publiée par TOUT
+    proxy qui la connaît, sans option, en ère moderne seulement ; contrat dans
+    son `docs/miaou-contract.md` (« Cycle de vie du proxy »), qui fait foi.
+    Côté MIAOU, elle vit dans `mcp-update.js`, avec la mise à jour (point 22) :
+    même surface, même cadence, même attente de retour.
+    - **Déclaration** : `mcpDeclaresLifecycleExtension` (même lecture que les
+      deux autres extensions privées, `_mcpDeclaresExtension`), état
+      `_remoteStatus[name].lifecycleDeclared`, crochet
+      `onProxyLifecycleServerConnected` appelé par `connectMcpServer`.
+    - **Lecture** (`readProxyLifecycleStatus`) : `miaou/lifecycle/status`
+      sans paramètre, réponse enveloppée. Le proxy relit sa config à CHAQUE
+      appel : « vérifier » = relire, il n'y a ni sonde ni `refresh`.
+      Normalisée par `normalizeLifecycleStatus` : sans `instance`, illisible
+      (c'est d'elle que dépend le retour) ; `config` absente tolérée (état
+      nul) ; état inconnu gardé tel quel ; `changedTotal` jamais inférieur à
+      la liste. Le SDK du proxy ajoute `_meta` et `resultType` à tout
+      résultat : on lit des champs, jamais l'objet entier. Rangée dans
+      `_proxyLifecycle[name]`, lectures numérotées comme celles de la mise à
+      jour ; une lecture en échec garde sa cause (`error`, `status` nul).
+    - **Cadence** : celle de la mise à jour, partagée (`checkProxyUpdates` lit
+      les deux extensions) — connexion, minuteur de 5 min, retour de focus au
+      plus une fois par minute. C'est ce dernier qui compte ici : la config
+      s'édite ailleurs, puis on revient dans MIAOU. `pruneProxyUpdates` oublie
+      aussi l'état d'un serveur reconnecté sans l'extension.
+    - **Identité de processus et retour** : `instance` est la même que celle
+      de `miaou/secrets/status` ; une valeur différente de celle d'avant le
+      geste = un autre processus (`proxyInstanceChanged`, faux sans identité
+      d'avant : mieux vaut attendre en vain qu'annoncer revenu l'ancien). Elle
+      reconnaît le retour du proxy après TOUT geste qui le redémarre, mise à
+      jour comprise (`waitForProxyRestart(name, plan)`, plan de
+      `proxyRestartWaitPlan`). L'identité d'avant est relue à l'instant du
+      geste (`proxyInstanceBeforeRestart`), jamais prise dans la dernière
+      lecture cadencée : un redémarrage fait ailleurs depuis la rendrait
+      périmée, et l'ancien processus passerait pour le nouveau. Repli sur
+      `head` quand le proxy ne déclare pas l'extension (proxy antérieur) ; un
+      proxy reconnecté SANS l'extension que lisait le plan est revenu
+      (l'ancien la publiait) — c'est le cas d'une mise à jour vers une
+      version qui ne l'a pas (`proxyRestartLandedFor`).
+    - **Surfaces** (même critère que la mise à jour : l'état sur la surface
+      passive, le front en toast). **Réglages › Application**, champ
+      « Serveurs MCP : mise à jour et redémarrage », une rangée par serveur
+      qui déclare l'une des deux extensions (`syncProxyUpdateSurface`) : sous
+      l'état de la mise à jour, la ligne de config
+      (`proxyLifecycleStateText` : inchangée depuis le démarrage <heure>,
+      modifiée : <chemins> et le reste compté, invalide : <cause>, état
+      inconnu brut ; « redémarrage à faire à la main » sans superviseur ; et,
+      quand une mise à jour qui redémarre est proposée, qu'elle prendra aussi
+      la config). Bouton « Redémarrer » TOUJOURS présent sous superviseur,
+      config modifiée ou non (le redémarrage volontaire est un geste en soi) ;
+      « Vérifier maintenant » relit les deux extensions. **Carte du serveur**
+      (drawer Serveurs MCP, `appendProxyRestartButton` appelé par
+      `buildMcpCard`, à côté de la reconnexion) : « Redémarrer » si la carte
+      déclare l'extension et que le proxy est relançable. Les cartes ne sont
+      re-rendues que quand ce bouton change (signature des serveurs, de
+      `restartable` et du geste en cours, dans `syncProxyUpdateSurfaces`).
+      **Toast** persistant (clé `proxy-lifecycle:<nom>`, thème `update`) :
+      `changed` → « Configuration du proxy MCP modifiée », action
+      « Redémarrer » (ou vers Réglages › Application sans superviseur) ;
+      `invalid` → erreur, sans action, cause gardée. Une fois par modification
+      (`proxyLifecycleToastAction`). **Écart au plan, assumé** : le proxy ne
+      publie pas l'empreinte de sa config, seulement les chemins ; la
+      signature (`proxyLifecycleSignature`) reprend `instance`, état, chemins,
+      compte et cause d'`invalid`. Une seconde édition des MÊMES chemins, après
+      fermeture du toast, ne le fait donc pas revenir (la ligne d'Application,
+      elle, reste juste). Une lecture en échec ne retire rien ; une config
+      revenue à l'identique ou un redémarrage déjà en cours retirent le toast.
+    - **Redémarrage** (`restartProxy`). Garde locale d'abord
+      (`proxyRestartLocalBlock` : une génération de cet onglet bloque, sans
+      forçage — l'arrêter suffit). Puis l'**avertissement de coupure** :
+      `proxyLifecycleCutPaths` retient `port`, `host`, `auth`, et `miaou_dist`
+      si la page est servie par ce proxy (`proxyMaybeServesPage` : le
+      prédicat d'AT quand `miaou/update/status` donne l'empreinte servie,
+      sinon « peut-être » dès que la page est servie — l'avertissement peut
+      être de trop, jamais manquer, d'autant qu'un chemin surchargé par une
+      option de ligne de commande reste listé). `proxyRestartWarningText` dit
+      quoi faire (l'URL ou le jeton de la carte), en toast
+      `proxy-restart:<nom>:confirm` dont l'action « Redémarrer quand même »
+      relance le geste confirmé. Puis `restart`. Refus
+      `RESTART_TOOLS_IN_FLIGHT` : confirmation dans le même toast avec le
+      nombre LU DANS LE REFUS (`proxyRestartInFlight`, `data.count`, tous
+      clients confondus — jamais un compte local), action « Couper et
+      redémarrer » → `force: true`. Tout autre refus :
+      `proxyRestartFailureText` (codes par égalité, message du proxy gardé),
+      en toast `…:result`, puis l'état est relu. Accepté : attente par
+      `instance` — celle que rend `restart`, du processus qui s'arrête
+      (`proxyRestartAcceptedInstance`) — avec la boucle partagée
+      (`waitForProxyRestart`) ; échec au bout du délai :
+      `proxyRestartTimeoutText` (la carte d'abord si des chemins de coupure
+      ont changé, sinon un démarrage en échec, que dit le journal du
+      superviseur). Geste en cours : `_proxyUpdateBusy[name] = 'reboot'`,
+      texte propre (« Redémarrage du proxy en cours… »), et il suspend les
+      propositions des DEUX extensions comme `apply` (`proxyBusyHoldsOffers`).
+      Après le retour : rien à recharger (la détection de version de
+      `docs/pwa.md` couvre un `miaou_dist` changé), secrets volatils renvoyés
+      par l'onglet qui les garde (point 23), état de la mise à jour relu.
+      Aucun type de message multi-onglets : les autres onglets perdent leur
+      session, se reconnectent par la reprise et relisent les deux états à la
+      connexion. Une sortie déjà demandée ailleurs rend la même acceptation ;
+      `apply` est alors refusé en `UPDATE_RESTARTING`, que
+      `proxyUpdateFailureText` dit déjà (`UPDATE_*`).
+    - Tests : `tests/test-mcp-update.js` (purs, et lecture avec `mcpRpc`
+      stubé). La boucle `waitForProxyRestart` n'y tourne pas (`setTimeout`
+      inerte dans le harnais) : seul son verdict pur l'est.
+    - **Vérifié** : `verify-proxy-update.mjs`, phases E à J, sur le même
+      proxy de test que le point 22, en éditant le `config.json` de son clone
+      jetable : commentaire seul modifié (inchangée), boutons d'Application et
+      de la carte, toast une fois par modification (fermé, il ne revient pas ;
+      une autre modification le ramène), port changé (avertissement, rien
+      demandé au proxy sans confirmation), JSON tronqué (toast d'erreur avec
+      la cause, `RESTART_CONFIG_INVALID`, proxy en marche), appel `sleep` du
+      bench en vol (compte du refus, « Couper et redémarrer », appel coupé,
+      autre `instance`, config relue inchangée), redémarrage sans
+      modification. Les phases A et C attendent aussi par `instance`. Rejoué
+      contre trois régressions injectées (avertissement de port supprimé,
+      toast par modification ignoré, prédicat d'`instance` toujours faux) :
+      rouge à chaque fois (le dernier dès la phase A, l'attente de la mise à
+      jour ne reconnaissant jamais le retour ; I et J passent par le même
+      prédicat). Montage : `duckduckgo` est déjà désactivé dans
+      `config.defaults.json`, le désactiver ne change rien ; les attentes sur
+      un état relu se font par une boucle côté Node, un prédicat async de
+      `waitForFunction` ayant passé au vert sans que sa condition soit vraie.
 
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 
