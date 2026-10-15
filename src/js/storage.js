@@ -26,8 +26,28 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;   // défaut true (sécurisé)
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
-const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
-const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
+// Serveur(s) API pré-configurés au build, ajoutés au parc par
+// `seedBuildApiServersIfNeeded`. Deux formes, exclusives (le build ÉCHOUE si
+// elles coexistent, `check_api_server_keys`) : le tableau `api_servers`
+// (`{ name, url, model }`, jeton par `authorization_token_env` comme pour MCP,
+// résolu au build en `authorization_token`), et la paire plate historique
+// `api_url`/`api_model`, lue comme un serveur unique « Par défaut » marqué
+// `legacy` — c'est elle que la migration des champs plats a déjà consommée chez
+// toute installation existante (cf. `apiSeedPlan`).
+const BUILD_API_SERVERS = (function () {
+  const raw = BUILD_CONFIG.api_servers;
+  if (raw) {
+    return (Array.isArray(raw) ? raw : [raw]).filter(c => c && typeof c === 'object');
+  }
+  if (BUILD_CONFIG.api_url) {
+    return [{ name: 'Par défaut', url: BUILD_CONFIG.api_url, model: BUILD_CONFIG.api_model || '', legacy: true }];
+  }
+  return [];
+})();
+// Premier serveur de build : filet de `loadSettings()` (url/model plats), lu par
+// les rares consommateurs historiques de ces champs.
+const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || '';
+const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;   // epoch Unix (s), 0 si sources non buildées
 // Empreinte du contenu de miaou.html (build.py, compute_build_id), aussi écrite
 // dans dist/version.json : la page servie la compare à celle du fichier pour
@@ -352,14 +372,18 @@ function genApiServerId() {
 }
 
 // Transformation silencieuse : si aucun tableau de serveurs n'a jamais été
-// écrit et qu'une config url/key/model plate existe (localStorage ou défauts
-// de build via loadSettings()), crée un unique serveur "Par défaut" et
-// l'active. Ne s'exécute qu'une fois : la simple présence de la clé
-// miaou-api-servers (même tableau vide, si tout a été supprimé depuis) la
-// court-circuite pour toujours.
+// écrit et qu'une config url/key/model plate SAISIE existe en localStorage,
+// crée un unique serveur "Par défaut" et l'active. Ne s'exécute qu'une fois :
+// la simple présence de la clé miaou-api-servers (même tableau vide, si tout a
+// été supprimé depuis) la court-circuite pour toujours.
+//
+// Les réglages BRUTS, sans le filet de build de loadSettings() : les serveurs
+// de config.json arrivent par le seed (`seedBuildApiServersIfNeeded`), avec
+// leur nom et leur jeton. Lus ici, le premier serait créé sous « Par défaut »
+// sans jeton, et le seed l'écarterait ensuite comme déjà présent par son URL.
 function migrateApiServersIfNeeded() {
   if (localStorage.getItem(API_SERVERS_KEY) !== null) return;
-  const s = loadSettings();
+  const s = loadSettingsRaw();
   if (!s.url) { saveApiServersRaw([]); return; }
   const server = normalizeApiServer({ name: 'Par défaut', url: s.url, key: s.key, model: s.model });
   saveApiServersRaw([server]);
@@ -372,8 +396,48 @@ function saveApiServersRaw(arr) {
   return arr;
 }
 
+// Sentinelle du seed des serveurs API de build : la liste des entrées de config
+// DÉJÀ TRAITÉES (`[{ name, url }]`), même rôle que `miaou-mcp-seeded` (cf. son
+// commentaire). Son ABSENCE sur une installation existante a un sens propre :
+// la version qui l'introduit n'a jamais seedé, mais la migration des champs
+// plats a déjà consommé la paire historique `api_url` (cf. `apiSeedPlan`).
+const API_SEEDED_KEY = 'miaou-api-seeded';
+
+// Ajoute au parc les serveurs API de config.json pas encore traités. `fresh` :
+// aucun tableau de serveurs n'existait avant ce chargement (installation
+// neuve) — seul cas où le premier serveur seedé devient l'actif, et où la
+// paire historique est insérée. Chez un utilisateur existant, le serveur actif
+// n'est jamais touché, et une entrée dont l'URL a déjà une carte n'ajoute rien.
+// `configured` en paramètre (BUILD_API_SERVERS au runtime) : les tests QuickJS
+// n'ont pas de config de build.
+function seedBuildApiServersIfNeeded(configured, fresh) {
+  if (!Array.isArray(configured) || !configured.length) return;
+  const rawSeeded = localStorage.getItem(API_SEEDED_KEY);
+  let existing = [];
+  try {
+    const arr = JSON.parse(localStorage.getItem(API_SERVERS_KEY));
+    if (Array.isArray(arr)) existing = arr;
+  } catch (e) { existing = []; }
+  const plan = apiSeedPlan(configured, existing, parseApiSeededSentinel(rawSeeded), fresh);
+  // Écrite même sans insertion, et seulement si elle change (chaque lecture du
+  // parc passe ici) — cf. seedBuildMcpServersIfNeeded.
+  const nextSeeded = JSON.stringify(plan.seeded);
+  if (nextSeeded !== rawSeeded) writeLocalStorage(API_SEEDED_KEY, nextSeeded);
+  if (!plan.insert.length) return;
+  const added = plan.insert.map(c => normalizeApiServer({
+    name: c.name,
+    url: c.url,
+    model: c.model,
+    key: c.authorization_token,
+  }));
+  saveApiServersRaw(existing.concat(added));   // post-commit + broadcast (piège 24)
+  if (fresh && !getActiveApiServerId()) writeLocalStorage(ACTIVE_API_SERVER_KEY, added[0].id);
+}
+
 function loadApiServers() {
+  const fresh = localStorage.getItem(API_SERVERS_KEY) === null;
   migrateApiServersIfNeeded();
+  seedBuildApiServersIfNeeded(BUILD_API_SERVERS, fresh);
   try {
     const arr = JSON.parse(localStorage.getItem(API_SERVERS_KEY));
     return Array.isArray(arr) ? arr : [];
@@ -2479,7 +2543,7 @@ function spaceConvIds(spaceId, convs) {
 const EXPORT_FORMAT_VERSION = 3;
 
 // Les clés localStorage EXPORTÉES — pas tout le schéma : un marqueur
-// d'installation (`miaou-mcp-seeded`) ou un cache reconstructible
+// d'installation (`miaou-mcp-seeded`, `miaou-api-seeded`) ou un cache reconstructible
 // (`miaou-model-props`) n'y entre pas. Référencée uniquement en corps de
 // fonction depuis les autres fichiers (contrainte test runner, cf. CLAUDE.md)
 // — jamais au top-level d'un fichier tiers.

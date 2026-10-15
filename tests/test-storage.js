@@ -305,6 +305,44 @@ describe('Serveurs API : migration one-shot (miaou-api-servers)', function() {
   });
 });
 
+describe('Serveurs API : seed de build (seedBuildApiServersIfNeeded)', function() {
+  var cfg = [
+    { name: 'Interne', url: 'http://interne/v1', model: 'm1' },
+    { name: 'Cloud', url: 'https://cloud/v1', model: 'm2', authorization_token: 'jeton' },
+  ];
+  it('install neuve : cartes créées dans l\'ordre, jeton repris en key, premier actif', function() {
+    localStorage.clear();
+    seedBuildApiServersIfNeeded(cfg, true);
+    var arr = JSON.parse(localStorage.getItem('miaou-api-servers'));
+    expect(arr.map(function (s) { return s.name; }).join(',')).toBe('Interne,Cloud');
+    expect(arr[1].key).toBe('jeton');
+    expect(arr[0].model).toBe('m1');
+    expect(getActiveApiServerId()).toBe(arr[0].id);
+  });
+  it('utilisateur existant avec une carte à la même URL : rien de doublé, actif inchangé', function() {
+    localStorage.clear();
+    saveApiServersRaw([{ id: 's1', name: 'Mien', url: 'http://interne/v1/', key: 'k' }]);
+    seedBuildApiServersIfNeeded(cfg, false);
+    var arr = JSON.parse(localStorage.getItem('miaou-api-servers'));
+    expect(arr.map(function (s) { return s.name; }).join(',')).toBe('Mien,Cloud');
+    expect(arr[0].key).toBe('k');
+    expect(getActiveApiServerId()).toBe('');
+    expect(activeApiServer().id).toBe('s1');
+  });
+  it('une carte seedée puis supprimée ne revient pas', function() {
+    localStorage.clear();
+    seedBuildApiServersIfNeeded(cfg, true);
+    saveApiServersRaw([]);
+    seedBuildApiServersIfNeeded(cfg, false);
+    expect(JSON.parse(localStorage.getItem('miaou-api-servers')).length).toBe(0);
+  });
+  it('config vide : rien n\'est écrit, pas même la sentinelle', function() {
+    localStorage.clear();
+    seedBuildApiServersIfNeeded([], true);
+    expect(localStorage.getItem('miaou-api-seeded')).toBe(null);
+  });
+});
+
 describe('Serveurs API : CRUD (upsert/delete/get/activeApiServer/activeApiConfig)', function() {
   it('upsertApiServer insère puis met à jour par id', function() {
     localStorage.clear();

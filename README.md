@@ -311,8 +311,7 @@ cf. [docs/build.md](docs/build.md).
 
 ```json
 {
-  "api_url":                 "http://host-interne/v1",
-  "api_model":               "gemma4:26b-nvfp4",
+  "api_servers":             [ { "name": "Interne", "url": "http://host-interne/v1", "model": "gemma4:26b-nvfp4" } ],
   "max_summaries":           3,
   "require_api_key":         true,
   "prompt_order":            "tools-first",
@@ -339,10 +338,18 @@ cf. [docs/build.md](docs/build.md).
 Toute durée s'exprime en **secondes** (suffixe `_s`) ; la conversion interne
 est faite au seul point de lecture.
 
-- `api_url` / `api_model` : valeurs **par défaut** injectées dans le HTML. Elles
-  ne sont qu'un point de départ ; les réglages saisis dans l'UI (stockés en
-  `localStorage`) priment. La clef API n'est jamais mise dans `config.json`,
-  elle se saisit dans le drawer Paramètres.
+- `api_servers` : serveurs API (backends LLM) pré-configurés, ajoutés
+  automatiquement au démarrage. Tableau d'objets `{ name, url, model }` ; le
+  premier devient le serveur actif d'une installation neuve. Chaque serveur
+  n'est ajouté **qu'une fois**, et jamais si une carte pointe déjà sur la même
+  URL (quel que soit son nom) : un utilisateur existant ne reçoit que les
+  serveurs qu'il n'a pas, son serveur actif est inchangé, et une carte
+  supprimée ensuite ne revient pas. La clef se saisit dans le drawer
+  Paramètres, ou se livre comme pour MCP : `authorization_token_env` nomme la
+  variable d'environnement qui la porte au moment du build (jamais de clef en
+  clair ici, le build le refuse ; cf. `docs/build.md`). L'ancienne forme
+  `api_url` / `api_model` (un seul serveur, « Par défaut ») reste acceptée,
+  mais pas à côté d'`api_servers` : le build échoue si les deux sont posées.
 - `max_summaries` : nombre maximum de résumés injectés simultanément dans le
   contexte (défaut 3).
 - `require_api_key` : gouverne l'état « configuré ». Par défaut (`true`), le

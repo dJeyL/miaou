@@ -5810,7 +5810,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-14 20:36 UTC */
+/* miaou — built: 2026-10-15 00:23 UTC */
 
 /* ── utils.js ── */
 
@@ -7381,6 +7381,38 @@ function mcpSeedPlan(configured, existing, seeded) {
     done.push({ name: String(c.name || '').trim(), url: mcpUrlIdentity(c.url) });
   });
   return { insert: mcpSeedCandidates(pending, existing), seeded: done };
+}
+
+function parseApiSeededSentinel(raw) {
+  if (raw == null) return null;
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(function (r) { return r && typeof r === 'object'; })
+      .map(function (r) { return { name: String(r.name || '').trim(), url: mcpUrlIdentity(r.url) }; });
+  } catch (e) { return []; }
+}
+
+function apiSeedPlan(configured, existing, seeded, fresh) {
+  const inheritLegacy = seeded == null && !fresh;
+  const done = Array.isArray(seeded) ? seeded.slice() : [];
+  const urls = [];
+  (Array.isArray(existing) ? existing : []).forEach(function (s) {
+    if (s && s.url) urls.push(mcpUrlIdentity(s.url));
+  });
+  const insert = [];
+  (Array.isArray(configured) ? configured : []).forEach(function (c) {
+    if (!c || !String(c.url || '').trim()) return;
+    const n = String(c.name || '').trim();
+    const u = mcpUrlIdentity(c.url);
+    if (done.some(function (r) { return (n && r.name === n) || r.url === u; })) return;
+    done.push({ name: n, url: u });
+    if (inheritLegacy && c.legacy) return;
+    if (urls.indexOf(u) >= 0) return;
+    urls.push(u);
+    insert.push(c);
+  });
+  return { insert: insert, seeded: done };
 }
 
 function filterMcpTools(tools, allowlist, denylist) {
@@ -11366,15 +11398,27 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1792010194}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1792023822}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
-const BUILD_API_URL   = BUILD_CONFIG.api_url   || '';
-const BUILD_API_MODEL = BUILD_CONFIG.api_model || '';
+
+const BUILD_API_SERVERS = (function () {
+  const raw = BUILD_CONFIG.api_servers;
+  if (raw) {
+    return (Array.isArray(raw) ? raw : [raw]).filter(c => c && typeof c === 'object');
+  }
+  if (BUILD_CONFIG.api_url) {
+    return [{ name: 'Par défaut', url: BUILD_CONFIG.api_url, model: BUILD_CONFIG.api_model || '', legacy: true }];
+  }
+  return [];
+})();
+
+const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || '';
+const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "dc120974ebe63601"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "5e1c60646a55812f"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -11522,7 +11566,7 @@ function genApiServerId() {
 
 function migrateApiServersIfNeeded() {
   if (localStorage.getItem(API_SERVERS_KEY) !== null) return;
-  const s = loadSettings();
+  const s = loadSettingsRaw();
   if (!s.url) { saveApiServersRaw([]); return; }
   const server = normalizeApiServer({ name: 'Par défaut', url: s.url, key: s.key, model: s.model });
   saveApiServersRaw([server]);
@@ -11535,8 +11579,35 @@ function saveApiServersRaw(arr) {
   return arr;
 }
 
+const API_SEEDED_KEY = 'miaou-api-seeded';
+
+function seedBuildApiServersIfNeeded(configured, fresh) {
+  if (!Array.isArray(configured) || !configured.length) return;
+  const rawSeeded = localStorage.getItem(API_SEEDED_KEY);
+  let existing = [];
+  try {
+    const arr = JSON.parse(localStorage.getItem(API_SERVERS_KEY));
+    if (Array.isArray(arr)) existing = arr;
+  } catch (e) { existing = []; }
+  const plan = apiSeedPlan(configured, existing, parseApiSeededSentinel(rawSeeded), fresh);
+
+  const nextSeeded = JSON.stringify(plan.seeded);
+  if (nextSeeded !== rawSeeded) writeLocalStorage(API_SEEDED_KEY, nextSeeded);
+  if (!plan.insert.length) return;
+  const added = plan.insert.map(c => normalizeApiServer({
+    name: c.name,
+    url: c.url,
+    model: c.model,
+    key: c.authorization_token,
+  }));
+  saveApiServersRaw(existing.concat(added));
+  if (fresh && !getActiveApiServerId()) writeLocalStorage(ACTIVE_API_SERVER_KEY, added[0].id);
+}
+
 function loadApiServers() {
+  const fresh = localStorage.getItem(API_SERVERS_KEY) === null;
   migrateApiServersIfNeeded();
+  seedBuildApiServersIfNeeded(BUILD_API_SERVERS, fresh);
   try {
     const arr = JSON.parse(localStorage.getItem(API_SERVERS_KEY));
     return Array.isArray(arr) ? arr : [];

@@ -614,7 +614,7 @@ def run_build_unit_tests() -> tuple[int, int]:
     # jamais de config.json ; toute absence fait ÉCHOUER le build.
     def token_env(cfg, environ):
         try:
-            return build.resolve_mcp_token_env(cfg, environ)
+            return build.resolve_server_token_env(cfg, environ)
         except SystemExit:
             return 'EXIT'
 
@@ -647,6 +647,41 @@ def run_build_unit_tests() -> tuple[int, int]:
           token_env({'mcp_servers': [{'name': 'a', 'url': 'u', 'authorization_token': 'x'}]}, {}) == 'EXIT')
     check('config : sans serveur MCP, rien ne change',
           token_env({'max_turns': 3}, {}) == {'max_turns': 3})
+
+    # api_servers : même indirection du jeton, et exclusif de la paire plate
+    # historique api_url/api_model.
+    api_resolved = token_env({'api_servers': [
+        {'name': 'a', 'url': 'u', 'model': 'm', 'authorization_token_env': 'API_T'}]}, {'API_T': 'k'})
+    check('config : api_servers résout authorization_token_env comme MCP',
+          api_resolved != 'EXIT'
+          and api_resolved['api_servers'][0] == {'name': 'a', 'url': 'u', 'model': 'm', 'authorization_token': 'k'})
+    check('config : api_servers, variable absente fait échouer le build',
+          token_env({'api_servers': [{'name': 'a', 'url': 'u', 'authorization_token_env': 'API_T'}]}, {}) == 'EXIT')
+    check('config : api_servers, jeton en clair fait échouer le build',
+          token_env({'api_servers': [{'name': 'a', 'url': 'u', 'authorization_token': 'x'}]}, {}) == 'EXIT')
+
+    def api_keys_raise(cfg):
+        try:
+            build.check_api_server_keys(cfg)
+            return False
+        except SystemExit:
+            return True
+
+    check('config : api_servers seul passe', not api_keys_raise({'api_servers': []}))
+    check('config : api_url/api_model seuls passent',
+          not api_keys_raise({'api_url': 'http://h/v1', 'api_model': 'm'}))
+    check('config : api_servers ET api_url font échouer le build',
+          api_keys_raise({'api_servers': [], 'api_url': 'http://h/v1'}))
+    check('config : api_servers ET api_model font échouer le build',
+          api_keys_raise({'api_servers': [], 'api_model': 'm'}))
+    check('config : api_url/api_model (forme historique) restent des clefs connues',
+          build.warn_unknown_config_keys({'api_url': 'http://h/v1', 'api_model': 'm'}) == [])
+    check('config : api_servers, authorization_token_env est une clef connue',
+          build.warn_unknown_config_keys({'api_servers': [
+              {'name': 'a', 'url': 'u', 'model': 'm', 'authorization_token_env': 'T'}]}) == [])
+    check('config : clef imbriquée inconnue de api_servers signalée sous son préfixe',
+          build.warn_unknown_config_keys({'api_servers': [{'name': 'a', 'url': 'u', 'key': 'x'}]})
+          == ['api_servers.key'])
 
     # Le sample EST la référence : s'il contenait une clef que le code ne lit
     # pas, la garde validerait une faute de frappe pour toujours. On vérifie

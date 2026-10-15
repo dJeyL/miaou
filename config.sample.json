@@ -1,6 +1,5 @@
 {
-  "api_url":                 "http://host-interne/v1",
-  "api_model":               "gemma4:26b-nvfp4",
+  "api_servers":             [ { "name": "Interne", "url": "http://host-interne/v1", "model": "gemma4:26b-nvfp4" } ],
   "max_summaries":           3,
   "require_api_key":         true,
   "prompt_order":            "tools-first",

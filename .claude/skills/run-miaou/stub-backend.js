@@ -13,7 +13,10 @@
 // de synchro compris), avant tout script de la page :
 //   - server : un serveur API fixture `http://stub.local/v1` actif, si aucun
 //     tableau de serveurs n'existe encore (même garde que la migration de
-//     l'appli : un script qui pose le sien, ou un reload, n'est pas écrasé) ;
+//     l'appli : un script qui pose le sien, ou un reload, n'est pas écrasé),
+//     avec la sentinelle du seed des serveurs API de build
+//     (`seededApiSentinel()`) — sans elle, les `api_servers` de config.json
+//     s'ajoutent à côté du stub et le sélecteur de modèle les sonde ;
 //   - mcp    : aucun serveur MCP, sentinelle du seed de build posée — sans elle
 //     le serveur de config.json est ajouté au tableau vide au démarrage
 //     (seedBuildMcpServersIfNeeded). Premier chargement seulement. La
@@ -73,6 +76,20 @@ export function seededMcpSentinel() {
   return JSON.stringify(list.filter(Boolean).map((c) => ({ name: c.name, url: c.url })));
 }
 
+// Valeur de `miaou-api-seeded` qui marque comme déjà traités tous les serveurs
+// API du config.json local (`api_servers`, ou la paire historique `api_url`,
+// lue comme le serveur « Par défaut ») : le seed de build n'ajoute alors rien à
+// côté du serveur fixture. Même portée que `seededMcpSentinel()`.
+export function seededApiSentinel() {
+  const p = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../config.json');
+  let cfg = {};
+  try { if (existsSync(p)) cfg = JSON.parse(readFileSync(p, 'utf-8')); } catch (e) { cfg = {}; }
+  const raw = cfg.api_servers;
+  const list = raw ? (Array.isArray(raw) ? raw : [raw])
+    : (cfg.api_url ? [{ name: 'Par défaut', url: cfg.api_url }] : []);
+  return JSON.stringify(list.filter(Boolean).map((c) => ({ name: c.name || '', url: c.url })));
+}
+
 const DEFAULTS = { server: true, mcp: true, native: true, serve: true, models: [STUB_MODEL] };
 
 // Exécutée DANS la page (sérialisée par addInitScript) : aucune fermeture sur
@@ -85,6 +102,7 @@ function installStubBackend(o) {
         { id: 'srv-stub', name: 'Stub', url: o.url, key: 'stub-key', model: o.models[0] },
       ]));
       localStorage.setItem('miaou-active-api-server', 'srv-stub');
+      localStorage.setItem('miaou-api-seeded', o.apiSeeded);
     }
     if (o.mcp && localStorage.getItem('miaou-mcp-seeded') === null) {
       localStorage.setItem('miaou-mcp-servers', '[]');
@@ -131,7 +149,7 @@ function installStubBackend(o) {
 // avant sa première page : il est donc redirigé vers newContext() + newPage(),
 // et le contexte est fermé avec sa page (même cycle de vie qu'avant).
 export async function launchIsolated(launchOpts, backendOpts) {
-  const o = Object.assign({}, DEFAULTS, { url: STUB_URL, mcpSeeded: seededMcpSentinel() }, backendOpts || {});
+  const o = Object.assign({}, DEFAULTS, { url: STUB_URL, mcpSeeded: seededMcpSentinel(), apiSeeded: seededApiSentinel() }, backendOpts || {});
   const browser = await chromium.launch(launchOpts);
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (ctxOpts) => {

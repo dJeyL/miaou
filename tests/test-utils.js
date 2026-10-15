@@ -489,6 +489,64 @@ describe('mcpSeedPlan (serveurs multiples)', function() {
   });
 });
 
+describe('parseApiSeededSentinel', function() {
+  it('absente → null (première rencontre du seed)', function() {
+    expect(parseApiSeededSentinel(null)).toBe(null);
+  });
+  it('illisible → liste vide', function() { expect(parseApiSeededSentinel('{x').length).toBe(0); });
+  it('liste → identités normalisées', function() {
+    var r = parseApiSeededSentinel(JSON.stringify([{ name: ' a ', url: 'HTTP://H/v1/' }]));
+    expect(r[0].name).toBe('a');
+    expect(r[0].url).toBe('http://h/v1');
+  });
+});
+
+describe('apiSeedPlan (serveurs API de build)', function() {
+  var a = { name: 'Interne', url: 'http://interne/v1', model: 'm1' };
+  var b = { name: 'Cloud', url: 'https://cloud/v1', model: 'm2', authorization_token: 't' };
+  var legacy = { name: 'Par défaut', url: 'http://interne/v1', model: 'm1', legacy: true };
+  function names(list) { return list.map(function (c) { return c.name; }).join(','); }
+  it('install neuve : seede tous les serveurs, paire historique comprise', function() {
+    expect(names(apiSeedPlan([a, b], [], null, true).insert)).toBe('Interne,Cloud');
+    expect(names(apiSeedPlan([legacy], [], null, true).insert)).toBe('Par défaut');
+  });
+  it('passage au nouveau format : une carte à la même URL, sous un autre nom, n\'est pas doublée', function() {
+    var p = apiSeedPlan([a, b], [{ id: 's1', name: 'Par défaut', url: 'http://interne/v1/' }], null, false);
+    expect(names(p.insert)).toBe('Cloud');
+    expect(names(p.seeded)).toBe('Interne,Cloud');
+  });
+  it('installation existante sans sentinelle : la paire historique est consignée sans être insérée', function() {
+    var p = apiSeedPlan([legacy], [{ id: 's1', name: 'Mien', url: 'http://ailleurs/v1' }], null, false);
+    expect(p.insert.length).toBe(0);
+    expect(names(p.seeded)).toBe('Par défaut');
+  });
+  it('sentinelle présente : la paire historique se seede comme les autres', function() {
+    var p = apiSeedPlan([legacy], [], [], false);
+    expect(names(p.insert)).toBe('Par défaut');
+  });
+  it('carte seedée puis supprimée : ne revient pas', function() {
+    var p = apiSeedPlan([a, b], [], parseApiSeededSentinel(JSON.stringify([a, b])), false);
+    expect(p.insert.length).toBe(0);
+  });
+  it('serveur ajouté dans un build ultérieur : seul le nouveau est inséré', function() {
+    var p = apiSeedPlan([a, b], [{ id: 's1', url: a.url }], parseApiSeededSentinel(JSON.stringify([a])), false);
+    expect(names(p.insert)).toBe('Cloud');
+  });
+  it('homonyme sans rapport (autre URL, même nom) : le nom n\'est pas une identité de carte', function() {
+    var p = apiSeedPlan([a], [{ id: 's1', name: 'Interne', url: 'http://autre/v1' }], [], false);
+    expect(names(p.insert)).toBe('Interne');
+  });
+  it('deux entrées de config à la même URL : une seule carte', function() {
+    var p = apiSeedPlan([a, { name: 'Bis', url: 'HTTP://interne/v1/' }], [], null, true);
+    expect(names(p.insert)).toBe('Interne');
+  });
+  it('entrée sans URL : ni insérée ni consignée', function() {
+    var p = apiSeedPlan([{ name: 'Vide', url: ' ' }], [], null, true);
+    expect(p.insert.length).toBe(0);
+    expect(p.seeded.length).toBe(0);
+  });
+});
+
 describe('filterMcpTools (D7, denylist gagne)', function() {
   var tools = [{ name: 'a' }, { name: 'b' }, { name: 'c' }];
   it('vide/vide → tout passe', function() { expect(filterMcpTools(tools, [], []).length).toBe(3); });

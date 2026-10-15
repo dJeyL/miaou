@@ -643,10 +643,34 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   `activeApiServer`/`activeApiConfig`/`getActiveApiServerId`/`setActiveApiServerId`).
   **Transformation silencieuse** (`migrateApiServersIfNeeded`, appelée en lazy
   par `loadApiServers()`) : au premier accès sans tableau existant, si
-  `miaou-settings.url` (ou son défaut de build) est non-vide, crée un unique
-  serveur `{ name: 'Par défaut', url, key, model }` à partir des anciens
-  champs plats et l'active. Ne s'exécute qu'une fois — la présence de la clé
+  `miaou-settings.url` SAISI est non-vide (réglages bruts, sans le filet de
+  build de `loadSettings()`), crée un unique serveur
+  `{ name: 'Par défaut', url, key, model }` à partir des anciens champs plats
+  et l'active. Ne s'exécute qu'une fois — la présence de la clé
   `miaou-api-servers`, même tableau vide, la court-circuite pour toujours.
+  **Seed des serveurs de build** (`seedBuildApiServersIfNeeded`, juste après,
+  dans `loadApiServers()`) : les `api_servers` de `config.json` — ou la paire
+  historique `api_url`/`api_model`, lue comme un serveur « Par défaut » marqué
+  `legacy` (`BUILD_API_SERVERS`) — sont ajoutés une fois chacun, jeton de build
+  (`authorization_token`) repris en `key`. Sentinelle `miaou-api-seeded`, même
+  forme et même rôle que `miaou-mcp-seeded` (liste `[{ name, url }]`, hors
+  `EXPORT_KEYS`, écrite seulement si la config est non vide). Plan pur
+  `apiSeedPlan` (utils), qui diffère du plan MCP sur deux points :
+  - équivalence avec une carte existante à l'**URL seule**
+    (`mcpUrlIdentity`) : le nom d'une carte API n'est qu'un libellé. C'est ce
+    qui laisse intact un utilisateur existant quand un déploiement passe de
+    `api_url` à `api_servers` avec la même URL ;
+  - sentinelle **absente** sur une installation existante → l'entrée `legacy`
+    est consignée sans insertion : la migration ci-dessus l'a déjà consommée,
+    la réinsérer ferait revenir une carte supprimée ou corrigée. Prix assumé,
+    symétrique du drapeau `'1'` MCP : une entrée d'`api_servers` dont la carte
+    a été supprimée (ou son URL changée) AVANT la première version qui seede
+    est insérée une fois.
+
+  Le serveur actif n'est posé (premier serveur seedé) que sur une
+  installation **neuve** ; jamais touché ailleurs. Comme pour MCP, une URL ou
+  un jeton changé dans un build ultérieur ne se propage pas à une carte déjà
+  seedée.
   Suppression du dernier serveur restant bloquée dans l'UI
   (`onDeleteApiCard`, main.js) : jamais d'état « configuré » sans aucun
   serveur en tableau non-vide.

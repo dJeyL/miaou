@@ -2915,6 +2915,63 @@ function mcpSeedPlan(configured, existing, seeded) {
   return { insert: mcpSeedCandidates(pending, existing), seeded: done };
 }
 
+// Lit la sentinelle du seed des serveurs API (`miaou-api-seeded`). À la
+// différence de son homologue MCP, l'ABSENCE rend `null` et non une liste vide :
+// `apiSeedPlan` en tire « première rencontre du seed », qui ne se traite pas
+// comme une liste vide chez une installation existante. Illisible → liste vide.
+function parseApiSeededSentinel(raw) {
+  if (raw == null) return null;
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(function (r) { return r && typeof r === 'object'; })
+      .map(function (r) { return { name: String(r.name || '').trim(), url: mcpUrlIdentity(r.url) }; });
+  } catch (e) { return []; }
+}
+
+// Plan du seed des serveurs API de build. Pure : `configured` (entrées de
+// config.json, `legacy` sur la paire historique `api_url`/`api_model`),
+// `existing` (cartes en place), `seeded` (sentinelle parsée, `null` si
+// absente), `fresh` (aucun tableau de serveurs n'existait). Rend
+// `{ insert, seeded }`, comme `mcpSeedPlan`, dont il reprend la mécanique :
+// une entrée déjà traitée (même nom OU même URL qu'une entrée de la
+// sentinelle) est ignorée, toute entrée valide rencontrée entre dans la
+// sentinelle, insérée ou non ; une entrée sans URL n'y entre pas (faute de
+// config, pas décision).
+//
+// Deux différences, qui tiennent au parc API :
+// - l'équivalence avec une carte existante se juge à l'URL SEULE (identité de
+//   `mcpUrlIdentity`). Le nom d'une carte API n'est qu'un libellé, ni unique
+//   ni clef de quoi que ce soit : un utilisateur qui a déjà une carte vers
+//   cette URL, sous n'importe quel nom, n'en reçoit pas une seconde ;
+// - sans sentinelle sur une installation EXISTANTE, l'entrée `legacy` est
+//   consignée sans être insérée : la migration des champs plats l'a déjà
+//   consommée (elle créait « Par défaut » depuis `api_url`), et la réinsérer
+//   ferait revenir une carte supprimée ou dont l'URL a été corrigée. Les
+//   entrées du tableau `api_servers`, elles, n'ont jamais été vues : traitées
+//   normalement.
+function apiSeedPlan(configured, existing, seeded, fresh) {
+  const inheritLegacy = seeded == null && !fresh;
+  const done = Array.isArray(seeded) ? seeded.slice() : [];
+  const urls = [];
+  (Array.isArray(existing) ? existing : []).forEach(function (s) {
+    if (s && s.url) urls.push(mcpUrlIdentity(s.url));
+  });
+  const insert = [];
+  (Array.isArray(configured) ? configured : []).forEach(function (c) {
+    if (!c || !String(c.url || '').trim()) return;
+    const n = String(c.name || '').trim();
+    const u = mcpUrlIdentity(c.url);
+    if (done.some(function (r) { return (n && r.name === n) || r.url === u; })) return;
+    done.push({ name: n, url: u });
+    if (inheritLegacy && c.legacy) return;
+    if (urls.indexOf(u) >= 0) return;
+    urls.push(u);
+    insert.push(c);
+  });
+  return { insert: insert, seeded: done };
+}
+
 // Filtre les outils d'un serveur au moment du merge. allowlist/denylist
 // portent sur le nom NU de l'outil (tel que renvoyé par tools/list, avant préfixe).
 // denylist gagne en cas de conflit ; allowlist vide → tout passe ; denylist retire.

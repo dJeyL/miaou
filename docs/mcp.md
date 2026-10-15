@@ -190,7 +190,8 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
     délai s'y nomme `timeout_s`, comme le champ de la carte. Le jeton n'est
     **jamais écrit dans `config.json`** : l'entrée nomme une variable
     d'environnement (`authorization_token_env`), que le build résout en
-    `authorization_token` (`resolve_mcp_token_env`, build.py) et dont
+    `authorization_token` (`resolve_server_token_env`, build.py, commune aux
+    serveurs API pré-configurés) et dont
     l'absence le fait échouer — un `authorization_token` en clair aussi. La
     config est sérialisée dans `dist/miaou.html`, versionné et publié : le
     secret n'entre que dans le bundle du build qui définit la variable (le

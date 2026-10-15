@@ -184,8 +184,8 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   compte : le `grep` des compteurs explicites ne peut pas l'attraper, seule la
   non-duplication protège.
 - **`__MIAOU_CONFIG__`** ← `config.json` sérialisé (injecté dans `storage.js`,
-  d'où dérivent `REQUIRE_API_KEY`, `MAX_SUMMARIES`, `BUILD_API_URL`,
-  `BUILD_API_MODEL`).
+  d'où dérivent `REQUIRE_API_KEY`, `MAX_SUMMARIES`, `BUILD_API_SERVERS`,
+  `BUILD_MCP_SERVERS`…).
 - **`__MIAOU_HELP__`** ← `src/help.md` parsé en `{slug: markdown}` (injecté
   dans `tools.js`, alimente `miaou__about` et l'enum `topic`).
 - **`__MIAOU_HELP_LABELS__`** ← les libellés lisibles des titres de `src/help.md`

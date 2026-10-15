@@ -601,8 +601,9 @@ def load_config(use_config: bool = True) -> dict:
                  f'colonne {e.colno} — {e.msg}. Rappel : JSON exige des '
                  f'guillemets DOUBLES (\"...\"), jamais simples.')
     check_mcp_server_keys(cfg)
+    check_api_server_keys(cfg)
     warn_unknown_config_keys(cfg)
-    return resolve_mcp_token_env(cfg, os.environ)
+    return resolve_server_token_env(cfg, os.environ)
 
 
 # Les deux formes de la clef des serveurs MCP pré-configurés. Le singulier est
@@ -629,8 +630,36 @@ def check_mcp_server_keys(cfg: dict) -> None:
                  '(tableau) pour plusieurs serveurs.')
 
 
-def resolve_mcp_token_env(cfg: dict, environ) -> dict:
-    """Résout `authorization_token_env` des serveurs MCP pré-configurés.
+# Les serveurs API pré-configurés. Le tableau `api_servers` remplace la paire
+# plate historique `api_url`/`api_model`, qui reste lue (un seul serveur, nommé
+# « Par défaut ») ; le runtime lit l'une OU l'autre forme (`BUILD_API_SERVERS`,
+# storage.js).
+API_SERVER_KEY = 'api_servers'
+LEGACY_API_KEYS = ('api_url', 'api_model')
+
+# Toutes les clefs dont les entrées peuvent nommer un jeton par
+# `authorization_token_env`.
+TOKEN_SERVER_KEYS = MCP_SERVER_KEYS + (API_SERVER_KEY,)
+
+
+def check_api_server_keys(cfg: dict) -> None:
+    """Refuse une config qui pose `api_servers` à côté de `api_url`/`api_model`.
+
+    Même raisonnement que `check_mcp_server_keys` : la paire plate oubliée en
+    migrant vers le tableau livrerait un serveur de plus, ou serait ignorée en
+    silence. La présence de la clef suffit, valeur nulle comprise.
+    """
+    if API_SERVER_KEY in cfg:
+        legacy = [k for k in LEGACY_API_KEYS if k in cfg]
+        if legacy:
+            sys.exit(f'[erreur] config.json : « {API_SERVER_KEY} » et '
+                     f'« {"», «".join(legacy)} » sont tous présents. Garder '
+                     f'« {API_SERVER_KEY} » seul, en y reportant l\'URL et le '
+                     f'modèle.')
+
+
+def resolve_server_token_env(cfg: dict, environ) -> dict:
+    """Résout `authorization_token_env` des serveurs pré-configurés (MCP et API).
 
     Le jeton n'est jamais écrit dans `config.json` : l'entrée nomme une
     variable d'environnement, lue ici, et c'est sa valeur qui part dans le
@@ -648,9 +677,13 @@ def resolve_mcp_token_env(cfg: dict, environ) -> dict:
 
     Rend une copie ; `cfg` n'est pas muté. Les clefs `_env` sont retirées de la
     sortie (le nom de la variable n'a rien à faire au runtime).
+
+    Pour un serveur API, `authorization_token` est ensuite repris dans le champ
+    `key` de la carte au seed (storage.js) : un seul nom de clef côté config pour
+    les deux familles de serveurs.
     """
     out = dict(cfg)
-    for key in MCP_SERVER_KEYS:
+    for key in TOKEN_SERVER_KEYS:
         raw = cfg.get(key)
         if raw is None:
             continue
@@ -719,6 +752,7 @@ def warn_unknown_config_keys(cfg: dict) -> list:
         return []
     known.add('build_ts')
     known.update(MCP_SERVER_KEYS)    # le sample n'en montre qu'une des deux
+    known.update(LEGACY_API_KEYS)    # forme plate historique, remplacée dans le sample
     unknown = sorted(k for k in cfg if k not in known)
     for k in unknown:
         near = difflib.get_close_matches(k, known, n=1, cutoff=0.7)
@@ -726,8 +760,9 @@ def warn_unknown_config_keys(cfg: dict) -> list:
         print(f'  [warn] config.json : clef inconnue « {k} », ignorée au '
               f'runtime{hint}')
 
-    # Les clefs IMBRIQUÉES de `mcp_server`/`mcp_servers` échappent à la boucle ci-dessus, qui
-    # ne parcourt que le premier niveau. Le cas n'est pas théorique : `timeout`
+    # Les clefs IMBRIQUÉES des serveurs pré-configurés (`mcp_server`/
+    # `mcp_servers`, `api_servers`) échappent à la boucle ci-dessus, qui ne
+    # parcourt que le premier niveau. Le cas n'est pas théorique : `timeout`
     # y a été renommé `timeout_s` (alignement sur la convention d'unité), et une
     # config restée à l'ancien nom serait silencieusement ignorée — précisément
     # le silence que cette fonction existe pour supprimer.
@@ -736,16 +771,23 @@ def warn_unknown_config_keys(cfg: dict) -> list:
     # l'exemple canonique. Les clefs facultatives absentes du sample sont
     # ajoutées ici parce que le sample montre le cas courant et n'a pas à
     # énumérer tout le contrat.
-    sub_known = set()
-    sample_mcp = None
     try:
-        sample_mcp = json.loads(sample.read_text(encoding='utf-8')).get('mcp_server')
+        sample_cfg = json.loads(sample.read_text(encoding='utf-8'))
     except json.JSONDecodeError:
-        sample_mcp = None
-    if isinstance(sample_mcp, dict):
-        sub_known |= set(sample_mcp.keys())
-    sub_known |= {'enabled', 'toolAllowlist', 'toolDenylist', 'authorization_token_env'}
-    for key in MCP_SERVER_KEYS:
+        sample_cfg = {}
+
+    def sample_entry(key):
+        raw = sample_cfg.get(key)
+        if isinstance(raw, list):
+            raw = raw[0] if raw else None
+        return raw if isinstance(raw, dict) else None
+
+    mcp_known = set((sample_entry('mcp_server') or {}).keys())
+    mcp_known |= {'enabled', 'toolAllowlist', 'toolDenylist', 'authorization_token_env'}
+    api_known = set((sample_entry(API_SERVER_KEY) or {}).keys())
+    api_known |= {'name', 'url', 'model', 'authorization_token_env'}
+    nested = [(k, mcp_known) for k in MCP_SERVER_KEYS] + [(API_SERVER_KEY, api_known)]
+    for key, sub_known in nested:
         raw = cfg.get(key)
         entries = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
         for entry in entries:
