@@ -636,7 +636,8 @@ ligne qui énumérait des clés `localStorage` migrées depuis vers IndexedDB.
   dans l'appli installée, `theme-color` (`syncThemeColor`).
 - **`docs/rendering.md`** — rendu des blocs de code (Mermaid, hauteur bornée),
   débordement des grands tableaux (`--table-bleed`, `wrapWideTables`), rendu
-  par blocs pendant le streaming (`renderStreamBlocks`).
+  par blocs pendant le streaming (`renderStreamBlocks`), encadrés `> [!NOTE]`
+  (`splitCalloutQuote`, override `blockquote` de marked).
 - **`docs/skills.md`** — skills locales (CRUD, slash, drawer, autotrigger),
   skills système, commandes MIAOU derrière le `/` (`MIAOU_COMMANDS`,
   `matchMiaouCommand`, posé dans `sendMessage` et jamais `resolveSend`),

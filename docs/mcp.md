@@ -1252,8 +1252,11 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
 
 24. **Cycle de vie du proxy (extension `miaou/lifecycle`, lot AV).** Sa
     config a-t-elle changé depuis son démarrage, et redémarrage à la demande
-    sous superviseur. Extension privée de miaou-mcp-servers, publiée par TOUT
-    proxy qui la connaît, sans option, en ère moderne seulement ; contrat dans
+    sous superviseur. Extension privée de miaou-mcp-servers, publiée par
+    défaut par tout proxy qui la connaît (sa clef `lifecycle` à `false` la
+    retire, méthodes et déclaration ensemble), en ère moderne seulement ; un
+    proxy qui ne la déclare pas est traité comme antérieur à l'extension —
+    rien d'affiché, retour attendu par `head` (point 22) ; contrat dans
     son `docs/miaou-contract.md` (« Cycle de vie du proxy »), qui fait foi.
     Côté MIAOU, elle vit dans `mcp-update.js`, avec la mise à jour (point 22) :
     même surface, même cadence, même attente de retour.

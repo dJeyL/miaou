@@ -106,6 +106,14 @@
      fragment court, mais vibre sur fond sombre quand il colore une phrase
      entière. Même esprit que --ctx-over (état persistant, pas alerte). */
   --err-soft:   #d96a6a;
+  /* Encadrés > [!NOTE] & co. (chat.css) : teintes FIXES, celles de GitHub, hors
+     palette — le bleu de « Remarque » se confondrait sinon avec l'accent de la
+     palette bleue. Seule la luminosité les fait varier (theme-light.css). */
+  --callout-note:      #4493f8;
+  --callout-tip:       #3fb950;
+  --callout-important: #ab7df8;
+  --callout-warning:   #d29922;
+  --callout-caution:   #f85149;
   /* État d'ATTENTE : ni succès ni panne. Un serveur MCP connecté dont un
      upstream attend une autorisation marche — ses outils sont listés — mais
      quelque chose manque et se répare par un clic. Ni --ok (qui dirait que

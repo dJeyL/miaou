@@ -447,11 +447,48 @@ Mermaid reste réservé à la finalisation (cf. « Cycle de rendu »).
 texte quand le raisonnement ne fait que se prolonger (`appendOnlySuffix`, utils.js)
 et ne réécrit `textContent` que sinon.
 
+## Encadrés `> [!NOTE]` (alertes à la GitHub)
+
+Une citation dont la première ligne est `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`,
+`[!WARNING]` ou `[!CAUTION]`, **seule sur sa ligne** et sans égard pour la casse,
+se rend en encadré : bordure, glyphe et titre français dans la teinte du type,
+texte à la couleur du corps. Une citation où du texte suit le marqueur sur la
+même ligne reste une citation ordinaire, comme sur GitHub.
+
+**Un seul point de branchement** : un override `renderer.blockquote` dans le
+`marked.use` de `ui.js`, à côté de celui des fences. Tous les chemins
+string→HTML utilisent la même instance `marked` : `renderMd`, `renderUserMd`, le
+rendu par blocs du streaming (qui fusionne `marked.defaults`), l'export HTML et
+la conversion `.md`. La reconnaissance est le pur `splitCalloutQuote` (utils.js),
+qui travaille sur le HTML **intérieur** que marked 12 passe au renderer, sous
+les trois formes relevées sur la bibliothèque : marqueur suivi de `<br>`
+(`breaks: true`, écran), de `\n` (`breaks: false`, conversion `.md`), ou fermant
+son `<p>` (ligne `>` vide, liste juste dessous). Les libellés sont dans
+`CALLOUT_TITLES`, repris de la doc GitHub francophone. La sortie passe toujours
+par `sanitizeHtml` (piège 21) : le renderer n'ajoute que des classes, jamais de
+SVG.
+
+**Couleurs** : tokens `--callout-<type>`, teintes fixes de GitHub en couple
+sombre (base.css) / clair (theme-light.css), **hors palette** : le bleu de
+« Remarque » se confondrait sinon avec l'accent de la palette bleue. Ils sont
+dans `THEME_TOKENS` (export.js), donc la bascule de thème de l'export les suit.
+
+**Glyphes** : Octicons 16 px (MIT) en data-URI, posés en masque `currentColor`
+sur le `::before` du titre. Un caractère Unicode prendrait sa taille dans la
+police de repli.
+
+**Export** : les règles sont recopiées dans `EXPORT_CSS` (piège 22). Toute
+retouche de `chat.css` sur `.callout` est à reporter à la main.
+
+**Doctrine** : quelques phrases en fin de `CODEBLOCK_DOCTRINE` (v7). La liste des
+types y est rédigée en prose ; elle doit suivre `CALLOUT_TITLES`.
+
 ## Tests
 
 - QuickJS (`tests/test-utils.js`) : `isMermaidLang`, `mermaidThemeFor`,
   `sanitizeMermaidSource`, `isPreviewableLang`, `buildPreviewSrcdoc`,
-  `diagramImageName`, `streamBlockKeepCount`, `appendOnlySuffix` — les seuls
+  `diagramImageName`, `streamBlockKeepCount`, `appendOnlySuffix`,
+  `splitCalloutQuote` — les seuls
   helpers purs. Le rendu par blocs lui-même (DOM, sélection, défilement) se
   vérifie à la main : `docs/manual-tests.md`, section « Rendu pendant le
   streaming ». Le rendu, le toggle, le thème, l'iframe, la lightbox et le

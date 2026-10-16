@@ -811,6 +811,10 @@ que pour une autre modification. Une configuration qui ne permettrait pas au
 proxy de redémarrer (fichier mal formé, valeur refusée) s'annonce en erreur,
 avec la cause : le proxy refuse alors de redémarrer, de quoi ne pas le perdre
 sur une faute de frappe. Changer un simple commentaire ne compte pas.
+Un proxy peut aussi renoncer à ce suivi (option `lifecycle` à `false` dans sa
+configuration, typiquement quand il tourne en conteneur) : MIAOU n'en dit
+alors rien, ni notification, ni ligne dans les réglages, ni bouton
+**Redémarrer**.
 
 Réglages › Application dit, pour chaque proxy, si sa configuration est
 inchangée depuis son démarrage, ce qui a changé (les serveurs ou réglages
@@ -1178,6 +1182,14 @@ Quelques repères pour te déplacer dans MIAOU :
   ne pulse pas, tu n'as rien manqué. L'utiliser (ou redescendre
   toi-même jusqu'en bas) relance le suivi jusqu'au bout pour cette réponse-là ;
   le tour suivant repart du comportement normal.
+- **Encadrés** : une citation Markdown dont la première ligne est `[!NOTE]`,
+  `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` ou `[!CAUTION]`, seule sur sa ligne
+  (majuscules ou minuscules), s'affiche comme sur GitHub : une bordure, un
+  glyphe et un titre colorés (Remarque, Conseil, Important, Avertissement,
+  Attention), le texte suivant dessous. Ça marche dans tes messages comme dans
+  ceux du modèle, et les pages HTML exportées les gardent. Le modèle en pose de
+  lui-même quand un point doit ressortir. Sans ce marqueur, ou avec du texte
+  après lui sur la même ligne, la citation reste une citation ordinaire.
 - **Sélectionner pendant que la réponse s'écrit** : tu peux sélectionner et
   copier du texte d'une réponse en cours, et faire défiler un bloc de code ou
   un tableau large : ce qui est déjà écrit ne bouge plus. Si ta sélection

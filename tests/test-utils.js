@@ -1910,6 +1910,51 @@ describe('appendOnlySuffix', function() {
   });
 });
 
+// Entrées = HTML intérieur réellement passé par marked 12.0.0 au renderer
+// blockquote (relevé sur la lib), pas une forme supposée.
+describe('splitCalloutQuote', function() {
+  it('marqueur suivi d\'un <br> (breaks: true, écran)', function() {
+    var r = splitCalloutQuote('<p>[!NOTE]<br>Hello<br>world</p>\n');
+    expect(r.type).toBe('note');
+    expect(r.body).toBe('<p>Hello<br>world</p>\n');
+  });
+  it('marqueur suivi d\'un retour (breaks: false, conversion .md)', function() {
+    var r = splitCalloutQuote('<p>[!WARNING]\nHello</p>\n');
+    expect(r.type).toBe('warning');
+    expect(r.body).toBe('<p>Hello</p>\n');
+  });
+  it('marqueur fermant son paragraphe, bloc complet dessous', function() {
+    var r = splitCalloutQuote('<p>[!TIP]</p>\n<ul>\n<li>item</li>\n</ul>\n');
+    expect(r.type).toBe('tip');
+    expect(r.body).toBe('<ul>\n<li>item</li>\n</ul>\n');
+  });
+  it('marqueur seul : encadré à titre seul', function() {
+    var r = splitCalloutQuote('<p>[!CAUTION]</p>\n');
+    expect(r.type).toBe('caution');
+    expect(r.body).toBe('');
+  });
+  it('casse tolérée, type rendu en minuscules', function() {
+    expect(splitCalloutQuote('<p>[!important]</p>\n<p>x</p>\n').type).toBe('important');
+    expect(splitCalloutQuote('<p>[!Note]<br>x</p>\n').type).toBe('note');
+  });
+  it('chaque type a son libellé français', function() {
+    expect(Object.keys(CALLOUT_TITLES).join(',')).toBe('note,tip,important,warning,caution');
+    expect(CALLOUT_TITLES.caution).toBe('Attention');
+  });
+  it('texte sur la ligne du marqueur : citation ordinaire', function() {
+    expect(splitCalloutQuote('<p>[!WARNING] inline text</p>\n')).toBe(null);
+  });
+  it('type inconnu ou citation ordinaire : null', function() {
+    expect(splitCalloutQuote('<p>[!DANGER]<br>x</p>\n')).toBe(null);
+    expect(splitCalloutQuote('<p>plain</p>\n')).toBe(null);
+    expect(splitCalloutQuote('<p>voir [!NOTE]</p>\n')).toBe(null);
+    expect(splitCalloutQuote('')).toBe(null);
+  });
+  it('un type hérité d\'Object.prototype n\'est pas un type', function() {
+    expect(splitCalloutQuote('<p>[!constructor]</p>\n')).toBe(null);
+  });
+});
+
 describe('parseCodeFenceInfo', function() {
   it('lang seul, pas de filename', function() {
     var r = parseCodeFenceInfo('python');

@@ -60,6 +60,8 @@ Figtree/Fira Code).
 - Rendu Markdown, coloration syntaxique, tables, blocs de code avec « copier » et
   « télécharger ». Un grand tableau déborde de la colonne de lecture, centré,
   plutôt que de comprimer ses colonnes — réglable, et respecté à l'export HTML.
+- Encadrés à la GitHub (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`,
+  `[!CAUTION]`), dans le fil comme à l'export.
 - **Diagrammes Mermaid** rendus en place, avec bascule diagramme ↔ source,
   lightbox pan/zoom et export SVG/PNG — cf. [docs/rendering.md](docs/rendering.md).
 - **Aperçu des blocs HTML et SVG** dans une iframe isolée, sur clic explicite —
@@ -257,7 +259,8 @@ Détail : [docs/skills.md](docs/skills.md).
   propose ses mises à jour : MIAOU les annonce, les déclenche, attend le retour
   du proxy et se recharge s'il est servi par lui — cf. `docs/mcp.md`.
 - MIAOU signale une configuration du proxy modifiée depuis son démarrage et le
-  redémarre à la demande, sous superviseur — cf. `docs/mcp.md`.
+  redémarre à la demande, sous superviseur, sauf si le proxy y renonce
+  (`lifecycle: false`) — cf. `docs/mcp.md`.
 - Posture de sécurité assumée non-prod : le jeton est stocké en clair dans le
   navigateur (`localStorage`). Pour un usage exposé, passer par un proxy qui
   détient le secret côté serveur — c'est ce que fait le proxy du projet

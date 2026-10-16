@@ -2445,6 +2445,36 @@ function parseCodeFenceInfo(info) {
   return { lang, filename };
 }
 
+// Encadrés « alertes » à la GitHub : une citation dont la première ligne est
+// `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` ou `[!CAUTION]`, SEULE sur
+// sa ligne (un texte qui suit le marqueur sur la même ligne laisse une citation
+// ordinaire, comme GitHub), casse tolérée. Libellés français : ceux de la doc
+// GitHub francophone. L'ordre de la table est celui de GitHub, sans autre rôle.
+const CALLOUT_TITLES = {
+  note: 'Remarque',
+  tip: 'Conseil',
+  important: 'Important',
+  warning: 'Avertissement',
+  caution: 'Attention',
+};
+// Reconnaît le marqueur sur le HTML INTÉRIEUR que marked 12 passe au renderer
+// `blockquote` (vérifié sur marked 12.0.0) : le marqueur ouvre le premier <p>,
+// suivi d'un <br> (breaks: true, écran), d'un \n (breaks: false, conversion
+// .md) ou de la fin du paragraphe (ligne `>` vide, liste juste dessous).
+// Rend { type, body } — body = le HTML de la citation sans le marqueur — ou
+// null pour une citation ordinaire. Pure, testée en QuickJS.
+function splitCalloutQuote(html) {
+  const m = String(html || '').match(/^<p>\[!([a-z]+)\][ \t]*(<br>\s*|\n|<\/p>\s*)/i);
+  if (!m) return null;
+  const type = m[1].toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(CALLOUT_TITLES, type)) return null;
+  const rest = String(html).slice(m[0].length);
+  // Marqueur fermant son paragraphe : la suite est déjà du bloc complet. Sinon
+  // le paragraphe continue, on lui rend son ouverture.
+  const body = /^<\/p>/i.test(m[2]) ? rest : '<p>' + rest;
+  return { type, body };
+}
+
 // Rendu par blocs pendant le streaming (streamInto, ui.js) : combien de blocs
 // déjà peints peut-on GARDER tels quels ? `prev`/`next` = { keys, links } —
 // keys : le `raw` de chaque token de premier niveau du lexer marked, links : la

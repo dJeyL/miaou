@@ -619,8 +619,13 @@ const ROOT_SYSTEM_PROMPT = BINARY_DOCTRINE + "\n\n---\n\n" + ATTACHMENT_DOCTRINE
 // IDENTITY_BLURB) : générer un codeblock n'a aucun rapport avec la présence
 // d'outils, donc PAS dans ROOT_SYSTEM_PROMPT. Portée
 // directement par systemMessageParts()/buildSystemMessage() (main.js) via out.codeblock.
-// v6 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
-// même statut que le v1 de ROOT_SYSTEM_PROMPT. (v6 : la règle des fences imbriquées
+// v7 — une modification ici invalide le préfixe KV cache sur toutes les conversations,
+// même statut que le v1 de ROOT_SYSTEM_PROMPT. (v7 : ajout, en fin, des encadrés
+// `> [!NOTE]` & co. rendus par le renderer blockquote (ui.js) — mise en forme de
+// réponse au même titre que les fences, d'où ici plutôt qu'un bloc de plus. La
+// liste des types est celle de CALLOUT_TITLES (utils.js), à garder alignée ; le
+// « un ou deux au plus » vise l'inflation d'encadrés qu'un modèle inspiré
+// produirait sinon.) (v6 : la règle des fences imbriquées
 // de v5 est REFORMULÉE et DÉPLACÉE en fin de doctrine. Retour d'usage Julien, trois
 // défauts de la v5 : (a) elle était insérée entre la convention filename= et le renvoi
 // vers la skill mermaid, coupant en deux le fil mermaid alors qu'elle n'a aucun rapport
@@ -664,7 +669,12 @@ const CODEBLOCK_DOCTRINE =
   "que son ouverture. Avec trois backticks des deux côtés, la fermeture du bloc " +
   "intérieur ferme aussi le bloc englobant et la mise en page est cassée.\n\n" +
   "Si ce bloc englobant en contient lui-même un autre déjà imbriqué, monte à cinq " +
-  "backticks, et ainsi de suite : chaque niveau vers l'EXTÉRIEUR ajoute un backtick.";
+  "backticks, et ainsi de suite : chaque niveau vers l'EXTÉRIEUR ajoute un backtick.\n\n" +
+  "Hors code, une citation dont la première ligne est `> [!NOTE]`, `> [!TIP]`, " +
+  "`> [!IMPORTANT]`, `> [!WARNING]` ou `> [!CAUTION]`, seul sur sa ligne, s'affiche " +
+  "en encadré coloré titré (remarque, conseil, important, avertissement, attention) ; " +
+  "le texte suit sur les lignes `>` suivantes. Réserve-le à ce qui doit ressortir " +
+  "de la réponse, un ou deux au plus.";
 
 // Blurb d'identité — constante build-time, INCONDITIONNELLE (même statut que
 // CODEBLOCK_DOCTRINE) : quelques phrases situant l'application et renvoyant vers

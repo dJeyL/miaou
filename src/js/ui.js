@@ -414,6 +414,18 @@ if (window.marked) {
         const attr = filename ? ' data-filename="' + escHtml(filename) + '"' : '';
         return '<pre><code' + cls + attr + '>' + content + '</code></pre>\n';
       },
+      // Encadrés `> [!NOTE]` & co. (splitCalloutQuote, utils.js) ; une citation
+      // ordinaire garde la sortie par défaut de marked 12. Le glyphe et la
+      // couleur sont portés par le CSS (classe callout-<type>), jamais par du
+      // SVG dans le HTML. Même instance pour l'écran, le streaming, l'export et
+      // la conversion .md — tous héritent de l'override.
+      blockquote(quote) {
+        const c = splitCalloutQuote(quote);
+        if (!c) return '<blockquote>\n' + quote + '</blockquote>\n';
+        return '<blockquote class="callout callout-' + c.type + '">\n' +
+          '<p class="callout-title">' + CALLOUT_TITLES[c.type] + '</p>\n' +
+          c.body + '</blockquote>\n';
+      },
     },
   });
 }
@@ -7274,7 +7286,7 @@ const CTX_EXPLAIN = {
   root_prompt: 'Les instructions de base du modèle : comment se servir des outils disponibles et des documents.',
   intent_doctrine: 'La consigne qui demande au modèle d\'annoncer son intention avant chaque appel d\'outil.',
   skills_doctrine: 'La consigne qui explique au modèle ce qu\'est une skill et quand en déclencher une.',
-  codeblock_doctrine: 'La consigne de mise en forme des blocs de code dans les réponses.',
+  codeblock_doctrine: 'La consigne de mise en forme des réponses : blocs de code et encadrés.',
   user_prompt: 'Les instructions système saisies dans les Paramètres. La description de l\'Espace actif est comptée à part, avec le bloc Espace.',
   context_date_model: 'La date et l\'heure courantes, et le modèle utilisé.',
   memories_profile: 'Les souvenirs de portée générale, valables dans tous les Espaces.',

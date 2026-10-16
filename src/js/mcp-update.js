@@ -13,8 +13,8 @@
 // ICI, à la frontière (`normalizeProxyUpdateStatus`), et nulle part ailleurs.
 //
 // Même surface, même cadence et même attente de retour pour le cycle de vie du
-// proxy (extension `miaou/lifecycle`, publiée par tout proxy récent, sans
-// option) : sa config a-t-elle changé depuis son démarrage, et redémarrage à
+// proxy (extension `miaou/lifecycle`, publiée par défaut par tout proxy
+// récent, retirée par son option `lifecycle: false`) : sa config a-t-elle changé depuis son démarrage, et redémarrage à
 // la demande sous superviseur. Contrat : « Cycle de vie du proxy » du même
 // docs/miaou-contract.md. Son `instance` (identité du processus, la même que
 // celle des secrets volatils) est ce qui reconnaît le retour du proxy, après
@@ -722,7 +722,7 @@ function syncProxyUpdateSurface() {
   if (!names.length) {
     const hint = document.createElement('span');
     hint.className = 'hint';
-    hint.textContent = 'Aucun serveur MCP connecté ne propose de mise à jour ni de redémarrage à la demande (proxy MCP de miaou-mcp-servers ; la mise à jour demande en plus son option self_update).';
+    hint.textContent = 'Aucun serveur MCP connecté ne propose de mise à jour ni de redémarrage à la demande (proxy MCP de miaou-mcp-servers ; la mise à jour demande son option self_update, le redémarrage son option lifecycle, active par défaut).';
     list.appendChild(hint);
     return;
   }
