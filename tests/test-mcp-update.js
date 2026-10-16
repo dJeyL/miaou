@@ -569,6 +569,13 @@ describe('proxyRestartAcceptedInstance / proxyRestartLocalBlock / proxyBusyHolds
     expect(proxyBusyHoldsOffers('check')).toBe(false);
     expect(proxyBusyHoldsOffers(undefined)).toBe(false);
   });
+  it('seule l\'attente du retour tient la santé à l\'écart, pas l\'apply ni la vérification', function() {
+    expect(proxyBusyAwaitsRestart('reboot')).toBe(true);
+    expect(proxyBusyAwaitsRestart('restart')).toBe(true);
+    expect(proxyBusyAwaitsRestart('apply')).toBe(false);
+    expect(proxyBusyAwaitsRestart('check')).toBe(false);
+    expect(proxyBusyAwaitsRestart(undefined)).toBe(false);
+  });
 });
 
 describe('proxyRestartTimeoutText', function() {

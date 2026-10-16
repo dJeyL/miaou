@@ -344,6 +344,14 @@ function proxyBusyHoldsOffers(busy) {
   return busy === 'apply' || busy === 'restart' || busy === 'reboot';
 }
 
+// Le geste en cours attend le retour d'un proxy qui redémarre : la boucle de
+// `waitForProxyRestart` le reconnecte en échouant jusqu'à ce qu'il revienne,
+// et ces échecs-là sont attendus — les toasts de santé (`syncHealthToasts`)
+// n'en font pas des fronts, le workflow dit lui-même où il en est.
+function proxyBusyAwaitsRestart(busy) {
+  return busy === 'restart' || busy === 'reboot';
+}
+
 // Texte d'un échec d'`apply`, cause gardée (le message du proxy la porte).
 // Code applicatif testé par ÉGALITÉ, jamais par sous-chaîne.
 function proxyUpdateFailureText(err) {
@@ -535,6 +543,20 @@ let _proxyUpdatePollTimer = null;
 let _proxyUpdateLastRead = 0;
 const _proxyUpdateAnnounced = {};   // nom → cible déjà proposée en toast
 const _proxyUpdateBusy = {};        // nom → geste en cours dans CET onglet ('apply', 'check'…)
+
+// Serveurs dont CET onglet attend le retour (cf. proxyBusyAwaitsRestart).
+function proxyRestartAwaitedNames() {
+  return Object.keys(_proxyUpdateBusy).filter(n => proxyBusyAwaitsRestart(_proxyUpdateBusy[n]));
+}
+
+// Fin d'un geste : libère le serveur et, si le geste attendait un redémarrage,
+// enregistre l'état atteint sans front — l'issue (revenu, ou pas revenu à
+// temps) est dite par le toast du workflow, jamais en double par la santé.
+function releaseProxyBusy(name) {
+  const awaited = proxyBusyAwaitsRestart(_proxyUpdateBusy[name]);
+  delete _proxyUpdateBusy[name];
+  if (awaited && typeof syncHealthToasts === 'function') syncHealthToasts([name]);
+}
 
 // Serveurs qui déclarent l'extension, connectés.
 function proxyUpdateServers() {
@@ -874,7 +896,7 @@ async function restartProxy(name, opts) {
     }
   });
   if (!outcome || outcome.error) {
-    delete _proxyUpdateBusy[name];
+    releaseProxyBusy(name);
     const err = outcome && outcome.error;
     const inFlight = proxyRestartInFlight(err);
     if (inFlight !== null && !o.force) {
@@ -895,12 +917,13 @@ async function restartProxy(name, opts) {
     showToast({ key: key + ':result', level: 'info', theme: 'update', persistent: true, text: 'Redémarrage du proxy MCP…' });
     back = await runBackgroundTask('redémarrage du proxy MCP…', () => waitForProxyRestart(name, plan));
   } finally {
-    delete _proxyUpdateBusy[name];
+    releaseProxyBusy(name);
     syncProxyUpdateSurfaces();
   }
   if (!back) {
     showToast({ key: key + ':result', level: 'error', theme: 'update', persistent: true,
-      text: proxyRestartTimeoutText(Math.round(PROXY_RESTART_WAIT_MS / 60000), cut) });
+      text: proxyRestartTimeoutText(Math.round(PROXY_RESTART_WAIT_MS / 60000), cut),
+      action: proxyServerCardAction(name) });
     return;
   }
   showToast({ key: key + ':result', level: 'info', theme: 'update', text: 'Proxy MCP redémarré.' });
@@ -1004,6 +1027,12 @@ async function waitForProxyRestart(name, plan) {
   return false;
 }
 
+// Action des toasts « pas revenu à temps » : celle du toast de santé qu'ils
+// remplacent pendant un redémarrage attendu (cf. releaseProxyBusy).
+function proxyServerCardAction(name) {
+  return { label: 'Serveurs MCP', run: function () { openMcpServerCard(name); } };
+}
+
 // L'identité du proxy juste avant un geste qui le redémarre, ou null s'il ne
 // déclare pas `miaou/lifecycle` ou ne répond pas : relue à l'instant, jamais
 // prise dans la dernière lecture cadencée (un redémarrage fait ailleurs depuis
@@ -1036,7 +1065,8 @@ async function afterProxyUpdateApplied(server, result, status, servedByThis, ins
         showToast({ key: resultKey, level: 'error', theme: 'update', persistent: true,
           text: 'Le proxy MCP n\'est pas revenu après ' + Math.round(PROXY_RESTART_WAIT_MS / 60000)
             + ' minutes. Cause probable\u00a0: son démarrage échoue après la mise à jour (dépendances, configuration)\u00a0; '
-            + 'le journal de son superviseur donne la commande de retour arrière.' });
+            + 'le journal de son superviseur donne la commande de retour arrière.',
+          action: proxyServerCardAction(name) });
         return;
       }
       done = label + '\u00a0: mise à jour appliquée, proxy MCP revenu.';
@@ -1058,7 +1088,7 @@ async function afterProxyUpdateApplied(server, result, status, servedByThis, ins
     }
     showToast({ key: resultKey, level: 'info', theme: 'update', text: done });
   } finally {
-    delete _proxyUpdateBusy[name];
+    releaseProxyBusy(name);
     syncProxyUpdateSurface();
   }
   await readProxyUpdateStatus(server, false);

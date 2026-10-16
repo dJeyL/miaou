@@ -1355,6 +1355,21 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       connexion. Une sortie déjà demandée ailleurs rend la même acceptation ;
       `apply` est alors refusé en `UPDATE_RESTARTING`, que
       `proxyUpdateFailureText` dit déjà (`UPDATE_*`).
+    - **Santé pendant l'attente** : `waitForProxyRestart` reconnecte la carte
+      en boucle, et chaque échec la passe en erreur — sans garde, un toast
+      « ne répond plus » puis un « rétabli » doublaient le récit du workflow.
+      Tant que `_proxyUpdateBusy[name]` attend un retour (`'restart'` d'une
+      mise à jour, `'reboot'` d'un redémarrage : `proxyBusyAwaitsRestart`),
+      `syncHealthToasts` tient le serveur hors des fronts (`hold` de
+      `healthFronts`, cf. `docs/toasts.md`). La fin du geste passe par
+      `releaseProxyBusy`, qui enregistre l'état atteint SANS front (`absorb`) :
+      sans elle, la synchro suivante verrait `ok → error` sur un proxy pas
+      revenu, et doublerait le toast « pas revenu » — qui porte pour cette
+      raison l'action « Serveurs MCP » du toast de santé qu'il remplace. Un
+      toast d'erreur antérieur au geste est retiré si le proxy est revenu.
+      Portée : CET onglet. Les autres, qui n'ont pas de toast de workflow,
+      gardent leurs fronts génériques — seule information qu'ils aient ; pas
+      de relais multi-onglets (décidé).
     - Tests : `tests/test-mcp-update.js` (purs, et lecture avec `mcpRpc`
       stubé). La boucle `waitForProxyRestart` n'y tourne pas (`setTimeout`
       inerte dans le harnais) : seul son verdict pur l'est.
@@ -1367,7 +1382,14 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       la cause, `RESTART_CONFIG_INVALID`, proxy en marche), appel `sleep` du
       bench en vol (compte du refus, « Couper et redémarrer », appel coupé,
       autre `instance`, config relue inchangée), redémarrage sans
-      modification. Les phases A et C attendent aussi par `instance`. Rejoué
+      modification, puis (K) port changé et confirmé : attente au bout du
+      délai réel, toast « pas revenu » avec « Serveurs MCP ». En C, I, J et K,
+      aucun toast de santé `mcp:<nom>`, sous une synchro de santé forcée toutes
+      les 300 ms (sans elle, une attente sans autre activité n'en fait aucune,
+      code corrigé ou non). Prémisse — la carte est bien passée en erreur
+      pendant l'attente — assertée en I et K seulement : en C et J le proxy
+      relancé répond souvent dès la première reconnexion, rien à masquer. En
+      K, aussi après une synchro postérieure au geste. Les phases A et C attendent aussi par `instance`. Rejoué
       contre trois régressions injectées (avertissement de port supprimé,
       toast par modification ignoré, prédicat d'`instance` toujours faux) :
       rouge à chaque fois (le dernier dès la phase A, l'attente de la mise à

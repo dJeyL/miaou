@@ -5188,6 +5188,25 @@ describe('healthFronts — fronts de santé des services (lot AG)', function() {
     expect(ops(healthFronts(snap(null, { f: 'error' }), snap(null, {})))).toEqual(['dismiss:mcp:f']);
     expect(ops(healthFronts(snap(null, { f: 'ok' }), snap(null, {})))).toEqual([]);
   });
+  it('redémarrage attendu (hold) : les échecs de reconnexion ne font aucun front, l\'état établi est gardé', function() {
+    var r1 = healthFronts(snap(null, { f: 'ok', g: 'ok' }), snap(null, { f: 'error', g: 'error' }), { hold: ['f'] });
+    expect(ops(r1)).toEqual(['show:mcp:g:error']);
+    expect(r1.snapshot.mcp.f).toBe('ok');
+    var r2 = healthFronts(r1.snapshot, snap(null, { f: 'ok', g: 'error' }), { hold: ['f'] });
+    expect(ops(r2)).toEqual([]);
+  });
+  it('fin d\'attente (absorb) : l\'état atteint est enregistré sans annonce', function() {
+    var r1 = healthFronts(snap(null, { f: 'ok' }), snap(null, { f: 'error' }), { absorb: ['f'] });
+    expect(ops(r1)).toEqual([]);
+    expect(r1.snapshot.mcp.f).toBe('error');
+    // Après l'absorption, la synchro suivante ne voit plus de front.
+    expect(ops(healthFronts(r1.snapshot, snap(null, { f: 'error' })))).toEqual([]);
+    expect(ops(healthFronts(snap(null, { f: 'ok' }), snap(null, { f: 'ok' }), { absorb: ['f'] }))).toEqual([]);
+  });
+  it('fin d\'attente sur un serveur revenu : un toast d\'erreur antérieur est retiré, pas de rétabli', function() {
+    expect(ops(healthFronts(snap(null, { f: 'error' }), snap(null, { f: 'ok' }), { absorb: ['f'] }))).toEqual(['dismiss:mcp:f']);
+    expect(ops(healthFronts(snap(null, { f: 'error' }), snap(null, { f: 'error' }), { absorb: ['f'] }))).toEqual([]);
+  });
 });
 
 describe('normalizeTip / tipFlatText — texte d\'infobulle (lot AH)', function() {

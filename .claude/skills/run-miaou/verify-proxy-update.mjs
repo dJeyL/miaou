@@ -36,8 +36,19 @@
 //   I. appel d'outil en vol : refus, confirmation avec le compte du refus,
 //      « Couper et redémarrer » (force) depuis la carte → retour reconnu à
 //      l'instance, config relue inchangée, toast retiré ;
-//   J. redémarrage volontaire sans aucune modification, depuis Application.
+//   J. redémarrage volontaire sans aucune modification, depuis Application ;
+//   K. port changé, « Redémarrer quand même » : le proxy relancé ailleurs n'est
+//      jamais revu, l'attente va à son terme (PROXY_RESTART_WAIT_MS, trois
+//      minutes réelles), toast « pas revenu » avec l'action « Serveurs MCP ».
 // Les phases A et C attendent elles aussi le retour par `instance`.
+// Santé pendant les redémarrages (C, I, J, K) : l'attente reconnecte la carte en
+// boucle, et chaque échec la passe en erreur. Ces échecs-là ne doivent produire
+// AUCUN toast de santé (« ne répond plus » / « rétabli », clé `mcp:upd`) : le
+// workflow raconte déjà le redémarrage. Prémisse vérifiée à chaque phase — la
+// carte est bien passée en erreur pendant l'attente —, sans quoi l'absence de
+// toast ne prouverait rien. K couvre le cas où l'attente échoue : la fin du geste
+// enregistre l'état atteint sans front, et une synchro ultérieure n'en fait pas
+// un non plus.
 //
 // Usage : node verify-proxy-update.mjs [--headed] [--keep]
 // --keep laisse le dossier temporaire (journal du superviseur compris).
@@ -196,6 +207,53 @@ async function toastText(page, key) {
   return page.evaluate((s) => { const t = document.querySelector(s); return t ? t.textContent : null; }, toastSel(key));
 }
 
+// Enregistre, sur la page, les toasts de santé du serveur de test et les
+// passages de sa carte en erreur pendant que CET onglet attend son retour.
+// Posé après le chargement (fonctions déclarées : un addInitScript serait
+// réécrasé), relu et remis à zéro par phase via `healthSince`.
+// La boucle d'attente ne synchronise pas la santé elle-même : ce sont les
+// autres écrivains de statut (sonde du backend, échec ou succès d'appel,
+// reprise, drawer) qui appellent `syncHealthToasts`, au gré de l'activité. Une
+// attente sans aucun d'eux ne produit donc aucun front, code corrigé ou non
+// (premier rejeu : prémisse fausse en C). D'où une synchro forcée toutes les
+// 300 ms, qui tient lieu de cette activité et rend le scénario déterministe.
+async function recordHealth(p) {
+  await p.evaluate((name) => {
+    window.__health = { toasts: [], heldErrors: 0, states: [] };
+    setInterval(() => syncHealthToasts(), 300);
+    const realShow = showToast;
+    window.showToast = function (opts) {
+      if (opts && opts.key === 'mcp:' + name) window.__health.toasts.push(opts.level + ': ' + opts.text);
+      return realShow.apply(this, arguments);
+    };
+    const realSync = syncHealthToasts;
+    window.syncHealthToasts = function () {
+      const st = getMcpStatus(name);
+      const awaited = proxyRestartAwaitedNames().indexOf(name) >= 0;
+      if (st && st.state === 'error' && awaited) window.__health.heldErrors++;
+      // Trace des états vus (doublons consécutifs fusionnés), pour le diagnostic.
+      const tag = (awaited ? 'held:' : '') + (st ? st.state : 'none');
+      const seen = window.__health.states;
+      if (seen[seen.length - 1] !== tag) seen.push(tag);
+      return realSync.apply(this, arguments);
+    };
+  }, SERVER);
+}
+async function healthSince(p) {
+  return p.evaluate(() => { const h = window.__health; window.__health = { toasts: [], heldErrors: 0, states: [] }; return h; });
+}
+// `premise` : la carte doit être passée en erreur pendant l'attente, sans quoi
+// l'absence de toast ne prouve rien. Assertée seulement là où le montage la
+// garantit — I (coupure forcée) et K (proxy jamais revu). En C et J, le proxy
+// relancé répond souvent dès la première reconnexion (2 s) : états mesurés
+// `ok → held:ok → ok`, aucun échec à masquer ; la trace est alors seulement
+// imprimée.
+function checkHealthQuiet(phase, h, premise) {
+  if (premise) check(phase + ' : prémisse, la carte est passée en erreur pendant l\'attente', h.heldErrors > 0, h);
+  else console.log('  (' + phase + ' : états vus pendant l\'attente ' + JSON.stringify(h.states) + ', erreurs tenues : ' + h.heldErrors + ')');
+  check(phase + ' : aucun toast de santé pendant le redémarrage', h.toasts.length === 0, h.toasts);
+}
+
 let browser;
 const pageErrors = [];
 try {
@@ -277,6 +335,7 @@ try {
   await fpage.goto(pathToFileURL(path.join(DIST, 'miaou.html')).href);
   await bootWait(fpage);
   await configureServer(fpage);
+  await recordHealth(fpage);
   await page.close();   // la page servie ne doit pas interférer (toasts, lectures)
   const shaC = publish('feat: phase C', () => appendFileSync(path.join(pub, 'README.md'), '\nphase C\n'));
   await checkNow(fpage, 'Mise à jour des serveurs MCP disponible');
@@ -284,6 +343,7 @@ try {
     (await toastText(fpage, 'proxy-update:upd') || '').startsWith('Mise à jour des serveurs MCP disponible.'), await toastText(fpage, 'proxy-update:upd'));
   const relaunchBeforeC = relaunchCount();
   await fpage.evaluate(() => { window.__verifyMarker = 'C'; });
+  await healthSince(fpage);
   await fpage.click(toastSel('proxy-update:upd') + ' .toast-body');
   await fpage.waitForFunction(() => {
     const t = document.querySelector('.toast[data-key="proxy-update:upd:result"]');
@@ -294,6 +354,7 @@ try {
   check('C : le superviseur a relancé le proxy, le clone est à la cible',
     relaunchCount() === relaunchBeforeC + 1 && git(work, 'rev-parse', 'HEAD') === shaC, { relaunch: relaunchCount() });
   check('C : le serveur est reconnecté', await fpage.evaluate(() => getMcpStatus('upd') && getMcpStatus('upd').state === 'ok'));
+  checkHealthQuiet('C', await healthSince(fpage), false);
 
   // ── D : arbre sale → bloquée, à faire à la main ────────────────────────────
   console.log('\nD. fichier suivi modifié dans le clone du proxy');
@@ -441,8 +502,10 @@ try {
   const cI = await toastText(fpage, 'proxy-restart:upd:confirm') || '';
   check('I : confirmation avec le compte lu dans le refus', cI.startsWith('1 appel d’outil en cours sera coupé'), cI);
   check('I : action « Couper et redémarrer », rien de redémarré avant', cI.includes('Couper et redémarrer') && rebootCount() === rebootsI, cI);
+  await healthSince(fpage);
   await fpage.click(toastSel('proxy-restart:upd:confirm') + ' .toast-body');
   await fpage.waitForFunction(() => { const t = document.querySelector('.toast[data-key="proxy-restart:upd:result"]'); return t && /redémarré\.|pas revenu/.test(t.textContent); }, null, { timeout: 240000, polling: 500 });
+  checkHealthQuiet('I', await healthSince(fpage), true);
   const rI = await toastText(fpage, 'proxy-restart:upd:result') || '';
   check('I : « Proxy MCP redémarré. »', rI.startsWith('Proxy MCP redémarré.'), rI);
   const lI = await lc(fpage);
@@ -456,13 +519,41 @@ try {
   console.log('\nJ. redémarrage volontaire, config inchangée');
   const instJ = lI.instance;
   const rebootsJ = rebootCount();
+  await healthSince(fpage);
   await clickAppRestart(fpage);
   await fpage.waitForFunction(() => { const t = document.querySelector('.toast[data-key="proxy-restart:upd:result"]'); return t && /redémarré\.|pas revenu|refusé/.test(t.textContent) && !document.querySelector('#proxy-update-list .proxy-busy'); }, null, { timeout: 240000, polling: 500 });
+  checkHealthQuiet('J', await healthSince(fpage), false);
   const lJ = await lc(fpage);
   check('J : aucun avertissement (config inchangée), proxy revenu sous une autre instance',
     (await toastText(fpage, 'proxy-restart:upd:confirm')) === null && !!lJ && lJ.instance !== instJ && rebootCount() === rebootsJ + 1,
     { toast: await toastText(fpage, 'proxy-restart:upd:result'), reboots: rebootCount() - rebootsJ });
   check('J : la carte est reconnectée', await fpage.evaluate(() => getMcpStatus('upd') && getMcpStatus('upd').state === 'ok'));
+
+  console.log('\nK. port changé, redémarrage confirmé : le proxy n\'est jamais revu (trois minutes)');
+  await fpage.evaluate(() => closeSettings());
+  writeCfg({ port: PORT + 1 });
+  await checkLifecycle(fpage, 'port');
+  await clickAppRestart(fpage);
+  await fpage.waitForSelector(toastSel('proxy-restart:upd:confirm'), { timeout: 10000 });
+  await fpage.evaluate(() => closeSettings());
+  await healthSince(fpage);
+  // Le « Proxy MCP redémarré. » de J peut être encore affiché, sous la même
+  // clé : l'attendre tel quel ferait conclure K aussitôt (payé au premier rejeu).
+  await fpage.evaluate(() => dismissToast('proxy-restart:upd:result'));
+  await fpage.click(toastSel('proxy-restart:upd:confirm') + ' .toast-body');
+  await fpage.waitForFunction(() => !!_proxyUpdateBusy.upd, null, { timeout: 20000 });
+  await fpage.waitForFunction(() => {
+    const t = document.querySelector('.toast[data-key="proxy-restart:upd:result"]');
+    return !_proxyUpdateBusy.upd && t && /redémarré\.|pas revenu/.test(t.textContent);
+  }, null, { timeout: 300000, polling: 1000 });
+  const rK = await toastText(fpage, 'proxy-restart:upd:result') || '';
+  check('K : « pas revenu », avec l\'action « Serveurs MCP »', rK.startsWith('Le proxy MCP n’est pas revenu') && rK.includes('Serveurs MCP'), rK);
+  check('K : la carte est en erreur une fois l\'attente finie', await fpage.evaluate(() => getMcpStatus('upd') && getMcpStatus('upd').state === 'error'));
+  // Une synchro APRÈS la fin du geste (l'appli en refait à chaque changement de
+  // santé) : sans l'absorption, c'est elle qui ferait le front ok → erreur.
+  await fpage.evaluate(() => syncHealthToasts());
+  checkHealthQuiet('K', await healthSince(fpage), true);
+  check('K : aucun toast de santé affiché', (await toastText(fpage, 'mcp:upd')) === null);
 
   check('aucune exception non rattrapée dans les pages', pageErrors.length === 0, pageErrors);
 } catch (e) {

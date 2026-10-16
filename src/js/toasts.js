@@ -385,8 +385,12 @@ function currentHealthSnapshot() {
   return { backend: backend, mcp: mcp };
 }
 
-function syncHealthToasts() {
-  const res = healthFronts(_healthSnapshot, currentHealthSnapshot());
+// `absorbNames` : serveurs MCP dont le redémarrage attendu par cet onglet vient
+// de finir (cf. `releaseProxyRestartWait`, mcp-update.js) ; ceux dont il est
+// encore attendu sont tenus hors des fronts pendant l'attente.
+function syncHealthToasts(absorbNames) {
+  const hold = typeof proxyRestartAwaitedNames === 'function' ? proxyRestartAwaitedNames() : [];
+  const res = healthFronts(_healthSnapshot, currentHealthSnapshot(), { hold: hold, absorb: absorbNames || [] });
   _healthSnapshot = res.snapshot;
   res.events.forEach(function(ev) {
     if (ev.op === 'dismiss') { dismissToast(ev.key); return; }

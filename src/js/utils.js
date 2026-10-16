@@ -6144,8 +6144,21 @@ function toastPlacement(m) {
 //     erreur ; 'error' → 'ok' = « rétabli » ; 'error' → 'pending' ou retiré
 //     (supprimé, désactivé) = toast retiré, sans « rétabli » — une attente
 //     d'autorisation n'annonce jamais rien (AB-5).
+//
+// `opts` (facultatif) dit ce qu'un redémarrage DEMANDÉ PAR CET ONGLET fait de
+// ces fronts. Le workflow qui attend le retour du proxy le reconnecte en
+// boucle : chaque échec passerait la carte en erreur, puis le retour en
+// « rétabli », en doublon des toasts qui racontent déjà ce redémarrage.
+//   - `hold` : noms MCP dont le retour est attendu — leur état brut compte
+//     comme 'connecting', donc le dernier état établi est gardé, sans front ;
+//   - `absorb` : noms dont l'attente vient de finir — le nouvel état est
+//     enregistré sans rien annoncer, l'issue étant dite par le toast du
+//     workflow ; seul un toast d'erreur antérieur au geste est retiré si le
+//     serveur est revenu (sans quoi il resterait, démenti).
 // Pure, testable en QuickJS.
-function healthFronts(prev, next) {
+function healthFronts(prev, next, opts) {
+  const hold = (opts && opts.hold) || [];
+  const absorb = (opts && opts.absorb) || [];
   const events = [];
   const nb = next && next.backend;
   let pb = prev && prev.backend;
@@ -6165,11 +6178,14 @@ function healthFronts(prev, next) {
   const nmRaw = (next && next.mcp) || {};
   const nm = {};
   Object.keys(nmRaw).forEach(function(name) {
-    nm[name] = nmRaw[name] === 'connecting' ? (pm[name] || 'connecting') : nmRaw[name];
+    const raw = hold.indexOf(name) >= 0 ? 'connecting' : nmRaw[name];
+    nm[name] = raw === 'connecting' ? (pm[name] || 'connecting') : raw;
   });
   Object.keys(nm).forEach(function(name) {
     const was = pm[name], now = nm[name];
-    if (now === 'error' && was !== 'error') {
+    if (absorb.indexOf(name) >= 0) {
+      if (was === 'error' && now !== 'error') events.push({ op: 'dismiss', key: 'mcp:' + name });
+    } else if (now === 'error' && was !== 'error') {
       events.push({ op: 'show', key: 'mcp:' + name, kind: 'mcp', name: name, level: 'error' });
     } else if (was === 'error' && now === 'ok') {
       events.push({ op: 'show', key: 'mcp:' + name, kind: 'mcp', name: name, level: 'info' });

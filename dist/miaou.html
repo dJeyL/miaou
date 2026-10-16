@@ -5850,7 +5850,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-16 12:34 UTC */
+/* miaou — built: 2026-10-16 13:29 UTC */
 
 /* ── utils.js ── */
 
@@ -9228,7 +9228,9 @@ function toastPlacement(m) {
   return { mode: mode, right: m.inset, bottom: bottom };
 }
 
-function healthFronts(prev, next) {
+function healthFronts(prev, next, opts) {
+  const hold = (opts && opts.hold) || [];
+  const absorb = (opts && opts.absorb) || [];
   const events = [];
   const nb = next && next.backend;
   let pb = prev && prev.backend;
@@ -9248,11 +9250,14 @@ function healthFronts(prev, next) {
   const nmRaw = (next && next.mcp) || {};
   const nm = {};
   Object.keys(nmRaw).forEach(function(name) {
-    nm[name] = nmRaw[name] === 'connecting' ? (pm[name] || 'connecting') : nmRaw[name];
+    const raw = hold.indexOf(name) >= 0 ? 'connecting' : nmRaw[name];
+    nm[name] = raw === 'connecting' ? (pm[name] || 'connecting') : raw;
   });
   Object.keys(nm).forEach(function(name) {
     const was = pm[name], now = nm[name];
-    if (now === 'error' && was !== 'error') {
+    if (absorb.indexOf(name) >= 0) {
+      if (was === 'error' && now !== 'error') events.push({ op: 'dismiss', key: 'mcp:' + name });
+    } else if (now === 'error' && was !== 'error') {
       events.push({ op: 'show', key: 'mcp:' + name, kind: 'mcp', name: name, level: 'error' });
     } else if (was === 'error' && now === 'ok') {
       events.push({ op: 'show', key: 'mcp:' + name, kind: 'mcp', name: name, level: 'info' });
@@ -11457,7 +11462,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1792154074}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1792157390}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11477,7 +11482,7 @@ const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || ''
 const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "767e6be2d408b735"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "95c78e69c7ca65f4"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -29772,8 +29777,9 @@ function currentHealthSnapshot() {
   return { backend: backend, mcp: mcp };
 }
 
-function syncHealthToasts() {
-  const res = healthFronts(_healthSnapshot, currentHealthSnapshot());
+function syncHealthToasts(absorbNames) {
+  const hold = typeof proxyRestartAwaitedNames === 'function' ? proxyRestartAwaitedNames() : [];
+  const res = healthFronts(_healthSnapshot, currentHealthSnapshot(), { hold: hold, absorb: absorbNames || [] });
   _healthSnapshot = res.snapshot;
   res.events.forEach(function(ev) {
     if (ev.op === 'dismiss') { dismissToast(ev.key); return; }
@@ -33755,6 +33761,10 @@ function proxyBusyHoldsOffers(busy) {
   return busy === 'apply' || busy === 'restart' || busy === 'reboot';
 }
 
+function proxyBusyAwaitsRestart(busy) {
+  return busy === 'restart' || busy === 'reboot';
+}
+
 function proxyUpdateFailureText(err) {
   const e = err || {};
   const code = e.data && typeof e.data.code === 'string' ? e.data.code : '';
@@ -33899,6 +33909,16 @@ let _proxyUpdatePollTimer = null;
 let _proxyUpdateLastRead = 0;
 const _proxyUpdateAnnounced = {};
 const _proxyUpdateBusy = {};
+
+function proxyRestartAwaitedNames() {
+  return Object.keys(_proxyUpdateBusy).filter(n => proxyBusyAwaitsRestart(_proxyUpdateBusy[n]));
+}
+
+function releaseProxyBusy(name) {
+  const awaited = proxyBusyAwaitsRestart(_proxyUpdateBusy[name]);
+  delete _proxyUpdateBusy[name];
+  if (awaited && typeof syncHealthToasts === 'function') syncHealthToasts([name]);
+}
 
 function proxyUpdateServers() {
   return listEnabledMcpServers().filter(s => {
@@ -34201,7 +34221,7 @@ async function restartProxy(name, opts) {
     }
   });
   if (!outcome || outcome.error) {
-    delete _proxyUpdateBusy[name];
+    releaseProxyBusy(name);
     const err = outcome && outcome.error;
     const inFlight = proxyRestartInFlight(err);
     if (inFlight !== null && !o.force) {
@@ -34221,12 +34241,13 @@ async function restartProxy(name, opts) {
     showToast({ key: key + ':result', level: 'info', theme: 'update', persistent: true, text: 'Redémarrage du proxy MCP…' });
     back = await runBackgroundTask('redémarrage du proxy MCP…', () => waitForProxyRestart(name, plan));
   } finally {
-    delete _proxyUpdateBusy[name];
+    releaseProxyBusy(name);
     syncProxyUpdateSurfaces();
   }
   if (!back) {
     showToast({ key: key + ':result', level: 'error', theme: 'update', persistent: true,
-      text: proxyRestartTimeoutText(Math.round(PROXY_RESTART_WAIT_MS / 60000), cut) });
+      text: proxyRestartTimeoutText(Math.round(PROXY_RESTART_WAIT_MS / 60000), cut),
+      action: proxyServerCardAction(name) });
     return;
   }
   showToast({ key: key + ':result', level: 'info', theme: 'update', text: 'Proxy MCP redémarré.' });
@@ -34304,6 +34325,10 @@ async function waitForProxyRestart(name, plan) {
   return false;
 }
 
+function proxyServerCardAction(name) {
+  return { label: 'Serveurs MCP', run: function () { openMcpServerCard(name); } };
+}
+
 async function proxyInstanceBeforeRestart(server) {
   const st = server && getMcpStatus(server.name);
   if (!st || !st.lifecycleDeclared) return null;
@@ -34329,7 +34354,8 @@ async function afterProxyUpdateApplied(server, result, status, servedByThis, ins
         showToast({ key: resultKey, level: 'error', theme: 'update', persistent: true,
           text: 'Le proxy MCP n\'est pas revenu après ' + Math.round(PROXY_RESTART_WAIT_MS / 60000)
             + ' minutes. Cause probable\u00a0: son démarrage échoue après la mise à jour (dépendances, configuration)\u00a0; '
-            + 'le journal de son superviseur donne la commande de retour arrière.' });
+            + 'le journal de son superviseur donne la commande de retour arrière.',
+          action: proxyServerCardAction(name) });
         return;
       }
       done = label + '\u00a0: mise à jour appliquée, proxy MCP revenu.';
@@ -34350,7 +34376,7 @@ async function afterProxyUpdateApplied(server, result, status, servedByThis, ins
     }
     showToast({ key: resultKey, level: 'info', theme: 'update', text: done });
   } finally {
-    delete _proxyUpdateBusy[name];
+    releaseProxyBusy(name);
     syncProxyUpdateSurface();
   }
   await readProxyUpdateStatus(server, false);

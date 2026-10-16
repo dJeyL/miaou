@@ -211,7 +211,14 @@ l'état antérieur vaut `ok`, donc un backend déjà mort s'annonce ; côté MCP
 serveur en reconnexion garde son dernier état ÉTABLI dans l'instantané (sans
 quoi `error → connecting → ok` n'aurait jamais de « rétabli »), une attente
 d'autorisation n'annonce rien, et un serveur supprimé ou désactivé en erreur
-voit son toast retiré sans « rétabli ».
+voit son toast retiré sans « rétabli ». Un troisième argument facultatif sert
+les redémarrages de proxy que CET onglet attend (`docs/mcp.md`, point 24) :
+`hold` (noms dont l'état brut compte comme `connecting` : les échecs de
+reconnexion de l'attente ne sont pas des fronts) et `absorb` (noms dont
+l'attente vient de finir : état enregistré sans annonce, toast d'erreur
+antérieur retiré si le serveur est revenu). `syncHealthToasts(absorbNames)`
+lit `hold` dans `proxyRestartAwaitedNames()` ; `absorbNames` ne vient que de
+`releaseProxyBusy`.
 
 **Mises à jour — émises hors de toasts.js.** Deux familles, chacune près de la
 décision qu'elle annonce : la nouvelle version de MIAOU servie (`app-update`,
