@@ -368,7 +368,10 @@ La mémoire des souvenirs est distincte de la continuité entre conversations
 Tes conversations sont **conservées** et rangées dans la barre latérale par
 période (aujourd'hui, hier, plus ancien…). Chaque conversation reçoit un titre
 généré automatiquement, que tu peux modifier, et tu peux la rouvrir à tout
-moment pour reprendre où tu en étais.
+moment pour reprendre où tu en étais. Recharger la page (Ctrl/Cmd+R, ou le
+bouton d'un message qui propose de recharger) **rouvre la conversation que tu
+avais à l'écran** dans cet onglet ; une nouvelle fenêtre ou un nouvel onglet
+démarre sur une conversation vierge.
 
 Un **libellé apparaît dès ton premier message**, sans attendre : le début de ce
 que tu viens d'écrire s'affiche en italique, le temps que le vrai titre arrive.

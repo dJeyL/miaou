@@ -856,6 +856,26 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
     conversation ne touche **jamais** les fichiers d'espace, y compris promus
     (ils ont été copiés, provenance informationnelle).
 
+## Conversation rouverte au rechargement (`sessionStorage`)
+
+Clé `miaou-open-conv` (`OPEN_CONV_SESSION_KEY`, storage.js), en
+`sessionStorage` : propre à l'onglet, elle survit à un rechargement (geste du
+navigateur, Ctrl/Cmd+R, `location.reload` d'un toast) et à rien d'autre. Une
+nouvelle fenêtre ou un nouvel onglet démarre vide, Ctrl/Cmd+N compris
+(`window.open` en `noopener` ne recopie pas la session) : deux fenêtres sur la
+même conversation n'apporteraient que le soft-lock.
+
+- **Écriture** : un point unique, `rememberOpenConvForReload(currentConvId)`
+  dans le gestionnaire de départ d'onglet d'`init()` (`pagehide`/`beforeunload`)
+  — pas à chaque changement de conversation. Un `currentConvId` nul efface la
+  clé. Un crash sans événement ne restaure rien, admis.
+- **Lecture** : `takeOpenConvForReload()` lit et consomme la clé en fin
+  d'`init()`, après la décision `sidebar-open` ; `restorableConvId` (pure)
+  ne rend l'id que s'il figure dans `spaceConvIds(activeSpaceId, …)`. Une
+  conversation supprimée ou passée dans un autre Space entre-temps retombe sur
+  l'écran vide, jamais sur un changement de Space implicite (piège 18).
+- Ni le brouillon du composer ni la position de défilement ne sont restaurés.
+
 ## Export / import complet des données (feature E)
 
 Assurance-vie : tout l'état de MIAOU (les clés localStorage ci-dessus + les

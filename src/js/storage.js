@@ -2528,6 +2528,49 @@ function spaceConvIds(spaceId, convs) {
   return set;
 }
 
+// ── Conversation rouverte au rechargement ───────────────────────────────────
+// La conversation affichée est notée dans `sessionStorage` au départ de la page
+// (pagehide, main.js) et rouverte au démarrage suivant. `sessionStorage` est
+// PROPRE À L'ONGLET et survit à un rechargement (geste du navigateur, ou
+// location.reload d'un toast) : une nouvelle fenêtre ou un nouvel onglet
+// démarre vide, Ctrl/Cmd+N compris (window.open en noopener ne recopie pas la
+// session). Une écriture au départ plutôt qu'à chaque changement de
+// conversation : un seul point, et un crash ne restaure rien, ce qui est admis.
+const OPEN_CONV_SESSION_KEY = 'miaou-open-conv';
+
+// Pure : l'id noté est-il encore rouvrable dans le Space actif ? Une
+// conversation supprimée, ou passée dans un autre Space (un pair a changé le
+// Space actif, ou déplacé la conversation), rend null : on retombe sur l'écran
+// vide, jamais sur un changement de Space implicite (piège 18).
+function restorableConvId(savedId, spaceId, convs) {
+  if (!savedId) return null;
+  return spaceConvIds(spaceId, convs).has(savedId) ? savedId : null;
+}
+
+function _openConvSession() {
+  try { return typeof sessionStorage !== 'undefined' ? sessionStorage : null; } catch (e) { return null; }
+}
+
+function rememberOpenConvForReload(id) {
+  const ss = _openConvSession();
+  if (!ss) return;
+  try {
+    if (id) ss.setItem(OPEN_CONV_SESSION_KEY, id);
+    else ss.removeItem(OPEN_CONV_SESSION_KEY);
+  } catch (e) { /* stockage de session refusé ou plein : rien à restaurer */ }
+}
+
+// Lit ET consomme la clé : une lecture unique par démarrage.
+function takeOpenConvForReload() {
+  const ss = _openConvSession();
+  if (!ss) return null;
+  try {
+    const id = ss.getItem(OPEN_CONV_SESSION_KEY);
+    ss.removeItem(OPEN_CONV_SESSION_KEY);
+    return id || null;
+  } catch (e) { return null; }
+}
+
 // ── Export / import complet des données (feature E) ─────────────────────────
 // Assurance-vie : tout l'état de MIAOU (localStorage + IndexedDB) tient dans un
 // unique fichier JSON, réimportable par REMPLACEMENT INTÉGRAL (pas de fusion,

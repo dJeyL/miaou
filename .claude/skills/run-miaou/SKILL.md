@@ -276,6 +276,14 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   after first seeing it set) AND the text — never on the text alone.
   The tell: a long wait that "finishes" in a second, and reds whose values are
   those of the previous phase.
+  **`dismissToast` itself is not immediate either**: the node stays in the DOM
+  for its exit animation, so a `querySelector` or a MutationObserver armed
+  right after it still sees the toast — and for a toast under the SAME key, it
+  finds the leaving node first and misses the new one's texts. After
+  `dismissToast(key)`, wait for `!document.querySelector(sel)` before
+  observing; likewise wait for the node to leave before reading a log that
+  should end on its removal. Paid the same day (`verify-volatile-secrets.mjs`,
+  phases E and J): two reds, then a third, on correct code, two extra runs.
 - **There is no localStorage state across driver runs** — Playwright
   launches a fresh, empty profile each time (`chromium.launch()` with no
   persistent context), so the app always boots to "Nouvelle

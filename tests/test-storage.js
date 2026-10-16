@@ -2107,3 +2107,26 @@ describe('catalogue de modèles : choix du composer et de la palette (modelMenuC
     expect(ids(r[1])).toEqual(['y']);
   });
 });
+
+describe('conversation rouverte au rechargement (restorableConvId)', function() {
+  var convs = [
+    { id: 'a', spaceId: 'sA' },
+    { id: 'b', spaceId: 'sB' },
+    { id: 'c' }
+  ];
+  it('rend l\'id noté s\'il appartient au Space actif', function() {
+    expect(restorableConvId('a', 'sA', convs)).toBe('a');
+  });
+  it('null pour une conversation d\'un autre Space', function() {
+    expect(restorableConvId('b', 'sA', convs)).toBe(null);
+  });
+  it('null pour une conversation supprimée', function() {
+    expect(restorableConvId('z', 'sA', convs)).toBe(null);
+  });
+  it('null sans id noté', function() {
+    expect(restorableConvId(null, 'sA', convs)).toBe(null);
+  });
+  it('conversation sans spaceId : rattachée au Space par défaut', function() {
+    expect(restorableConvId('c', DEFAULT_SPACE_ID, convs)).toBe('c');
+  });
+});

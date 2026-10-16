@@ -5812,6 +5812,9 @@ async function init() {
     // le TTL reste le filet si l'onglet meurt sans que ces events partent.
     stopAllGenerationRelays();
     if (currentConvId) announceConvClosed(currentConvId);
+    // Rouverte au démarrage suivant de CET onglet (rechargement), cf.
+    // takeOpenConvForReload plus bas.
+    rememberOpenConvForReload(currentConvId);
   };
   window.addEventListener('pagehide', onTabLeaving);
   window.addEventListener('beforeunload', onTabLeaving);
@@ -5870,6 +5873,11 @@ async function init() {
   const ta = $('composer-text');
   if (ta && !ta.disabled) ta.focus();
   if (!isMobileLayout() && listAllConversations().length > 0) $('app').classList.add('sidebar-open');
+  // Rechargement : rouvrir la conversation qu'affichait cet onglet, si elle
+  // existe encore dans le Space actif (restorableConvId). Après la décision
+  // sidebar-open, pour que le reveal la centre dans une liste visible.
+  const reopenId = restorableConvId(takeOpenConvForReload(), activeSpaceId, listAllConversations());
+  if (reopenId) openConversation(reopenId, true);
   // Posée APRÈS la décision sidebar-open : le brand topbar et le « + » sont
   // masqués en dur tant que .booted est absente (pas de flash au chargement
   // quand l'historique non vide va ouvrir la sidebar).
