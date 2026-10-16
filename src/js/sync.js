@@ -49,7 +49,7 @@ const SYNC_MESSAGE_TYPES = [
   'unread-updated',           // { } — conversations non lues (badges) modifiées : relire le stockage
   'usage-updated',            // { } — statistiques d'usage enregistrées : relire le store si le drawer est affiché
   'stall-attention',          // { on } — modale de silence en attente dans une fenêtre sans focus (pastille d'icône) ; heartbeat + TTL
-  'secrets-changed',          // { server, forget? } — mot de passe volatil déposé ou oublié : relire l'état du serveur ; JAMAIS la valeur
+  'secrets-changed',          // { server, forget?, key?, resendRefused? } — mot de passe volatil déposé ou oublié : relire l'état du serveur ; JAMAIS la valeur
 ];
 
 // Construit une enveloppe bien formée. `rand` injecté (déterminisme) n'est PAS
@@ -223,10 +223,14 @@ function routeMessage(env, ctx) {
       return { action: 'stall-attention', tabId: env.tabId, on: p.on === true };
     case 'secrets-changed':
       // Un pair a déposé ou oublié un mot de passe volatil (mcp-secrets.js).
-      // Le message ne porte que la carte et, pour un oubli, la clef à retirer
-      // de la garde de session : jamais la valeur. Sans carte, rien à relire.
+      // Le message ne porte que la carte, pour un oubli la clef à retirer de
+      // la garde de session, pour un dépôt la clef déposée et si c'était un
+      // renvoi automatique refusé : jamais la valeur. Sans carte, rien à relire.
       if (typeof p.server !== 'string' || !p.server) return { action: 'ignore' };
-      return { action: 'secrets-changed', server: p.server, forget: typeof p.forget === 'string' && p.forget ? p.forget : null };
+      return { action: 'secrets-changed', server: p.server,
+        forget: typeof p.forget === 'string' && p.forget ? p.forget : null,
+        key: typeof p.key === 'string' && p.key ? p.key : null,
+        resendRefused: p.resendRefused === true };
     default:
       return { action: 'ignore' };
   }

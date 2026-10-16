@@ -630,13 +630,21 @@ function classifyStorageError(err) {
 // `severity` ('error' | 'secret' | 'pending') porte la classe CSS ; `servers`
 // ne liste que les serveurs du niveau retenu (c'est ce que le compte désigne,
 // et ce que `recheckMcpServers` doit reconnecter).
+//
+// `restartAwaited` (facultatif) : noms des serveurs dont l'onglet attend le
+// retour après un redémarrage qu'il a demandé (`proxyRestartAwaitedNames`,
+// mcp-update.js). Leur erreur est attendue — la boucle d'attente les
+// reconnecte en échouant jusqu'au retour — et le workflow la dit déjà : elle
+// n'allume pas la pastille, comme elle ne fait pas de front de santé. Un
+// retour manqué la rallume, l'attente finie.
 // Pure, testable en QuickJS.
-function resolveAuthorizationPending(statuses, secretWaiting) {
+function resolveAuthorizationPending(statuses, secretWaiting, restartAwaited) {
   const errored = [];
   const pendingAuth = [];
   const pendingSecret = [];
   let secretCount = 0;
   const waiting = secretWaiting && typeof secretWaiting === 'object' ? secretWaiting : {};
+  const awaited = Array.isArray(restartAwaited) ? restartAwaited : [];
   if (statuses && typeof statuses === 'object') {
     for (const name of Object.keys(statuses)) {
       const st = statuses[name];
@@ -644,7 +652,7 @@ function resolveAuthorizationPending(statuses, secretWaiting) {
       // L'erreur d'abord : un serveur en erreur n'expose aucun outil, et sa
       // table de statut a été réécrite en entier (donc sans upstreams) — mais
       // on ne dépend pas de ça pour trancher, l'ordre du test suffit.
-      if (st.state === 'error') { errored.push(name); continue; }
+      if (st.state === 'error') { if (awaited.indexOf(name) < 0) errored.push(name); continue; }
       const n = Object.prototype.hasOwnProperty.call(waiting, name) && waiting[name] > 0 ? Math.floor(waiting[name]) : 0;
       if (n) { pendingSecret.push(name); secretCount += n; }
       const up = Array.isArray(st.unauthorizedUpstreams) ? st.unauthorizedUpstreams : [];

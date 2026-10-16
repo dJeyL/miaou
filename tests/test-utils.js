@@ -4008,6 +4008,24 @@ describe('resolveAuthorizationPending (AB-5) — apparition de la pastille', fun
   });
 });
 
+describe('resolveAuthorizationPending — redémarrage attendu par cet onglet', function() {
+  it('l\'erreur d\'un serveur dont on attend le retour n\'allume pas la pastille', function() {
+    expect(resolveAuthorizationPending({ proxy: { state: 'error', count: 0 } }, {}, ['proxy']).visible).toBe(false);
+    expect(resolveAuthorizationPending({ proxy: { state: 'error', count: 0 } }, {}, []).severity).toBe('error');
+  });
+  it('un AUTRE serveur en erreur reste compté, seul', function() {
+    var r = resolveAuthorizationPending({ proxy: { state: 'error', count: 0 }, autre: { state: 'error', count: 0 } }, {}, ['proxy']);
+    expect(r.severity).toBe('error');
+    expect(r.servers).toEqual(['autre']);
+    expect(r.label).toBe('1 serveur injoignable');
+  });
+  it('l\'erreur tenue ne masque pas l\'attente d\'un autre serveur', function() {
+    var r = resolveAuthorizationPending({ proxy: { state: 'error', count: 0 }, b: { state: 'ok', count: 1 } }, { b: 1 }, ['proxy']);
+    expect(r.severity).toBe('secret');
+    expect(r.servers).toEqual(['b']);
+  });
+});
+
 describe('resolveAuthorizationPending — une pastille, l\'erreur prioritaire', function() {
   function st(list) { return { state: 'ok', count: 3, unauthorizedUpstreams: list }; }
   function ko(msg) { return { state: 'error', count: 0, error: msg || 'echec' }; }

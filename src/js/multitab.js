@@ -290,7 +290,7 @@ function applySyncDecision(d) {
       // Un pair a déposé ou oublié un mot de passe volatil : retirer la valeur
       // oubliée de la garde de session de CET onglet, relire l'état du serveur
       // (mcp-secrets.js). Pas de file pendant une génération : rien du fil.
-      applyPeerSecretsChanged(d.server, d.forget);
+      applyPeerSecretsChanged(d.server, d.forget, d.key, d.resendRefused);
       return;
 
     case 'soft-lock': {

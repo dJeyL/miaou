@@ -261,6 +261,21 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   with no delay (composer.css). Any new menu that focuses a field on opening
   needs the same override; a script checking focus right after opening one
   should first read `getComputedStyle(menu).visibility`.
+- **Waiting for a toast by its key can catch the PREVIOUS phase's toast.**
+  Toast keys are stable per gesture (`proxy-restart:<name>:result` for every
+  restart of that server), and a non-persistent toast outlives the phase that
+  raised it by several seconds. A `waitForFunction` on "the result toast says
+  `redémarré` or `pas revenu`" placed after the next gesture therefore resolves
+  at once on the toast left by the last one, and every check that follows runs
+  in the middle of the wait it believes is over. Paid on 2026-10-16
+  (`verify-proxy-update.mjs`, phase K right after J): five reds accusing the
+  proxy of having come back on a port it had left, one 10-minute run lost, and
+  a detour through the proxy's port handling before the supervisor log showed
+  nothing had restarted. Before the gesture, `dismissToast(key)`; then wait on
+  a terminal state owned by the gesture itself (here `!_proxyUpdateBusy.<name>`,
+  after first seeing it set) AND the text — never on the text alone.
+  The tell: a long wait that "finishes" in a second, and reds whose values are
+  those of the previous phase.
 - **There is no localStorage state across driver runs** — Playwright
   launches a fresh, empty profile each time (`chromium.launch()` with no
   persistent context), so the app always boots to "Nouvelle

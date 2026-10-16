@@ -716,7 +716,11 @@ par exemple), la cause est affichée et il n'y a rien à ressaisir.
 
 MIAOU garde le mot de passe accepté pour la durée de l'onglet seulement, et
 le renvoie tout seul quand le proxy redémarre (mise à jour, relance) :
-d'ordinaire on ne le tape qu'une fois par session. Il n'est jamais écrit
+d'ordinaire on ne le tape qu'une fois par session. Une notification annonce
+ce renvoi, puis confirme qu'il a été accepté ; l'indicateur « mot de passe
+requis » n'apparaît que si le renvoi échoue — s'il est refusé, la
+notification le dit (mot de passe renvoyé, mais refusé) et invite à le
+saisir de nouveau. Il n'est jamais écrit
 dans tes données, jamais transmis au modèle, jamais montré dans une
 conversation ni un export. Si ton navigateur propose de l'enregistrer, c'est
 ton choix. Le bouton **Oublier** de la carte le fait oublier au proxy et à
@@ -729,7 +733,7 @@ mot de passe accepté, il suffit de redemander la même chose. Le modèle sait
 qu'il ne peut pas le saisir à ta place et qu'il ne doit pas te le demander
 dans la conversation : ne le tape jamais dans un message. Si MIAOU a déjà le
 mot de passe en main (le proxy a seulement redémarré), il le renvoie et
-relance l'appel de lui-même, sans que rien n'y paraisse.
+relance l'appel de lui-même : seules les notifications du renvoi le signalent.
 
 **Quand un serveur donne des consignes d'usage.** Un serveur compagnon peut
 publier, en se connectant, une consigne qui vaut pour l'ensemble de ses outils —
@@ -792,8 +796,9 @@ se fait alors à la main, dans le dossier du proxy.
 
 Une mise à jour des serveurs redémarre le proxy : ses outils disparaissent
 quelques secondes, puis reviennent seuls. MIAOU attend son retour et le
-confirme ; s'il ne revient pas, une notification le dit, avec la cause
-probable. Le proxy refuse de redémarrer tant qu'un de ses outils est en train
+confirme, sans afficher entre-temps la pastille « serveur injoignable » ;
+s'il ne revient pas, une notification le dit, avec la cause probable, et la
+pastille apparaît alors. Le proxy refuse de redémarrer tant qu'un de ses outils est en train
 de travailler, et MIAOU attend qu'une réponse en cours soit terminée. Si la
 mise à jour apporte une nouvelle version de MIAOU et que c'est ce proxy qui le
 sert, MIAOU se recharge ensuite tout seul, sauf si un rechargement perdrait

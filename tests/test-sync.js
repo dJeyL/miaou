@@ -273,14 +273,18 @@ describe('secrets-changed — mot de passe volatil déposé ou oublié ailleurs'
     expect(!!validateEnvelope({ v: 1, type: 'secrets-changed', tabId: 'tab_a', payload: { server: 'proxy' } })).toBe(true);
   });
   it('dépôt : relire l\'état de la carte, rien à oublier', function() {
-    expect(routeMessage(makeEnvelope('secrets-changed', 'other', { server: 'proxy' }), CTX)).toEqual({ action: 'secrets-changed', server: 'proxy', forget: null });
+    expect(routeMessage(makeEnvelope('secrets-changed', 'other', { server: 'proxy' }), CTX)).toEqual({ action: 'secrets-changed', server: 'proxy', forget: null, key: null, resendRefused: false });
+  });
+  it('dépôt nommé : la clef, et si c\'était un renvoi refusé (exactement true)', function() {
+    expect(routeMessage(makeEnvelope('secrets-changed', 'other', { server: 'proxy', key: 'K', resendRefused: true }), CTX)).toEqual({ action: 'secrets-changed', server: 'proxy', forget: null, key: 'K', resendRefused: true });
+    expect(routeMessage(makeEnvelope('secrets-changed', 'other', { server: 'proxy', key: 'K', resendRefused: 'yes' }), CTX).resendRefused).toBe(false);
   });
   it('oubli : la clef à retirer de la garde de session', function() {
-    expect(routeMessage(makeEnvelope('secrets-changed', 'other', { server: 'proxy', forget: 'Mot de passe' }), CTX)).toEqual({ action: 'secrets-changed', server: 'proxy', forget: 'Mot de passe' });
+    expect(routeMessage(makeEnvelope('secrets-changed', 'other', { server: 'proxy', forget: 'Mot de passe' }), CTX)).toEqual({ action: 'secrets-changed', server: 'proxy', forget: 'Mot de passe', key: null, resendRefused: false });
   });
-  it('seuls la carte et la clef passent : un champ de plus n\'est pas relayé', function() {
+  it('seuls la carte, les clefs et le drapeau passent : un champ de plus n\'est pas relayé', function() {
     var d = routeMessage(makeEnvelope('secrets-changed', 'other', { server: 'proxy', value: 'x' }), CTX);
-    expect(Object.keys(d).sort()).toEqual(['action', 'forget', 'server']);
+    expect(Object.keys(d).sort()).toEqual(['action', 'forget', 'key', 'resendRefused', 'server']);
   });
   it('sans carte : ignoré ; de soi : ignore-self', function() {
     expect(routeMessage(makeEnvelope('secrets-changed', 'other', {}), CTX)).toEqual({ action: 'ignore' });

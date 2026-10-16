@@ -139,6 +139,13 @@ describe('volatileSecretKeyState — phase lue sur les consommateurs en attente'
     expect(s.phase).toBe('incomplete');
     expect(s.text).toContain('configuration incomplète');
   });
+  it('refus d\'un renvoi automatique : dit comme tel, pas « incorrect »', function() {
+    var e = entry('k', [consumer('a', 'pending', 'rejected', 'refusé')]);
+    var s = volatileSecretKeyState(e, true);
+    expect(s.phase).toBe('rejected');
+    expect(s.text).toBe('Mot de passe «\u00a0k\u00a0» renvoyé après le redémarrage du proxy, mais refusé par «\u00a0a\u00a0»\u00a0: à saisir de nouveau. Cause\u00a0: refusé');
+    expect(volatileSecretKeyState(e).text).toContain('incorrect');
+  });
   it('le refus prime sur l\'indéterminé', function() {
     expect(volatileSecretKeyState(entry('k', [consumer('a', 'pending', 'indeterminate'), consumer('b', 'pending', 'rejected')])).phase).toBe('rejected');
   });
@@ -304,13 +311,14 @@ function mountSecrets(opts) {
   var o = opts || {};
   var saved = { rpc: mcpRpc, connect: connectMcpServer };
   var calls = [], connects = [];
-  var state = { instance: o.instance || 'inst-new', consumers: o.consumers || [consumer('api', 'pending')], verdict: o.verdict || 'accepted' };
+  var state = { instance: o.instance || 'inst-new', consumers: o.consumers || [consumer('api', 'pending')], verdict: o.verdict || 'accepted', waitingAtSubmit: [] };
   localStorage.setItem('miaou-mcp-servers', JSON.stringify([CARD]));
   _remoteStatus.proxy = { state: 'ok', count: 1, secretsDeclared: true };
   mcpRpc = function(server, method, params) {
     calls.push({ method: method, params: params });
     if (method === MCP_SECRETS_STATUS_METHOD) return Promise.resolve({ status: { instance: state.instance, secrets: [{ key: 'K', held: false, consumers: state.consumers }] } });
     if (method === MCP_SECRETS_SUBMIT_METHOD) {
+      state.waitingAtSubmit.push(volatileSecretWaitingFor('proxy'));
       var v = typeof state.verdict === 'function' ? state.verdict(params.value) : state.verdict;
       state.consumers = state.consumers.map(function(c) { return consumer(c.upstream, v === 'accepted' ? 'ready' : c.state, v); });
       return Promise.resolve({ secret: { key: 'K', held: v === 'accepted', consumers: state.consumers } });
@@ -351,6 +359,59 @@ describe('readVolatileSecretsStatus — renvoi d\'une valeur gardée', function(
       expect(m.connects).toEqual(['proxy']);
       expect(volatileSecretWaitingFor('proxy')).toBe(0);
     } finally { m.done(); }
+  });
+  it('pilule muette pendant le renvoi, allumée seulement après un échec', function() {
+    var m = mountSecrets({ verdict: 'rejected' });
+    try {
+      keep('pw', 'inst-old');
+      _volatileSecrets.proxy = { status: { instance: 'inst-new', secrets: [entry('K', [consumer('api', 'pending')])] }, error: null, unavailable: null, readAt: 0 };
+      expect(volatileSecretWaitingFor('proxy')).toBe(0);
+      expect(volatileSecretWaitingByServer()).toEqual({});
+      runAsync(readVolatileSecretsStatus(CARD));
+      expect(m.state.waitingAtSubmit).toEqual([0]);
+      expect(volatileSecretWaitingFor('proxy')).toBe(1);
+    } finally { m.done(); }
+  });
+  it('toasts du renvoi : annonce, puis confirmation sous la même clef ; refus : annonce retirée', function() {
+    var saved = { show: showToast, dismiss: dismissToast, post: typeof syncPost === 'function' ? syncPost : null };
+    var posts = [];
+    syncPost = function(type, payload) { posts.push([type, payload]); };
+    function run(verdict) {
+      var log = [];
+      showToast = function(o) { log.push(['show', o.key, o.persistent === true, o.text]); };
+      dismissToast = function(k) { log.push(['dismiss', k]); };
+      var m = mountSecrets({ verdict: verdict });
+      try {
+        keep('pw', 'inst-old');
+        runAsync(readVolatileSecretsStatus(CARD));
+      } finally { m.done(); }
+      return log.filter(function(l) { return l[1].indexOf(':resend') > 0; });
+    }
+    try {
+      var k = volatileSecretToastKey('proxy', 'K') + ':resend';
+      expect(run('accepted')).toEqual([
+        ['show', k, true, volatileSecretResendingText('K')],
+        ['show', k, false, 'Mot de passe «\u00a0K\u00a0» renvoyé et accepté\u00a0: api prêt.']]);
+      expect(run('rejected')).toEqual([['show', k, true, volatileSecretResendingText('K')], ['dismiss', k]]);
+      expect(_volatileSecretResendRefused['proxy\nK']).toBe(true);
+      delete _volatileSecretResendRefused['proxy\nK'];
+      // Signal aux voisins : la clef et le refus du renvoi, jamais la valeur.
+      expect(posts[0]).toEqual(['secrets-changed', { server: 'proxy', key: 'K', resendRefused: false }]);
+      expect(posts[1]).toEqual(['secrets-changed', { server: 'proxy', key: 'K', resendRefused: true }]);
+    } finally { showToast = saved.show; dismissToast = saved.dismiss; syncPost = saved.post; }
+  });
+  it('signal d\'un voisin : pose ou retire le refus de renvoi de la clef ; sans clef, toute la carte', function() {
+    var m = mountSecrets({});
+    try {
+      applyPeerSecretsChanged('proxy', null, 'K', true);
+      expect(_volatileSecretResendRefused['proxy\nK']).toBe(true);
+      applyPeerSecretsChanged('proxy', null, 'K', false);
+      expect(_volatileSecretResendRefused['proxy\nK']).toBe(undefined);
+      _volatileSecretResendRefused['proxy\nK'] = true;
+      applyPeerSecretsChanged('proxy', 'K', null, false);
+      expect(_volatileSecretResendRefused['proxy\nK']).toBe(undefined);
+      runAsync(Promise.resolve());
+    } finally { delete _volatileSecretResendRefused['proxy\nK']; m.done(); }
   });
   it('pas de second renvoi à la même instance, même si le proxy l\'a oubliée de nouveau', function() {
     var m = mountSecrets({ verdict: 'indeterminate' });
@@ -556,6 +617,11 @@ describe('volatileSecretAcceptedNotice — confirmation d\'une saisie acceptée'
   });
   it('refusée par l\'un, acceptée par l\'autre : rien (le toast de saisie dit « incorrect »)', function() {
     expect(volatileSecretAcceptedNotice({ key: 'K', consumers: [consumer('api', 'ready', 'accepted'), consumer('wiki', 'pending', 'rejected')] })).toBe(null);
+  });
+  it('renvoi automatique : dit « renvoyé et accepté », annoncé avant par son propre texte', function() {
+    expect(volatileSecretAcceptedNotice({ key: 'K', consumers: [consumer('api', 'ready', 'accepted')] }, true))
+      .toEqual({ level: 'info', text: 'Mot de passe «\u00a0K\u00a0» renvoyé et accepté\u00a0: api prêt.' });
+    expect(volatileSecretResendingText('K')).toBe('Proxy redémarré\u00a0: renvoi du mot de passe «\u00a0K\u00a0»…');
   });
   it('aucun accepté, ou rien d\'envoyé : rien', function() {
     expect(volatileSecretAcceptedNotice({ key: 'K', consumers: [consumer('api', 'pending', 'indeterminate')] })).toBe(null);

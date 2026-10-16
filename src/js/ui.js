@@ -4728,7 +4728,7 @@ function setConnDot(state, serverId) {
 function syncWorriedLogo() {
   const expr = resolveLogoExpression(
     resolveBackendHealth(activeApiConfig(), REQUIRE_API_KEY, _backendProbe),
-    resolveAuthorizationPending(mcpStatusSnapshot(), volatileSecretWaitingByServer()).severity,
+    currentAuthorizationPending().severity,
     isStorageFull());
   document.body.classList.toggle('miaou-worried', expr === 'worried');
   document.body.classList.toggle('miaou-storage', expr === 'storage');
@@ -8707,6 +8707,15 @@ function renderApiServersIfOpen() {
   if ($('api-drawer') && $('api-drawer').classList.contains('show')) renderApiServers();
 }
 
+// Lecture unique de la pastille et de ce qui en dérive (pastille, chat
+// soucieux, clic) : entrées vivantes, redémarrages attendus par cet onglet
+// compris — un appelant qui oublierait ce dernier argument rallumerait le
+// rouge pendant un redémarrage volontaire.
+function currentAuthorizationPending() {
+  return resolveAuthorizationPending(mcpStatusSnapshot(), volatileSecretWaitingByServer(),
+    typeof proxyRestartAwaitedNames === 'function' ? proxyRestartAwaitedNames() : []);
+}
+
 // Pastille de topbar « des serveurs attendent une autorisation ».
 //
 // Le prédicat d'apparition ET le libellé viennent d'une fonction pure et testée
@@ -8721,7 +8730,7 @@ function renderApiServersIfOpen() {
 function syncAuthorizationPending() {
   const el = $('auth-pending');
   if (!el) return;
-  const pending = resolveAuthorizationPending(mcpStatusSnapshot(), volatileSecretWaitingByServer());
+  const pending = currentAuthorizationPending();
   el.hidden = !pending.visible;
   // Sévérité posée en classe, jamais en style inline : c'est le CSS qui décide
   // de quelle couleur est « injoignable ». Les deux classes sont retirées puis
@@ -9550,7 +9559,7 @@ function openMcpServerCard(name) {
 // rendu de la pastille : la liste a pu changer depuis, et la pastille ne garde
 // aucun état (resolveAuthorizationPending la recalcule à chaque fois).
 function onAuthPendingClick() {
-  const names = resolveAuthorizationPending(mcpStatusSnapshot(), volatileSecretWaitingByServer()).servers;
+  const names = currentAuthorizationPending().servers;
   openMcpServers();
   revealServerCard(function() { return mcpCardEls(names); });
 }

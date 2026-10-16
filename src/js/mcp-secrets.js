@@ -138,8 +138,10 @@ function _secServices(n) { return n + ' service' + (n > 1 ? 's' : '') + ' en att
 //   ''              — rien n'attend.
 // `replacementRefused` : un consommateur PRÊT a refusé la dernière saisie
 // (remplacement à chaud refusé, l'ancienne instance sert toujours) — dit par
-// la carte, jamais en toast.
-function volatileSecretKeyState(entry) {
+// la carte, jamais en toast. `resendRefused` : le refus vise la valeur que
+// MIAOU a renvoyée seul après un redémarrage du proxy, pas une saisie — dit
+// comme tel, l'utilisateur n'ayant rien tapé.
+function volatileSecretKeyState(entry, resendRefused) {
   const e = entry || { key: '', consumers: [] };
   const consumers = Array.isArray(e.consumers) ? e.consumers : [];
   const pending = consumers.filter(c => c.state === 'pending');
@@ -156,7 +158,9 @@ function volatileSecretKeyState(entry) {
   const key = _secQuoted(e.key || '');
   const cause = hit && hit.detail ? ' Cause : ' + hit.detail : '';
   let text = '';
-  if (phase === 'rejected') {
+  if (phase === 'rejected' && resendRefused) {
+    text = 'Mot de passe ' + key + ' renvoyé après le redémarrage du proxy, mais refusé par ' + _secQuoted(hit.upstream) + ' : à saisir de nouveau.' + cause;
+  } else if (phase === 'rejected') {
     text = 'Mot de passe ' + key + ' incorrect : refusé par ' + _secQuoted(hit.upstream) + '.' + cause;
   } else if (phase === 'indeterminate') {
     text = 'Mot de passe ' + key + ' non vérifié : ' + _secQuoted(hit.upstream) + ' n\'a pas pu le tester, inutile de le ressaisir.' + cause;
@@ -183,10 +187,11 @@ function volatileSecretConsumerText(c) {
 }
 
 // Nombre de clefs en attente dans un état lu (`normalizeVolatileSecretsStatus`).
-// Alimente la pilule de topbar et celle de la carte.
-function volatileSecretsWaitingCount(status) {
+// Alimente la pilule de topbar et celle de la carte. `skip(entry)` : vrai pour
+// une clef dont l'attente n'est pas à compter (renvoi automatique dû ou en vol).
+function volatileSecretsWaitingCount(status, skip) {
   if (!status || !Array.isArray(status.secrets)) return 0;
-  return status.secrets.filter(e => volatileSecretKeyState(e).waiting).length;
+  return status.secrets.filter(e => volatileSecretKeyState(e).waiting && !(skip && skip(e))).length;
 }
 
 // ── Garde en session et renvoi ───────────────────────────────────────────────
@@ -248,8 +253,9 @@ function volatileSecretAfterSubmit(entry, submittedIsKept) {
 // toast de saisie, « incorrect », que la confirmation contredirait). Si
 // d'autres services n'ont pas rendu « accepté » (vérification impossible,
 // configuration incomplète…), c'est un succès PARTIEL : avertissement, qui les
-// nomme avec leur état, pour ne pas se lire comme un succès total.
-function volatileSecretAcceptedNotice(entry) {
+// nomme avec leur état, pour ne pas se lire comme un succès total. `resent` :
+// renvoi automatique après un redémarrage du proxy, dit comme tel.
+function volatileSecretAcceptedNotice(entry, resent) {
   const consumers = entry && Array.isArray(entry.consumers) ? entry.consumers : [];
   if (consumers.some(c => c.verdict === 'rejected')) return null;
   const ok = consumers.filter(c => c.verdict === 'accepted').map(c => c.upstream);
@@ -258,9 +264,14 @@ function volatileSecretAcceptedNotice(entry) {
     + (c.verdict === 'indeterminate' ? 'vérification impossible'
       : c.verdict === 'incomplete' ? 'configuration incomplète'
       : c.verdict === 'untested' ? 'non testé' : 'en attente'));
-  const text = 'Mot de passe «\u00a0' + entry.key + '\u00a0» accepté\u00a0: ' + ok.join(', ')
+  const text = 'Mot de passe «\u00a0' + entry.key + '\u00a0» ' + (resent ? 'renvoyé et accepté' : 'accepté') + '\u00a0: ' + ok.join(', ')
     + (ok.length > 1 ? ' prêts' : ' prêt') + (rest.length ? '\u00a0; ' + rest.join(', ') : '') + '.';
   return { level: rest.length ? 'warn' : 'info', text: text };
+}
+
+// Annonce d'un renvoi automatique en cours (proxy redémarré, valeur gardée).
+function volatileSecretResendingText(key) {
+  return 'Proxy redémarré\u00a0: renvoi du mot de passe «\u00a0' + key + '\u00a0»…';
 }
 
 // Texte d'un refus de l'extension elle-même (garde d'origine, paramètres,
@@ -287,6 +298,7 @@ let _volatileSecrets = {};
 const _volatileSecretReadSeq = {};
 const _volatileSecretBusy = {};            // `<serveur>\n<clef>` → 'submit' | 'resend' | 'forget'
 const _volatileSecretReconnectDue = {};    // serveur → reconnexion différée par une génération en cours
+const _volatileSecretResendRefused = {};   // `<serveur>\n<clef>` → le dernier refus visait un renvoi automatique
 
 function volatileSecretsEntry(name) { return _volatileSecrets[name] || null; }
 
@@ -310,15 +322,27 @@ function volatileSecretsAvailabilityFor(server) {
 function volatileSecretWaitingByServer() {
   const out = {};
   Object.keys(_volatileSecrets).forEach(name => {
-    const n = volatileSecretsWaitingCount(_volatileSecrets[name].status);
+    const n = volatileSecretWaitingFor(name);
     if (n) out[name] = n;
   });
   return out;
 }
 
+// Une clef en attente dont MIAOU va renvoyer, ou renvoie, la valeur gardée
+// (proxy redémarré) : son attente n'est pas annoncée — ni pilule, ni toast —
+// tant que le renvoi n'a pas échoué. Un échec le rend non dû (`resentFor`
+// posé, ou valeur oubliée sur refus), et l'attente paraît alors.
+function volatileSecretResendAwaited(name, entry) {
+  if (volatileSecretBusy(name, entry.key) === 'resend') return true;
+  const e = _volatileSecrets[name];
+  const server = typeof getMcpServer === 'function' ? getMcpServer(name) : null;
+  return !!(e && e.status && server
+    && volatileSecretShouldResend(entry, loadKeptVolatileSecret(server, entry.key), e.status.instance));
+}
+
 function volatileSecretWaitingFor(name) {
   const e = _volatileSecrets[name];
-  return e ? volatileSecretsWaitingCount(e.status) : 0;
+  return e ? volatileSecretsWaitingCount(e.status, entry => volatileSecretResendAwaited(name, entry)) : 0;
 }
 
 // Remplace l'entrée d'une clef dans l'état lu d'un serveur (réponse de
@@ -455,6 +479,8 @@ function flushVolatileSecretReconnects() {
 // signal aux onglets voisins (sans la valeur), reconnexion. `submittedIsKept` :
 // la valeur est celle déjà gardée (renvoi). `opts.noReconnect` : le rejeu d'un
 // appel d'outil (l'outil existe par construction, et une génération tourne).
+// `opts.resend` : renvoi automatique — un refus est alors noté comme tel
+// (`_volatileSecretResendRefused`), ici et chez les onglets voisins.
 // Rend `{ entry, error, instance }`.
 async function _depositVolatileSecret(server, key, value, instance, submittedIsKept, opts) {
   const o = opts || {};
@@ -469,9 +495,13 @@ async function _depositVolatileSecret(server, key, value, instance, submittedIsK
   const decision = volatileSecretAfterSubmit(entry, submittedIsKept);
   if (decision === 'store') _saveKeptVolatileSecret(server, key, { value: value, acceptedInstance: instance, resentFor: instance });
   else if (decision === 'drop') _dropKeptVolatileSecret(server, key);
+  const refusedKey = _volatileSecretBusyKey(server.name, key);
+  const resendRefused = !!o.resend && entry.consumers.some(c => c.verdict === 'rejected');
+  if (resendRefused) _volatileSecretResendRefused[refusedKey] = true;
+  else delete _volatileSecretResendRefused[refusedKey];
   _volatileSecretPutEntry(server.name, entry);
   syncVolatileSecretSurfaces();
-  if (typeof syncPost === 'function') syncPost('secrets-changed', { server: server.name });
+  if (typeof syncPost === 'function') syncPost('secrets-changed', { server: server.name, key: key, resendRefused: resendRefused });
   if (entry.consumers.some(c => c.verdict === 'accepted') && !o.noReconnect) await _volatileSecretReconnect(server);
   return { entry: entry, error: null, instance: instance };
 }
@@ -479,7 +509,9 @@ async function _depositVolatileSecret(server, key, value, instance, submittedIsK
 // Renvoie, pour chaque clef d'un état fraîchement lu, la valeur gardée si le
 // proxy l'a oubliée (`volatileSecretShouldResend`). `resentFor` est posé AVANT
 // l'envoi : une seconde lecture concurrente ne renvoie pas une seconde fois.
-// Séquentiel : une saisie par clef, comme un humain.
+// Séquentiel : une saisie par clef, comme un humain. Un toast annonce le
+// renvoi, puis devient la confirmation s'il est accepté ; sinon il se retire,
+// et l'attente (pilule, toast de saisie) paraît, comme l'échec d'un envoi.
 async function resendVolatileSecrets(server, status, opts) {
   let resent = false;
   for (const entry of status.secrets) {
@@ -489,9 +521,19 @@ async function resendVolatileSecrets(server, status, opts) {
     if (!volatileSecretShouldResend(entry, kept, status.instance)) continue;
     _saveKeptVolatileSecret(server, entry.key, Object.assign({}, kept, { resentFor: status.instance }));
     _volatileSecretBusy[busy] = 'resend';
+    const toastKey = volatileSecretToastKey(server.name, entry.key) + ':resend';
+    const toasts = typeof showToast === 'function';
+    if (toasts) showToast({ key: toastKey, level: 'info', theme: 'services', persistent: true, text: volatileSecretResendingText(entry.key) });
     try {
-      await _depositVolatileSecret(server, entry.key, kept.value, status.instance, true, opts);
+      const r = await _depositVolatileSecret(server, entry.key, kept.value, status.instance, true, Object.assign({}, opts, { resend: true }));
       resent = true;
+      const accepted = volatileSecretAcceptedNotice(r.entry, true);
+      if (toasts && accepted) {
+        showToast({ key: toastKey, level: accepted.level, theme: 'services', text: accepted.text });
+      } else if (toasts) {
+        dismissToast(toastKey);
+        if (r.error) showToast({ key: volatileSecretToastKey(server.name, entry.key) + ':error', level: 'error', theme: 'services', text: r.error });
+      }
     } finally {
       delete _volatileSecretBusy[busy];
     }
@@ -536,6 +578,7 @@ async function submitVolatileSecret(name, key, value) {
   const busy = _volatileSecretBusyKey(name, key);
   if (_volatileSecretBusy[busy]) return { entry: null, error: 'Un envoi est déjà en cours.' };
   _volatileSecretBusy[busy] = 'submit';
+  delete _volatileSecretResendRefused[busy];
   syncVolatileSecretSurfaces();
   try {
     let instance = null;
@@ -548,8 +591,8 @@ async function submitVolatileSecret(name, key, value) {
     const kept = loadKeptVolatileSecret(server, key);
     const r = await _depositVolatileSecret(server, key, value, instance, !!(kept && kept.value === value));
     // Confirmation du geste, dans cet onglet seulement : le toast de saisie et
-    // la pilule disparaissent, ce qui ne se remarque guère. Jamais pour un
-    // renvoi automatique (resendVolatileSecrets), qui doit rester invisible.
+    // la pilule disparaissent, ce qui ne se remarque guère. Le renvoi
+    // automatique a la sienne (resendVolatileSecrets).
     const accepted = volatileSecretAcceptedNotice(r.entry);
     if (accepted && typeof showToast === 'function') {
       showToast({ key: volatileSecretToastKey(name, key) + ':accepted', level: accepted.level, theme: 'services', text: accepted.text });
@@ -573,6 +616,7 @@ async function forgetVolatileSecret(name, key) {
   if (!av.ok) { syncVolatileSecretSurfaces(); return { entry: null, error: secretsUnavailableText(av) }; }
   const busy = _volatileSecretBusyKey(name, key);
   _volatileSecretBusy[busy] = 'forget';
+  delete _volatileSecretResendRefused[busy];
   syncVolatileSecretSurfaces();
   try {
     const entry = normalizeVolatileSecretResult(await mcpRpc(server, MCP_SECRETS_FORGET_METHOD, { key: key }));
@@ -590,10 +634,21 @@ async function forgetVolatileSecret(name, key) {
 
 // Réception de `secrets-changed` d'un onglet voisin : retirer la valeur
 // oubliée là-bas (`forget`), puis relire l'état du serveur.
-function applyPeerSecretsChanged(name, forget) {
+// `key` : la clef déposée (dépôt seulement) ; `resendRefused` : ce dépôt
+// était un renvoi automatique, refusé — le toast de saisie de cet onglet le
+// dit alors comme celui de l'émetteur, au lieu de « incorrect ». Sans `key`
+// (oubli, ou émetteur antérieur), toute la carte retombe au cas ordinaire.
+function applyPeerSecretsChanged(name, forget, key, resendRefused) {
   const server = getMcpServer(name);
   if (!server) return;
   if (forget) _dropKeptVolatileSecret(server, forget);
+  if (key) {
+    const k = _volatileSecretBusyKey(name, key);
+    if (resendRefused) _volatileSecretResendRefused[k] = true;
+    else delete _volatileSecretResendRefused[k];
+  } else {
+    Object.keys(_volatileSecretResendRefused).forEach(k => { if (k.indexOf(name + '\n') === 0) delete _volatileSecretResendRefused[k]; });
+  }
   const st = getMcpStatus(name);
   if (st && st.state === 'ok' && st.secretsDeclared) readVolatileSecretsStatus(server);
 }
@@ -730,8 +785,10 @@ function syncVolatileSecretToasts() {
     e.status.secrets.forEach(entry => {
       const toastKey = volatileSecretToastKey(name, entry.key);
       live[toastKey] = true;
-      const st = volatileSecretKeyState(entry);
+      const refusedKey = _volatileSecretBusyKey(name, entry.key);
+      const st = volatileSecretKeyState(entry, !!_volatileSecretResendRefused[refusedKey]);
       if (!st.waiting) {
+        delete _volatileSecretResendRefused[refusedKey];
         delete _volatileSecretAnnounced[toastKey];
         delete _volatileSecretRefocus[toastKey];
         dismissToast(toastKey);
@@ -740,8 +797,7 @@ function syncVolatileSecretToasts() {
       if (volatileSecretBusy(name, entry.key)) return;
       // Un renvoi est dû (proxy redémarré, valeur gardée) : il part juste après
       // cette synchro, l'attente n'est pas à annoncer.
-      const server = getMcpServer(name);
-      if (server && volatileSecretShouldResend(entry, loadKeptVolatileSecret(server, entry.key), e.status.instance)) return;
+      if (volatileSecretResendAwaited(name, entry)) return;
       const refocus = !!_volatileSecretRefocus[toastKey];
       if (!refocus && _volatileSecretAnnounced[toastKey] === st.text) return;
       if (!refocus && _volatileSecretToastTyping(toastKey)) return;

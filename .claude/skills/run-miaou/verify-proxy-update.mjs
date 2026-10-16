@@ -49,6 +49,9 @@
 // toast ne prouverait rien. K couvre le cas où l'attente échoue : la fin du geste
 // enregistre l'état atteint sans front, et une synchro ultérieure n'en fait pas
 // un non plus.
+// La pastille de topbar suit la même règle : jamais rouge pour ce serveur tant
+// que l'onglet attend son retour (relevé à chaque mutation de la pastille et à
+// chaque synchro forcée) ; en K, rouge une fois l'attente finie.
 //
 // Usage : node verify-proxy-update.mjs [--headed] [--keep]
 // --keep laisse le dossier temporaire (journal du superviseur compris).
@@ -219,8 +222,21 @@ async function toastText(page, key) {
 // 300 ms, qui tient lieu de cette activité et rend le scénario déterministe.
 async function recordHealth(p) {
   await p.evaluate((name) => {
-    window.__health = { toasts: [], heldErrors: 0, states: [] };
-    setInterval(() => syncHealthToasts(), 300);
+    window.__health = { toasts: [], heldErrors: 0, states: [], redPill: [] };
+    // Pastille rouge alors que CET onglet attend le retour du serveur : relevée
+    // à chaque mutation (une apparition brève entre deux synchros compte) et
+    // après une synchro forcée de la pastille, pour la même raison que celle
+    // de la santé ci-dessous.
+    const pillRedWhileAwaited = () => {
+      const el = document.getElementById('auth-pending');
+      if (!el || el.hidden || !el.classList.contains('is-error')) return;
+      if (proxyRestartAwaitedNames().indexOf(name) < 0) return;
+      const label = document.getElementById('auth-pending-label').textContent;
+      const r = window.__health.redPill;
+      if (r[r.length - 1] !== label) r.push(label);
+    };
+    new MutationObserver(pillRedWhileAwaited).observe(document.getElementById('auth-pending'), { attributes: true, childList: true, subtree: true, characterData: true });
+    setInterval(() => { syncHealthToasts(); syncAuthorizationPending(); pillRedWhileAwaited(); }, 300);
     const realShow = showToast;
     window.showToast = function (opts) {
       if (opts && opts.key === 'mcp:' + name) window.__health.toasts.push(opts.level + ': ' + opts.text);
@@ -240,7 +256,7 @@ async function recordHealth(p) {
   }, SERVER);
 }
 async function healthSince(p) {
-  return p.evaluate(() => { const h = window.__health; window.__health = { toasts: [], heldErrors: 0, states: [] }; return h; });
+  return p.evaluate(() => { const h = window.__health; window.__health = { toasts: [], heldErrors: 0, states: [], redPill: [] }; return h; });
 }
 // `premise` : la carte doit être passée en erreur pendant l'attente, sans quoi
 // l'absence de toast ne prouve rien. Assertée seulement là où le montage la
@@ -252,6 +268,7 @@ function checkHealthQuiet(phase, h, premise) {
   if (premise) check(phase + ' : prémisse, la carte est passée en erreur pendant l\'attente', h.heldErrors > 0, h);
   else console.log('  (' + phase + ' : états vus pendant l\'attente ' + JSON.stringify(h.states) + ', erreurs tenues : ' + h.heldErrors + ')');
   check(phase + ' : aucun toast de santé pendant le redémarrage', h.toasts.length === 0, h.toasts);
+  check(phase + ' : pastille jamais rouge pendant le redémarrage', h.redPill.length === 0, h.redPill);
 }
 
 let browser;
@@ -554,6 +571,8 @@ try {
   await fpage.evaluate(() => syncHealthToasts());
   checkHealthQuiet('K', await healthSince(fpage), true);
   check('K : aucun toast de santé affiché', (await toastText(fpage, 'mcp:upd')) === null);
+  const pillK = await fpage.evaluate(() => { const el = document.getElementById('auth-pending'); return { hidden: el.hidden, error: el.classList.contains('is-error'), label: document.getElementById('auth-pending-label').textContent }; });
+  check('K : l\'attente finie, la pastille passe au rouge (proxy pas revenu)', !pillK.hidden && pillK.error && pillK.label === '1 serveur injoignable', pillK);
 
   check('aucune exception non rattrapée dans les pages', pageErrors.length === 0, pageErrors);
 } catch (e) {

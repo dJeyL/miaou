@@ -120,7 +120,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `unread-updated` | `{}` | `unread-list` — relire `miaou-unread` en entier, indépendant de la conv et du Space |
 | `usage-updated` | `{}` | `usage-refresh` — relire le store `usage_stats` si le drawer des statistiques est affiché, indépendant de la conv et du Space |
 | `stall-attention` | `{ on }` | `stall-attention` — un pair a (ou n'a plus) une modale de silence que personne ne regarde ; seule la pastille d'icône en dépend. Tout `on` autre que `true` vaut levée |
-| `secrets-changed` | `{ server, forget? }` | `secrets-changed` — un pair a déposé ou oublié un mot de passe volatil : retirer `forget` de la garde de session de cet onglet, relire l'état du serveur. Sans `server` : `ignore`. Seuls `server` et `forget` sont relayés, **jamais la valeur** |
+| `secrets-changed` | `{ server, forget?, key?, resendRefused? }` | `secrets-changed` — un pair a déposé ou oublié un mot de passe volatil : retirer `forget` de la garde de session de cet onglet, noter pour `key` si le dépôt était un renvoi automatique refusé (`resendRefused`, exactement `true`, sinon faux), relire l'état du serveur. Sans `server` : `ignore`. Seuls ces champs sont relayés, **jamais la valeur** |
 
 ### Émetteurs (livrés)
 
@@ -150,7 +150,7 @@ Type ou `v` inconnu → ignoré silencieusement (compatibilité ascendante).
 | `saveUnreadConvIds` (storage.js), via `markConvUnread`/`markConvRead` (main.js) | localStorage | `unread-updated` | `{}` — seulement si l'état a changé ; l'élagage de démarrage écrit avant le branchement du canal, donc sans diffuser |
 | `recordModelUsage` (storage.js), via `noteModelUsage` | IDB `tx.oncomplete` | `usage-updated` | `{}` — un message par appel au modèle, le récepteur regroupe ses relectures |
 | `syncStallAttention` (stall.js) | aucun stockage : état d'écran | `stall-attention` | `{ on }` — au changement (ligne de modale ajoutée/retirée, focus de fenêtre), heartbeat toutes les `SYNC_HEARTBEAT_MS` tant qu'il est vrai, `{ on: false }` sur `pagehide` ; le récepteur oublie un pair muet depuis `SYNC_HEARTBEAT_TTL_MS` (onglet mort sans adieu). Diffusé parce que la pastille est unique pour l'appli mais recalculée par chaque fenêtre : sans lui, une fenêtre sans modale l'éteindrait à sa prochaine repeinture |
-| `_depositVolatileSecret`, `forgetVolatileSecret` (mcp-secrets.js) | `sessionStorage` (propre à l'onglet) et mémoire du proxy | `secrets-changed` | `{ server }` après un dépôt (saisie ou renvoi), `{ server, forget }` après un oubli. La garde de session n'est pas partagée entre onglets : le message ne synchronise pas un stockage, il fait relire l'état du proxy, et retire la valeur oubliée de chaque onglet. Jamais la valeur |
+| `_depositVolatileSecret`, `forgetVolatileSecret` (mcp-secrets.js) | `sessionStorage` (propre à l'onglet) et mémoire du proxy | `secrets-changed` | `{ server, key, resendRefused }` après un dépôt (saisie ou renvoi ; `resendRefused` vrai pour un renvoi refusé, que le toast de saisie du pair dise « renvoyé… mais refusé » et non « incorrect »), `{ server, forget }` après un oubli. La garde de session n'est pas partagée entre onglets : le message ne synchronise pas un stockage, il fait relire l'état du proxy, et retire la valeur oubliée de chaque onglet. Jamais la valeur |
 
 **Ne diffusent PAS** (décidés, pas des oublis) :
 - `miaou-active-space` (`setActiveSpaceId`) — état **par onglet** ; deux onglets

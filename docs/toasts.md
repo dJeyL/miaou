@@ -245,9 +245,17 @@ d'origine, proxy muet) part dans un second toast d'erreur,
 `…:error`. Une saisie acceptée par tous les services qui ont rendu un verdict
 est confirmée par un toast éphémère `…:accepted` (`volatileSecretAcceptedNotice`,
 services nommés ; `warn` pour un succès partiel, quand un autre service n'a
-pas rendu « accepté », nommé avec son état), dans l'onglet qui a saisi seulement, et jamais pour un
-renvoi automatique : la disparition du toast de saisie et de la pilule ne se
-remarquait guère.
+pas rendu « accepté », nommé avec son état), dans l'onglet qui a saisi seulement :
+la disparition du toast de saisie et de la pilule ne se remarquait guère. Le
+renvoi automatique après un redémarrage du proxy a son propre toast,
+`…:resend` : persistant pendant le dépôt (`volatileSecretResendingText`), il
+devient sous la même clef la confirmation éphémère (« renvoyé et accepté »,
+même fonction avec `resent`) ou se retire sur un échec — le toast de saisie
+et la pilule paraissent alors, jamais avant (`volatileSecretResendAwaited`).
+Sur un refus, le toast de saisie ne dit pas « incorrect » (rien n'a été
+tapé) mais « renvoyé après le redémarrage du proxy, mais refusé », jusqu'à
+la prochaine saisie ou au prochain oubli — dans les onglets voisins aussi,
+prévenus par `secrets-changed`.
 
 ## Vérification
 

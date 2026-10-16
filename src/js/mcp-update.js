@@ -551,11 +551,14 @@ function proxyRestartAwaitedNames() {
 
 // Fin d'un geste : libère le serveur et, si le geste attendait un redémarrage,
 // enregistre l'état atteint sans front — l'issue (revenu, ou pas revenu à
-// temps) est dite par le toast du workflow, jamais en double par la santé.
+// temps) est dite par le toast du workflow, jamais en double par la santé —
+// et resynchronise la pastille, tenue éteinte pendant l'attente : un proxy
+// pas revenu la rallume maintenant.
 function releaseProxyBusy(name) {
   const awaited = proxyBusyAwaitsRestart(_proxyUpdateBusy[name]);
   delete _proxyUpdateBusy[name];
   if (awaited && typeof syncHealthToasts === 'function') syncHealthToasts([name]);
+  if (awaited && typeof syncAuthorizationPending === 'function') syncAuthorizationPending();
 }
 
 // Serveurs qui déclarent l'extension, connectés.

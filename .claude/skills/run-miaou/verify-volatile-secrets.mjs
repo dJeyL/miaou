@@ -19,8 +19,9 @@
 //      service, absents au premier démarrage, désormais listés) ;
 //   D. carte : section « Mots de passe », frappe en cours conservée à travers
 //      un re-rendu ;
-//   E. redémarrage du proxy : nouvelle instance, valeur RENVOYÉE sans geste,
-//      aucun toast, ni de saisie ni de confirmation ;
+//   E. redémarrage du proxy : nouvelle instance, valeur RENVOYÉE sans geste ;
+//      ni toast de saisie ni pilule « mot de passe requis » à aucun moment, un
+//      toast annonce le renvoi puis devient « renvoyé et accepté » ;
 //   F. « Oublier » depuis la carte : valeur retirée de la session, service en
 //      attente, pas de toast dans cet onglet (geste délibéré) ;
 //   G. la valeur n'apparaît ni dans la console, ni dans localStorage, ni dans
@@ -31,7 +32,12 @@
 //      d'appel rouge avec « Saisir le mot de passe » (ouvre la carte), texte au
 //      modèle qui lui interdit de demander le mot de passe ; avec une valeur
 //      acceptée puis un redémarrage du proxy, renvoi puis rejeu sur la même
-//      ligne — le modèle reçoit le résultat, aucune trace d'échec.
+//      ligne — le modèle reçoit le résultat, aucune trace d'échec, pas de
+//      pilule pendant le renvoi ;
+//   J. renvoi REFUSÉ (proxy relancé en attendant une autre valeur) : annonce
+//      du renvoi, puis retirée ; pilule et toast de saisie (qui dit le renvoi
+//      refusé, pas « incorrect ») seulement après le refus ; valeur oubliée ;
+//      un onglet voisin, prévenu par `secrets-changed`, dit la même chose.
 //
 // Usage : node verify-volatile-secrets.mjs [--headed] [--keep]
 
@@ -56,6 +62,9 @@ const VALUE = 'Zq7-volatil-' + Math.random().toString(36).slice(2, 8);
 const WRONG = 'faux-' + VALUE.slice(-6);
 const TOAST = `volatile-secret:${CARD}:${KEY}`;
 const ACCEPTED_SEL = `.toast[data-key="${TOAST}:accepted"]`;
+const RESEND_SEL = `.toast[data-key="${TOAST}:resend"]`;
+const RESENDING_TEXT = `Proxy redémarré\u00a0: renvoi du mot de passe «\u00a0${KEY}\u00a0»…`;
+const RESENT_TEXT = `Mot de passe «\u00a0${KEY}\u00a0» renvoyé et accepté\u00a0: secret_demo prêt.`;
 
 const failures = [];
 let passed = 0;
@@ -67,7 +76,11 @@ function check(label, cond, extra) {
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'miaou-au2-'));
 const cfg = path.join(tmp, 'test.json');
 const logPath = path.join(tmp, 'proxy.log');
-writeFileSync(cfg, JSON.stringify({ miaou_dist: DIST, mcpServers: { secret_demo: { disabled: false, config: { expected: VALUE } } } }));
+writeCfg(VALUE);
+
+function writeCfg(expected) {
+  writeFileSync(cfg, JSON.stringify({ miaou_dist: DIST, mcpServers: { secret_demo: { disabled: false, config: { expected: expected } } } }));
+}
 
 function listeningPid() {
   try { return execFileSync('lsof', ['-tiTCP:' + PORT, '-sTCP:LISTEN'], { encoding: 'utf-8' }).trim().split('\n')[0] || ''; } catch (e) { return ''; }
@@ -128,6 +141,37 @@ async function submitInToast(page, value) {
   const pw = page.locator(`${toastSel} input.volatile-secret-pw`);
   await pw.fill(value);
   await pw.press('Enter');
+}
+
+// Journal de ce que l'utilisateur voit pendant un renvoi, relevé à chaque
+// mutation (le renvoi tient en quelques ms contre un proxy local : un
+// échantillonnage le raterait) : toast de saisie, confirmation de saisie,
+// pilule « mot de passe », et la suite des états du toast de renvoi.
+// `firstPillAfterRefusal` : la pilule est-elle apparue avant qu'aucun
+// verdict de refus ne soit connu ? (J)
+async function watchResend(page) {
+  await page.evaluate(({ s, a, r }) => {
+    const w = window.__watch = { toast: false, accepted: false, pill: false, pillBeforeVerdict: false, toastBeforeVerdict: false, resend: [] };
+    const verdictKnown = () => {
+      const e = volatileSecretsEntry('sec');
+      const c = e && e.status && e.status.secrets[0] && e.status.secrets[0].consumers[0];
+      return !!c && c.verdict === 'rejected';
+    };
+    const look = () => {
+      if (document.querySelector(s)) { w.toast = true; if (!verdictKnown()) w.toastBeforeVerdict = true; }
+      if (document.querySelector(a)) w.accepted = true;
+      const pill = document.getElementById('auth-pending');
+      if (pill && !pill.hidden && /mot de passe/.test(document.getElementById('auth-pending-label').textContent)) {
+        w.pill = true;
+        if (!verdictKnown()) w.pillBeforeVerdict = true;
+      }
+      const t = document.querySelector(r);
+      const cur = t ? t.querySelector('.toast-text').textContent : null;
+      if (w.resend[w.resend.length - 1] !== cur) w.resend.push(cur);
+    };
+    new MutationObserver(look).observe(document.getElementById('toasts'), { childList: true, subtree: true, characterData: true });
+    new MutationObserver(look).observe(document.getElementById('auth-pending'), { attributes: true, childList: true, subtree: true, characterData: true });
+  }, { s: toastSel, a: ACCEPTED_SEL, r: RESEND_SEL });
 }
 
 async function waitConsumer(page, pred, label) {
@@ -247,16 +291,12 @@ try {
   check('E : redémarré', await startProxy());
   // La confirmation de C est éphémère : retirée avant d'observer, pour que
   // toute apparition pendant E soit celle du renvoi.
+  // Un toast fermé reste dans le DOM le temps de son animation de sortie :
+  // attendre qu'il soit parti, sinon l'observateur le voit encore.
   await page.evaluate((a) => { const t = document.querySelector(a); if (t) dismissToast(t.dataset.key); }, ACCEPTED_SEL);
-  await page.evaluate(({ s, a }) => {
-    window.__secretCalls = [];
-    window.__toastSeen = false;
-    window.__acceptedSeen = false;
-    new MutationObserver(() => {
-      if (document.querySelector(s)) window.__toastSeen = true;
-      if (document.querySelector(a)) window.__acceptedSeen = true;
-    }).observe(document.getElementById('toasts'), { childList: true, subtree: true });
-  }, { s: toastSel, a: ACCEPTED_SEL });
+  await page.waitForFunction((a) => !document.querySelector(a), ACCEPTED_SEL, { timeout: 5000 });
+  await page.evaluate(() => { window.__secretCalls = []; });
+  await watchResend(page);
   // Ce que fait le retour de focus : reconnexion du serveur, puis lecture.
   await page.evaluate(() => connectMcpServer(getMcpServer('sec')));
   const resent = await page.waitForFunction((b) => {
@@ -266,8 +306,17 @@ try {
   }, instBefore, { timeout: 30000 }).then(() => true, () => false);
   check('E : nouvelle instance, valeur renvoyée sans geste, service prêt', resent);
   check('E : un seul dépôt', await page.evaluate(() => window.__secretCalls.filter(m => m === 'miaou/secrets/submit').length === 1), await page.evaluate(() => window.__secretCalls));
-  check('E : aucun toast de saisie, à aucun moment (pas d\'annonce avant le renvoi)', await page.evaluate(() => !window.__toastSeen));
-  check('E : aucune confirmation pour un renvoi automatique', await page.evaluate(() => !window.__acceptedSeen));
+  await page.waitForFunction((t) => window.__watch.resend.includes(t), RESENT_TEXT, { timeout: 10000 }).catch(() => {});
+  const wE = await page.evaluate(() => window.__watch);
+  check('E : aucun toast de saisie, à aucun moment (pas d\'annonce avant le renvoi)', !wE.toast);
+  check('E : pilule « mot de passe » jamais allumée pendant le renvoi', !wE.pill);
+  check('E : toast du renvoi : annonce, puis « renvoyé et accepté » sous la même clef',
+    JSON.stringify(wE.resend.filter(x => x !== null)) === JSON.stringify([RESENDING_TEXT, RESENT_TEXT]), wE.resend);
+  check('E : la confirmation du renvoi est éphémère (niveau info, pas persistante)', await page.evaluate((r) => {
+    const t = document.querySelector(r);
+    return !!t && t.dataset.level === 'info' && _toastLive.get(t.dataset.key).remaining !== null;
+  }, RESEND_SEL));
+  check('E : pas de confirmation de SAISIE pour un renvoi (la sienne est à part)', !wE.accepted);
 
   // ── F ─────────────────────────────────────────────────────────────────────
   console.log('\nF. Oublier');
@@ -402,6 +451,7 @@ try {
     await stopProxy();
     check('I : proxy redémarré', await startProxy());
     await pi.evaluate(() => { window.__secretCalls = []; });
+    await watchResend(pi);
     // Aucune relecture entre-temps : c'est l'appel d'outil qui découvre l'oubli.
     await send('Et maintenant ?');
     const a2 = await ackI();
@@ -411,6 +461,11 @@ try {
     check('I : le modèle reçoit le résultat de l\'outil, rien du refus', !/SECRET_REQUIRED|mot de passe/.test(t2) && t2.length > 0, t2.slice(0, 200));
     const calls = await pi.evaluate(() => window.__secretCalls);
     check('I : un seul dépôt (le renvoi), pas de reconnexion requise', calls.filter(m => m === 'miaou/secrets/submit').length === 1, calls);
+    await pi.waitForFunction((t) => window.__watch.resend.includes(t), RESENT_TEXT, { timeout: 10000 }).catch(() => {});
+    const wI = await pi.evaluate(() => window.__watch);
+    check('I : ni pilule ni toast de saisie pendant le renvoi du rejeu', !wI.pill && !wI.toast, wI);
+    check('I : le renvoi du rejeu est annoncé puis confirmé',
+      JSON.stringify(wI.resend.filter(x => x !== null)) === JSON.stringify([RESENDING_TEXT, RESENT_TEXT]), wI.resend);
     const idbI = await pi.evaluate(async () => {
       let idb = '';
       for (const info of await indexedDB.databases()) {
@@ -424,6 +479,47 @@ try {
       return idb + JSON.stringify(Object.assign({}, localStorage));
     });
     check('I : la valeur absente des conversations persistées (IndexedDB, localStorage)', !idbI.includes(VALUE));
+
+    // ── J ───────────────────────────────────────────────────────────────────
+    // La valeur gardée par `pi` (acceptée en I) n'est plus celle qu'attend le
+    // proxy relancé : le renvoi part et se fait refuser.
+    console.log('\nJ. renvoi refusé');
+    // Onglet voisin, même contexte (BroadcastChannel, localStorage partagés),
+    // sans valeur gardée : il ne renvoie rien lui-même, il apprend le refus
+    // par `secrets-changed`.
+    const pj = await pi.context().newPage();
+    pj.on('console', m => consoleLines.push(m.text()));
+    await pj.goto(BASE + '/app/');
+    await bootWait(pj);
+    await pj.waitForFunction(() => { const s = getMcpStatus('sec'); return s && s.state === 'ok'; }, null, { timeout: 30000 });
+    await stopProxy();
+    writeCfg(VALUE + '-autre');
+    check('J : proxy relancé avec une autre valeur attendue', await startProxy());
+    // Confirmation de I, même clef : partie du DOM avant d'observer (cf. E).
+    await pi.evaluate((r) => { const t = document.querySelector(r); if (t) dismissToast(t.dataset.key); window.__secretCalls = []; }, RESEND_SEL);
+    await pi.waitForFunction((r) => !document.querySelector(r), RESEND_SEL, { timeout: 5000 });
+    await watchResend(pi);
+    await pi.evaluate(() => connectMcpServer(getMcpServer('sec')));
+    const refused = await waitConsumer(pi, "c.verdict === 'rejected'", 'refus du renvoi');
+    check('J : le renvoi est parti et a été refusé', refused && (await pi.evaluate(() => window.__secretCalls.filter(m => m === 'miaou/secrets/submit').length === 1)),
+      await pi.evaluate(() => window.__secretCalls));
+    await pi.waitForSelector(toastSel, { timeout: 10000 }).catch(() => {});
+    // Le retrait de l'annonce s'anime : attendre la sortie avant de relire.
+    await pi.waitForFunction((r) => !document.querySelector(r), RESEND_SEL, { timeout: 5000 }).catch(() => {});
+    const wJ = await pi.evaluate(() => window.__watch);
+    check('J : le renvoi a été annoncé, puis l\'annonce retirée',
+      JSON.stringify(wJ.resend) === JSON.stringify([null, RESENDING_TEXT, null]) || JSON.stringify(wJ.resend) === JSON.stringify([RESENDING_TEXT, null]), wJ.resend);
+    check('J : pilule « mot de passe » allumée après le refus', await pi.evaluate(() => !document.getElementById('auth-pending').hidden
+      && /mot de passe/.test(document.getElementById('auth-pending-label').textContent)));
+    check('J : ni pilule ni toast de saisie avant le verdict de refus', wJ.pill && !wJ.pillBeforeVerdict && wJ.toast && !wJ.toastBeforeVerdict, wJ);
+    const tJ = await toastText(pi) || '';
+    check('J : toast de saisie qui dit le renvoi refusé, pas « incorrect »', /renvoyé après le redémarrage du proxy, mais refusé/.test(tJ) && !/incorrect/.test(tJ), tJ);
+    const peerJ = await pj.waitForFunction((s) => {
+      const t = document.querySelector(s);
+      return t && /renvoyé après le redémarrage du proxy, mais refusé/.test(t.textContent) && !/incorrect/.test(t.textContent);
+    }, toastSel, { timeout: 15000 }).then(() => true, () => false);
+    check('J : l\'onglet voisin dit aussi le renvoi refusé, pas « incorrect »', peerJ, await toastText(pj));
+    check('J : valeur refusée oubliée de la session', await pi.evaluate(() => Object.keys(sessionStorage).every(k => k.indexOf('miaou-volatile-secret:') !== 0)));
   } finally {
     await bI.close().catch(() => {});
   }

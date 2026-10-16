@@ -1125,7 +1125,10 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       que dit la carte (`secretsUnavailableText`).
     - **État d'une clef** (`volatileSecretKeyState`) : en attente si un
       consommateur est `pending` ; phase lue sur les consommateurs en
-      attente — `rejected` (seul cas « incorrect »), puis `indeterminate` et
+      attente — `rejected` (seul cas « incorrect », ou « renvoyé… mais
+      refusé » quand le refus vise un renvoi automatique : second argument,
+      tenu par `_volatileSecretResendRefused`, effacé par une saisie, un oubli
+      ou un signal d'un onglet voisin), puis `indeterminate` et
       `incomplete` (cause dite, rien à ressaisir), puis `untested` et
       `required`. Un consommateur PRÊT qui a refusé la dernière saisie est un
       remplacement refusé (l'ancienne instance sert toujours) : dit dans la
@@ -1182,8 +1185,9 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       outils du serveur pendant son aller-retour) et rejouée à la fin de la
       dernière (`flushVolatileSecretReconnects`, appelé par
       `unregisterGeneration`).
-    - **Onglets voisins** : type `secrets-changed { server, forget? }` après
-      chaque dépôt ou oubli — jamais la valeur. Le récepteur retire la clef
+    - **Onglets voisins** : type `secrets-changed { server, forget?, key?,
+      resendRefused? }` après chaque dépôt ou oubli — jamais la valeur ;
+      `resendRefused` propage au pair le refus d'un renvoi automatique. Le récepteur retire la clef
       oubliée de SA session et relit l'état du serveur
       (`applyPeerSecretsChanged`) ; sans lui, un onglet voisin garderait
       « mot de passe requis » jusqu'à sa prochaine lecture.
@@ -1192,9 +1196,13 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       cartes ne sont re-rendues que si l'état montré a changé (signature de
       l'état et des gestes en cours, sans l'heure de lecture) : une lecture
       cadencée qui ne change rien ne reconstruit rien. Une saisie acceptée
-      (`submitVolatileSecret`, jamais le renvoi) est confirmée par un toast
-      éphémère `…:accepted` (`volatileSecretAcceptedNotice`, `warn` pour un
-      succès partiel). **Toast** : cf.
+      (`submitVolatileSecret`) est confirmée par un toast éphémère
+      `…:accepted` (`volatileSecretAcceptedNotice`, `warn` pour un succès
+      partiel) ; un renvoi automatique, par son toast `…:resend` (annonce,
+      puis confirmation « renvoyé et accepté » ou retrait). Une clef dont le
+      renvoi est dû ou en vol (`volatileSecretResendAwaited`) n'est comptée
+      ni par la pilule ni annoncée par un toast de saisie : l'attente ne
+      paraît qu'après l'échec du renvoi. **Toast** : cf.
       `docs/toasts.md` (forme à contenu `body`, exception de focus après une
       soumission depuis le toast, pas d'annonce quand un renvoi est dû).
       **Carte** (`appendVolatileSecretRows`, section « Mots de passe » avant les
@@ -1237,8 +1245,10 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       en visant le pid qui écoute sur le port. Scénarios : toast et pilule,
       refus (champ vidé et focalisé), panne simulée, acceptation (outils
       apparus par la reconnexion, toast retiré aussi dans un second onglet),
-      frappe gardée à travers un re-rendu, redémarrage (renvoi unique, aucun
-      toast à aucun moment), « Oublier », absence de la valeur (console,
+      frappe gardée à travers un re-rendu, redémarrage (renvoi unique, ni toast
+      de saisie ni pilule à aucun moment, toast de renvoi puis « renvoyé et
+      accepté »), renvoi refusé (pilule et toast « renvoyé… mais refusé » après le refus
+      seulement, valeur oubliée), « Oublier », absence de la valeur (console,
       localStorage, IndexedDB, DOM, journal du proxy), `file://` et
       `localhost` contre `127.0.0.1`, et un appel d'outil par un modèle stubé
       (refus sans valeur, bouton qui ouvre la carte, texte au modèle ; puis,
@@ -1247,7 +1257,9 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       confirmation d'une saisie acceptée : présente dans l'onglet qui a saisi,
       absente de l'onglet voisin, après un refus ou une panne, et pendant le
       renvoi qui suit un redémarrage ; rouge contre deux régressions (aucun
-      toast, toast émis aussi au renvoi). Le succès partiel (`warn`) n'est
+      toast, toast émis aussi au renvoi). Puis les toasts du renvoi et la
+      pilule muette pendant celui-ci : rouge contre le code qui comptait la
+      clef dès la lecture de l'état et n'annonçait rien (six contrôles). Le succès partiel (`warn`) n'est
       gardé que par les tests QuickJS : `secret_demo` n'a qu'un consommateur.
 
 24. **Cycle de vie du proxy (extension `miaou/lifecycle`, lot AV).** Sa
@@ -1367,6 +1379,12 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       revenu, et doublerait le toast « pas revenu » — qui porte pour cette
       raison l'action « Serveurs MCP » du toast de santé qu'il remplace. Un
       toast d'erreur antérieur au geste est retiré si le proxy est revenu.
+      La pastille de topbar suit la même règle : `resolveAuthorizationPending`
+      ne compte pas l'erreur d'un serveur de `proxyRestartAwaitedNames()`
+      (troisième argument, passé par `currentAuthorizationPending`, lecture
+      unique de la pastille, du chat soucieux et du clic), et
+      `releaseProxyBusy` la resynchronise : rouge seulement si le proxy n'est
+      pas revenu. La carte, elle, montre toujours l'état brut.
       Portée : CET onglet. Les autres, qui n'ont pas de toast de workflow,
       gardent leurs fronts génériques — seule information qu'ils aient ; pas
       de relais multi-onglets (décidé).
@@ -1384,8 +1402,9 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       autre `instance`, config relue inchangée), redémarrage sans
       modification, puis (K) port changé et confirmé : attente au bout du
       délai réel, toast « pas revenu » avec « Serveurs MCP ». En C, I, J et K,
-      aucun toast de santé `mcp:<nom>`, sous une synchro de santé forcée toutes
-      les 300 ms (sans elle, une attente sans autre activité n'en fait aucune,
+      aucun toast de santé `mcp:<nom>` ni pastille rouge pour ce serveur (relevée
+      à chaque mutation ; en K, rouge une fois l'attente finie), sous une
+      synchro de santé et de pastille forcée toutes les 300 ms (sans elle, une attente sans autre activité n'en fait aucune,
       code corrigé ou non). Prémisse — la carte est bien passée en erreur
       pendant l'attente — assertée en I et K seulement : en C et J le proxy
       relancé répond souvent dès la première reconnexion, rien à masquer. En
