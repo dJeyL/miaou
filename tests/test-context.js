@@ -35,6 +35,22 @@ describe('buildContextManifest', function() {
     expect(sumTokens).toBe(m.totalTokens);
   });
 
+  it('compte nom et arguments des tool_calls d\'un assistant dans l\'historique', function() {
+    var args = JSON.stringify({ path: 'note.md', content: '# Titre\n\nUn "document" écrit par le modèle.' });
+    var thread = [
+      { role: 'user', content: 'écris la note' },
+      { role: 'assistant', content: null, tool_calls: [
+        { id: 'c1', type: 'function', function: { name: 'space__write', arguments: args } },
+      ] },
+      { role: 'tool', tool_call_id: 'c1', content: 'ok' },
+    ];
+    var m = buildContextManifest(baseSysParts(), baseDynParts(), thread, '', null);
+    var hist = m.entries.filter(function(e) { return e.source === 'thread_history'; })[0];
+    expect(hist.chars).toBe('space__write'.length + args.length + 'ok'.length);
+    var last = m.entries.filter(function(e) { return e.source === 'thread_last_user'; })[0];
+    expect(last.chars).toBe('écris la note'.length);
+  });
+
   it('omet les sous-blocs vides (pas d\'entrée à 0 chars)', function() {
     var m = buildContextManifest(baseSysParts(), baseDynParts(), [], '', null);
     var sources = m.entries.map(function(e) { return e.source; });

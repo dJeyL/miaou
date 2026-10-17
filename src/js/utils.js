@@ -4651,7 +4651,8 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   // Ce qui suit le dernier user dans le fil (tool-acks d'un tour en cours,
   // réponse assistant, recall d'image synthétique) est compté avec
   // `thread_history` : l'entrée mesure un VOLUME de fil, pas un segment
-  // contigu du payload.
+  // contigu du payload. Il compte le `content` de chaque message ET, pour un
+  // assistant, le nom et les arguments de ses `tool_calls`.
   //
   // Les parts image ne sont JAMAIS comptées en chars (le base64 exploserait le
   // total) : une seule ligne agrégée `attachment_images` = imageCount ×
@@ -4670,6 +4671,21 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
       });
     } else if (typeof m.content === 'string') {
       chars = m.content.length;
+    }
+    // Les ARGUMENTS des appels d'outils d'un assistant partent dans le payload
+    // (`tool_calls[].function`, émis par expandThread) et sont facturés à
+    // chaque tour suivant, comme le reste du fil. Ne lire que `content` les
+    // laissait hors du compte : un document que le modèle écrit via un outil
+    // y passe en entier, échappé par JSON.stringify — écart de ~40k tokens
+    // observé, que le calibrage sur l'usage réel répartissait ensuite sur
+    // toutes les lignes sans le montrer.
+    if (Array.isArray(m.tool_calls)) {
+      m.tool_calls.forEach(tc => {
+        const fn = tc && tc.function;
+        if (!fn) return;
+        if (typeof fn.name === 'string') chars += fn.name.length;
+        if (typeof fn.arguments === 'string') chars += fn.arguments.length;
+      });
     }
     if (i === cutIdx) lastUserChars += chars;
     else historyChars += chars;

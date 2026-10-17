@@ -177,7 +177,12 @@ recopier la liste.
   (recall d'image, brief A2) n'est pas un tour et ne tient donc pas lieu de
   dernier message. Ce qui SUIT le dernier user (tool-acks d'un tour en cours,
   réponse assistant, recall) est compté avec `thread_history` : l'entrée mesure
-  un VOLUME de fil, pas un segment contigu du payload. Les parts `image_url`
+  un VOLUME de fil, pas un segment contigu du payload. Ce volume compte le
+  `content` de chaque message **et**, pour un assistant, le nom et les
+  arguments (JSON) de ses `tool_calls` : un document écrit par le modèle via un
+  outil passe en entier dans ces arguments, et ne lire que `content` l'avait
+  laissé hors de l'estimation (écart de ~40k tokens sur l'usage réel, que le
+  calibrage répartissait sur toutes les lignes). Les parts `image_url`
   d'un content-part array ne sont **jamais** comptées en chars (le base64
   exploserait le total).
 
