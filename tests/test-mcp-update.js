@@ -324,21 +324,26 @@ describe('proxyRestartWaitPlan / proxyRestartLandedFor — par instance, repli s
   it('instance connue : attente par instance, même quand head ne bouge pas (redémarrage sans mise à jour)', function() {
     var plan = proxyRestartWaitPlan('a', SHA_A);
     expect(plan).toEqual({ by: 'instance', before: 'a' });
-    expect(proxyRestartLandedFor(plan, true, { instance: 'b', head: SHA_A })).toBe(true);
-    expect(proxyRestartLandedFor(plan, true, { instance: 'a', head: SHA_B })).toBe(false);
+    expect(proxyRestartLandedFor(plan, true, { instance: 'b', head: SHA_A }, 'modern')).toBe(true);
+    expect(proxyRestartLandedFor(plan, true, { instance: 'a', head: SHA_B }, 'modern')).toBe(false);
   });
   it('instance inconnue (proxy antérieur à miaou/lifecycle) : repli sur head', function() {
     var plan = proxyRestartWaitPlan(null, SHA_A);
     expect(plan).toEqual({ by: 'head', before: SHA_A });
-    expect(proxyRestartLandedFor(plan, true, { head: SHA_A })).toBe(false);
-    expect(proxyRestartLandedFor(plan, true, { head: SHA_B })).toBe(true);
+    expect(proxyRestartLandedFor(plan, true, { head: SHA_A }, 'modern')).toBe(false);
+    expect(proxyRestartLandedFor(plan, true, { head: SHA_B }, 'modern')).toBe(true);
   });
-  it('extension plus déclarée après reconnexion : revenu (l\'ancien la publiait)', function() {
-    expect(proxyRestartLandedFor(proxyRestartWaitPlan('a', SHA_A), false, null)).toBe(true);
-    expect(proxyRestartLandedFor(proxyRestartWaitPlan(null, SHA_A), false, null)).toBe(true);
+  it('extension plus déclarée par une connexion moderne : revenu (l\'ancien la publiait)', function() {
+    expect(proxyRestartLandedFor(proxyRestartWaitPlan('a', SHA_A), false, null, 'modern')).toBe(true);
+    expect(proxyRestartLandedFor(proxyRestartWaitPlan(null, SHA_A), false, null, 'modern')).toBe(true);
+  });
+  it('connexion retombée en legacy (sonde repliée pendant la relance) : pas encore', function() {
+    expect(proxyRestartLandedFor(proxyRestartWaitPlan('a', SHA_A), false, null, 'legacy')).toBe(false);
+    expect(proxyRestartLandedFor(proxyRestartWaitPlan(null, SHA_A), false, null, 'legacy')).toBe(false);
+    expect(proxyRestartLandedFor(proxyRestartWaitPlan('a', SHA_A), false, null, undefined)).toBe(false);
   });
   it('lecture illisible : pas encore', function() {
-    expect(proxyRestartLandedFor(proxyRestartWaitPlan('a', SHA_A), true, null)).toBe(false);
+    expect(proxyRestartLandedFor(proxyRestartWaitPlan('a', SHA_A), true, null, 'modern')).toBe(false);
   });
 });
 

@@ -598,8 +598,24 @@ async function fetchMcpSkillEntry(server, skillUri) {
     const n = normalizeMcpSkillEntry(mcpSkillEntryFromResult(res));
     return n.entry ? { entry: n.entry } : { problem: 'entrée invalide : ' + n.problem };
   } catch (e) {
-    return { problem: 'entrée illisible (' + ((e && e.message) || 'échec') + ')' };
+    return withMcpReadRefusal({ problem: 'entrée illisible (' + ((e && e.message) || 'échec') + ')' }, e);
   }
+}
+
+// Une lecture de skill (`skills/get`, `resources/read`) refusée faute
+// d'autorisation ou de mot de passe volatil porte le même contrat qu'un appel
+// d'outil (`error.data.code`, `AUTHORIZATION_REQUIRED` ou `SECRET_REQUIRED`) :
+// on garde alors l'objet applicatif complet, dans `authorization` ou `secret`,
+// pour que l'appelant pose l'affordance (ack du modèle, fiche de la skill) par
+// le même chemin que `callRemoteTool` (`applyAuthorizationRefusal` /
+// `applySecretRefusal`), et tente le renvoi d'un mot de passe gardé. Rien de
+// plus : un tel échec reste une lecture ratée, qui ne dit rien de la skill
+// approuvée. Pure, testable en QuickJS.
+function withMcpReadRefusal(failure, e) {
+  const data = e && e.data;
+  if (data && data.code === AUTHORIZATION_REQUIRED_ERROR_CODE) failure.authorization = data;
+  else if (data && data.code === SECRET_REQUIRED_ERROR_CODE) failure.secret = data;
+  return failure;
 }
 
 // Lit UN fichier d'une skill dont l'entrée fraîche est `entry`, et le vérifie :
@@ -607,7 +623,13 @@ async function fetchMcpSkillEntry(server, skillUri) {
 // le SKILL.md, frontmatter comparé à l'entrée. Une skill dynamique n'a ni
 // manifeste ni empreinte : seuls le répertoire et la borne de taille de la
 // spec s'appliquent. Rend `{ text, bytes, isSkillMd }` (`text` null pour un
-// binaire) ou `{ problem }` ; aucun contenu n'est rendu sur un échec.
+// binaire) ou `{ problem, integrity, authorization, secret }` (cf.
+// `withMcpReadRefusal`) ; aucun contenu n'est rendu sur un
+// échec. `integrity` vrai seulement quand le contenu LU contredit l'entrée
+// (taille, empreinte, frontmatter) : c'est le seul échec qui dit quelque chose
+// de la skill approuvée. Un fichier hors manifeste (URI mal tapée ou inventée
+// par le modèle) ou une lecture ratée (serveur qui redémarre) n'en disent
+// rien, et ne doivent pas faire tomber l'approbation.
 //
 // N'APPROUVE RIEN : l'appelant décide s'il a le droit de lire (lecture par le
 // modèle, approbation exigée) ou s'il inspecte (geste de l'utilisateur dans la
@@ -627,21 +649,21 @@ async function readVerifiedMcpSkillFile(server, entry, fileUri) {
     const contents = (res && Array.isArray(res.contents)) ? res.contents : [];
     content = contents.find(c => c && c.uri === fileUri) || contents[0] || null;
   } catch (e) {
-    return { problem: 'lecture impossible (' + ((e && e.message) || 'échec') + ')' };
+    return withMcpReadRefusal({ problem: 'lecture impossible (' + ((e && e.message) || 'échec') + ')' }, e);
   }
   const bytes = mcpResourceContentBytes(content);
   if (!bytes) return { problem: 'contenu illisible' };
   if (listed) {
     const v = verifyMcpSkillFile(bytes, listed);
-    if (v) return { problem: formatMcpSkillFileProblem(v) };
+    if (v) return { problem: formatMcpSkillFileProblem(v), integrity: true };
   } else if (bytes.length > MCP_SKILL_MAX_TOTAL_BYTES) {
-    return { problem: 'plus de 16 Mio' };
+    return { problem: 'plus de 16 Mio', integrity: true };
   }
   const text = mcpSkillFileText(content, bytes);
   if (isSkillMd) {
-    if (text == null) return { problem: 'SKILL.md illisible comme texte' };
+    if (text == null) return { problem: 'SKILL.md illisible comme texte', integrity: true };
     const fm = verifyMcpSkillFrontmatter(text, entry.frontmatter);
-    if (fm) return { problem: 'frontmatter : ' + (fm.field ? fm.field + ', ' : '') + fm.reason };
+    if (fm) return { problem: 'frontmatter : ' + (fm.field ? fm.field + ', ' : '') + fm.reason, integrity: true };
   }
   return { text: text, bytes: bytes, isSkillMd: isSkillMd };
 }
@@ -702,8 +724,14 @@ function applyAuthorizationRefusal(ackEntry, errorCode, data, mcpServerName) {
 // `ackAuthorizationTarget`.
 // Pure, testable en QuickJS.
 function formatAuthorizationRefusalForModel(fullName, serverMessage) {
-  return 'Erreur outil distant ' + fullName + ' : ' + (serverMessage || '') +
-    '\n\nCet appel est en attente d\'une autorisation que seul l\'utilisateur peut ' +
+  return 'Erreur outil distant ' + fullName + ' : ' + (serverMessage || '') + authorizationPendingNoticeForModel();
+}
+
+// La consigne au modèle d'un refus d'autorisation, partagée par l'appel d'outil
+// distant et la lecture d'une skill MCP (`readMcpSkillForModel`) : mêmes trois
+// choses à dire, pour les mêmes raisons (cf. ci-dessus). Pure.
+function authorizationPendingNoticeForModel() {
+  return '\n\nCet appel est en attente d\'une autorisation que seul l\'utilisateur peut ' +
     'accorder ; tu n\'as pas d\'outil pour le faire toi-même. Le lien nécessaire lui ' +
     'est déjà affiché dans la conversation — inutile de le lui transmettre. Signale-lui ' +
     'simplement que cette action requiert son autorisation, et poursuis avec ce que tu ' +
@@ -730,8 +758,13 @@ function applySecretRefusal(ackEntry, errorCode, data, mcpServerName) {
 // ferait écrire le mot de passe dans l'historique, l'export et le contexte.
 // Pure, testable en QuickJS.
 function formatSecretRequiredForModel(fullName, serverMessage) {
-  return 'Erreur outil distant ' + fullName + ' : ' + (serverMessage || '') +
-    '\n\nCet appel attend un mot de passe que seul l\'utilisateur peut saisir, dans ' +
+  return 'Erreur outil distant ' + fullName + ' : ' + (serverMessage || '') + secretPendingNoticeForModel();
+}
+
+// La consigne au modèle d'un mot de passe attendu, partagée par l'appel d'outil
+// distant et la lecture d'une skill MCP (`readMcpSkillForModel`). Pure.
+function secretPendingNoticeForModel() {
+  return '\n\nCet appel attend un mot de passe que seul l\'utilisateur peut saisir, dans ' +
     'l\'interface de MIAOU ; tu n\'as pas d\'outil pour le faire. Le moyen de le saisir ' +
     'lui est déjà affiché. Ne lui demande JAMAIS ce mot de passe dans la conversation, ' +
     'et ne l\'accepte pas s\'il te le donne : il serait écrit dans l\'historique. ' +

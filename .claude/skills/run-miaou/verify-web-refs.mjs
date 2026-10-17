@@ -22,7 +22,11 @@
 //      provenance ne lit pas `result` ;
 //   E. streaming : pastille résolue pendant le streaming, marqueur ouvert
 //      masqué ;
-//   F. export HTML : lien ordinaire « (Site A) », aucune pastille ni marqueur ;
+//   E2. code : un marqueur en code inline ou en bloc clôturé reste un exemple
+//      de syntaxe, texte brut sans pastille ; la prose voisine est résolue ;
+//   F. export HTML : pastilles, comme à l'écran (libellé « Site A »), aucun
+//      marqueur brut — l'export rendait un lien ordinaire « (Site A) » avant
+//      que les pastilles y passent aussi (feat(export), 2026-10-02) ;
 //      copie : lien Markdown, aucun marqueur ;
 //   G. callRemoteTool relaie `_meta` (mcpRpc bouchonné), webMetaFromResult le
 //      lit — le maillon réseau du canal, hors génération ;
@@ -220,6 +224,22 @@ const E = await page.evaluate(() => {
 });
 check('E. streaming : pastille résolue, marqueur ouvert masqué', E.pill && !E.raw, JSON.stringify(E));
 
+// ── E2. Marqueurs dans le code ───────────────────────────────────────────────
+const E2 = await page.evaluate(() => {
+  const host = document.createElement('div');
+  host.innerHTML = renderMd('Lu. [web_ref:https://a.com/p]\n\nCite avec `[web_ref:https://a.com/p]` ou\n\n```\n[file_ref:res_1] [web_ref:https://a.com/p]\n```');
+  const codes = [...host.querySelectorAll('code')];
+  return {
+    prosePill: !!host.querySelector('p > .web-refs a.web-ref, p a.web-ref'),
+    inline: codes[0] ? codes[0].textContent : null,
+    block: codes[1] ? codes[1].textContent.trim() : null,
+    pillsInCode: codes.reduce((n, c) => n + c.querySelectorAll('a, span').length, 0),
+  };
+});
+check('E2. code : marqueurs bruts, aucune pastille dans le code, prose résolue',
+  E2.prosePill && E2.inline === '[web_ref:https://a.com/p]'
+  && E2.block === '[file_ref:res_1] [web_ref:https://a.com/p]' && E2.pillsInCode === 0, JSON.stringify(E2));
+
 // ── F. Export HTML et copie ─────────────────────────────────────────────────
 const F = await page.evaluate(async () => {
   // renderExportBody rend le HTML du corps (chaîne), relu dans un fragment.
@@ -234,8 +254,8 @@ const F = await page.evaluate(async () => {
   return { raw: /\[web_ref:/.test(asst), pills: c.querySelectorAll('.web-ref, .web-refs').length,
     linkText: link ? link.textContent : null, hasHtml: html.length > 0 };
 });
-check('F. export : lien ordinaire « (Site A) »', F.linkText === '(Site A)', F.linkText);
-check('F. export : ni pastille ni marqueur', F.pills === 0 && !F.raw, F.pills);
+check('F. export : pastille libellée « Site A »', F.linkText === 'Site A', F.linkText);
+check('F. export : pastilles présentes, aucun marqueur brut', F.pills > 0 && !F.raw, F.pills);
 await page.evaluate(() => copyMsg(document.querySelector('#thread .msg.assistant .msg-copy')));
 await page.waitForTimeout(200);
 const clip = await page.evaluate(() => navigator.clipboard.readText());

@@ -1065,9 +1065,11 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       pas cette extension, à `head` ≠ sha d'avant (`proxyRestartLanded`). Le
       plan est choisi par `proxyRestartWaitPlan`, le verdict rendu par
       `proxyRestartLandedFor`. Au-delà du délai : toast d'erreur
-      persistant, avec la cause probable (démarrage en échec après la mise à
-      jour) et le renvoi au journal du superviseur, qui donne la commande de
-      retour arrière. Puis, **si la page est servie par ce proxy ET que la mise
+      persistant, avec les causes probables (dépendances encore en cours de
+      téléchargement — la relance n'a aucune borne côté proxy quand uv doit
+      télécharger, et MIAOU ne distingue pas « lent » d'« échoué » —, ou
+      démarrage en échec après la mise à jour) et le renvoi au journal du
+      superviseur, qui donne la commande de retour arrière. Puis, **si la page est servie par ce proxy ET que la mise
       à jour touche MIAOU** (genre `miaou` ou `both`) : relecture immédiate de
       `version.json`, hors throttle (`fetchNewerServedBuild`, pwa.js).
       Empreinte nouvelle et rien à perdre : rechargement automatique ; un
@@ -1177,7 +1179,9 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       par »), puis `submit`, puis `volatileSecretAfterSubmit`. **Renvoi**
       (`resendVolatileSecrets`, après chaque lecture) : `resentFor` posé AVANT
       l'envoi, une clef à la fois. **Oubli** (`forgetVolatileSecret`) : valeur
-      retirée de la session d'abord, puis `forget`.
+      retirée de la session d'abord (et `secrets-changed` émis aussitôt, pour
+      que les voisins ne la renvoient pas), puis `forget`, puis un second
+      `secrets-changed` pour que leur relecture voie l'état d'après l'oubli.
     - **Reconnexion après acceptation** : sans `notifications/tools/list_changed`,
       c'est `connectMcpServer` qui fait paraître les outils au tout premier
       démarrage (cache vide côté proxy) et les `instructions` de l'upstream.
@@ -1261,6 +1265,16 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       pilule muette pendant celui-ci : rouge contre le code qui comptait la
       clef dès la lecture de l'état et n'annonçait rien (six contrôles). Le succès partiel (`warn`) n'est
       gardé que par les tests QuickJS : `secret_demo` n'a qu'un consommateur.
+      Puis la skill que sert `secret_demo` (`secret-demo`), pendant l'attente
+      : à cache plein, fiche dont le bouton ramène au champ de la carte, et
+      lecture par le modèle refusée avec bouton et consigne ; valeur gardée et
+      proxy redémarré, renvoi puis relecture (le premier `skills/get` refusé
+      est relevé, sans quoi le renvoi aurait pu précéder la lecture) ; cache
+      vidé, rangée approuvée « en attente d'un mot de passe », non estompée,
+      bouton qui met le focus sur le champ, retour à l'état normal après la
+      saisie. Rouge contre quatre régressions injectées (pas de relance,
+      ack sans marqueurs, rangée sans rattachement, bouton de fiche qui ne
+      ferme pas la fiche). Cf. `docs/skills.md`.
 
 24. **Cycle de vie du proxy (extension `miaou/lifecycle`, lot AV).** Sa
     config a-t-elle changé depuis son démarrage, et redémarrage à la demande
@@ -1304,7 +1318,12 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       `head` quand le proxy ne déclare pas l'extension (proxy antérieur) ; un
       proxy reconnecté SANS l'extension que lisait le plan est revenu
       (l'ancien la publiait) — c'est le cas d'une mise à jour vers une
-      version qui ne l'a pas (`proxyRestartLandedFor`).
+      version qui ne l'a pas (`proxyRestartLandedFor`). À condition que la
+      connexion soit MODERNE : une connexion legacy ne déclare aucune
+      extension par construction, et la sonde d'ère s'y replie sur une erreur
+      réseau ou un statut sans corps, ce que produit un proxy en pleine
+      relance — on re-sonde au tour suivant. Un retour arrière vers un proxy
+      antérieur à l'ère moderne finit donc en « pas revenu », coût assumé.
     - **Surfaces** (même critère que la mise à jour : l'état sur la surface
       passive, le front en toast). **Réglages › Application**, champ
       « Serveurs MCP : mise à jour et redémarrage », une rangée par serveur

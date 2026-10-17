@@ -82,7 +82,10 @@ bloquer, et rien de non idempotent n'a à passer par un cache.
    sinon on continue d'attendre le réseau. La mise en cache est confiée à
    `waitUntil`, appelé tant que `respondWith` est en attente (seule fenêtre où
    c'est permis hors du gestionnaire), donc elle aboutit même quand c'est le
-   cache qui a répondu.
+   cache qui a répondu. Seule une réponse `text/html` y entre (ouvrir
+   `version.json` dans un onglet est aussi une navigation dans la portée). Une
+   réponse **5xx** vaut échec et sert le cache : derrière un reverse proxy, un
+   proxy MCP coupé répond 502 sans faire échouer `fetch`. Les 4xx passent.
 2. **Bibliothèques des CDN** (cdnjs, jsdelivr, fonts.gstatic) : URL
    versionnées, donc immuables. Cache d'abord, mise en cache au premier usage,
    aucun préchargement. Le paramètre `miaou-retry` que `loadCdnScript` ajoute

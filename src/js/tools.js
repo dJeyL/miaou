@@ -788,9 +788,42 @@ function updateLastPendingToolAck(fields, minLength) {
 // le préfixe `miaou__` est ajouté ICI, une seule fois, pour que l'ack porte le nom
 // canonique que le modèle a réellement appelé (cohérent avec mcp_call qui affiche
 // `server__tool`) sans dupliquer le préfixe sur chaque site d'appel.
-function toolFail(toolName, message) {
-  _pendingToolAcks.push({ kind: 'tool_failed', name: 'miaou__' + toolName, message, error: true });
+function toolFail(toolName, message, fields) {
+  _pendingToolAcks.push(Object.assign({ kind: 'tool_failed', name: 'miaou__' + toolName, message, error: true }, fields || null));
   return message;
+}
+
+// Échec d'une lecture de skill MCP. Refusée faute d'autorisation ou de mot de
+// passe (cf. `withMcpReadRefusal`), l'ack porte les marqueurs du refus — le
+// lien « Autoriser » ou le bouton « Saisir le mot de passe » s'y affiche comme
+// sous un appel d'outil distant — et le modèle reçoit la même consigne : c'est
+// à l'utilisateur d'agir, le moyen est déjà affiché. La consigne va au modèle
+// seul, pas dans le message de l'ack, que lit l'utilisateur.
+function mcpSkillReadFail(message, failure, card) {
+  if (failure && failure.authorization) {
+    toolFail('skills__read', message,
+      applyAuthorizationRefusal({}, AUTHORIZATION_REQUIRED_ERROR_CODE, failure.authorization, card));
+    return message + authorizationPendingNoticeForModel();
+  }
+  if (failure && failure.secret) {
+    toolFail('skills__read', message, applySecretRefusal({}, SECRET_REQUIRED_ERROR_CODE, failure.secret, card));
+    return message + secretPendingNoticeForModel();
+  }
+  return toolFail('skills__read', message);
+}
+
+// Une étape de lecture de skill MCP (`fetchMcpSkillEntry`,
+// `readVerifiedMcpSkillFile`) refusée faute de mot de passe : si MIAOU détient
+// une valeur acceptée que le proxy a oubliée (il a redémarré), il la renvoie et
+// rejoue l'étape UNE fois, comme `callRemoteTool` pour un appel d'outil — le
+// modèle ne voit pas l'échec. `run` rend le résultat de l'étape, sans lever.
+async function withMcpSkillSecretRecovery(server, run) {
+  const r = await run();
+  if (r && r.secret && typeof recoverVolatileSecretForCall === 'function'
+    && await recoverVolatileSecretForCall(server, typeof r.secret.upstream === 'string' ? r.secret.upstream : null)) {
+    return run();
+  }
+  return r;
 }
 
 // Ack de la borne de répétition (callCounts, api.js — piège n°3) : au-delà de
@@ -894,8 +927,8 @@ async function readMcpSkillForModel(target, c) {
     return toolFail('skills__read', 'Refusé : lis d\'abord la skill elle-même avec ' +
       mcpSkillReadArgsText(card, target.entry.uri) + ', puis ce fichier. Rien n\'a été lu.');
   }
-  const fresh = await fetchMcpSkillEntry(server, target.entry.uri);
-  if (fresh.problem) return toolFail('skills__read', 'Skill MCP « ' + name + ' » du serveur « ' + card + ' » illisible : ' + fresh.problem + '. Rien n\'a été lu.');
+  const fresh = await withMcpSkillSecretRecovery(server, () => fetchMcpSkillEntry(server, target.entry.uri));
+  if (fresh.problem) return mcpSkillReadFail('Skill MCP « ' + name + ' » du serveur « ' + card + ' » illisible : ' + fresh.problem + '. Rien n\'a été lu.', fresh, card);
   const approvals = loadMcpSkillApprovals()[card] || {};
   const state = mcpSkillApprovalState(fresh.entry,
     Object.prototype.hasOwnProperty.call(approvals, name) ? approvals[name] : null,
@@ -904,7 +937,13 @@ async function readMcpSkillForModel(target, c) {
     if (typeof notifyMcpSkillRefused === 'function') notifyMcpSkillRefused(card, name, state);
     return toolFail('skills__read', mcpSkillNotApprovedText(card, name, state));
   }
-  const read = await readVerifiedMcpSkillFile(server, fresh.entry, target.uri);
+  const read = await withMcpSkillSecretRecovery(server, () => readVerifiedMcpSkillFile(server, fresh.entry, target.uri));
+  if (read.problem && !read.integrity) {
+    // Fichier hors manifeste ou lecture ratée : rien ne dit que la skill a
+    // changé, l'approbation reste (cf. readVerifiedMcpSkillFile).
+    return mcpSkillReadFail('Fichier ' + target.uri + ' de la skill MCP « ' + name + ' » non lu : ' +
+      read.problem + '. Rien n\'a été lu ; l\'approbation de la skill est intacte.', read, card);
+  }
   if (read.problem) {
     // Le contenu ne correspond pas à l'entrée approuvée : l'approbation tombe.
     setMcpSkillSessionApproval(card, name, null);

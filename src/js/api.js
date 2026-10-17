@@ -96,6 +96,9 @@ function serverVerdictOnFailure(err) {
   // TypeError : `fetch` qui échoue avant toute réponse (DNS, connexion
   // refusée, CORS). Même raison — aucun verdict serveur.
   if (err.name === 'TypeError') return false;
+  // SyntaxError : corps 200 non JSON (page HTML d'un proxy, portail captif).
+  // Le serveur a répondu, mais rien sur le paramètre envoyé.
+  if (err.name === 'SyntaxError') return false;
   return true;
 }
 
@@ -1024,6 +1027,14 @@ async function streamCompletion(messages, opts) {
       if (verdict && body.reasoning_effort) {
         let refusalText = '';
         try { refusalText = await res.text(); } catch (_) { /* corps illisible : refus du seul niveau */ }
+        // Stop (ou chien de garde) pendant la lecture du corps : le rejeu
+        // poserait un controller neuf et streamerait la réponse que
+        // l'utilisateur vient d'interrompre. Sortie par le chemin d'un abort.
+        if (ctrl.signal.aborted) {
+          const ab = new Error('aborted');
+          ab.name = 'AbortError';
+          throw ab;
+        }
         noteReasoningEffortRefused(cfg.url, model, body.reasoning_effort, refusalText);
         return streamCompletion(messages, opts);
       }
@@ -1585,8 +1596,10 @@ function normalizeTitle(raw) {
   let t = String(raw || '');
   // Une sortie qui commence en JSON (objet ou tableau) est un appel d'outil
   // ou une structure inventée, jamais un titre : rejet, le titre provisoire
-  // reste et le titrage suivant sert de filet.
-  if (/^\s*[{\[]/.test(t)) return '';
+  // reste et le titrage suivant sert de filet. Le motif vise l'ouverture d'un
+  // JSON (`{"`, `[{`, `["`, `[1`…), y compris tronqué, et pas un crochet de
+  // titre : « [WIP] refonte du build » est un titre.
+  if (/^\s*(\{\s*("|\}|$)|\[\s*([{\["\]\d-]|$))/.test(t)) return '';
   // Préfixes de bloc AVANT les marqueurs inline : une puce « * Sujet » perdrait
   // son astérisque au strip inline et ne serait plus reconnue comme puce.
   t = t.replace(/^\s*#{1,6}\s*/, '').replace(/^\s*[-+*]\s+/, '');
@@ -1786,8 +1799,10 @@ function normalizeModelCaps(raw, positiveOnly) {
 // porte. L'objet `reasoning` de l'entrée ne décide PAS de la capacité : il
 // existe sur des modèles dont `supported_parameters` ne liste pas `reasoning`
 // (mesuré), et c'est la requête acceptée qui décide de ce que MIAOU peut
-// envoyer. Il ne sert qu'aux niveaux (`reasoningEffortsFromModelEntry`), qu'un
-// `thinking: false` rend sans objet.
+// envoyer. Il ne sert qu'aux niveaux (`reasoningEffortsFromModelEntry`), lus
+// et gardés tels quels même quand `thinking` vaut false : rien ne les écarte
+// ici, c'est `reasoningEffortBlocked` qui masque alors le sélecteur et
+// s'abstient d'envoyer le paramètre.
 const MODEL_INPUT_MODALITIES_KNOWN = ['text', 'image', 'file', 'audio', 'video'];
 const MODEL_REQUEST_PARAMS_KNOWN = ['max_tokens', 'temperature', 'top_p', 'stop', 'seed',
   'tools', 'tool_choice', 'reasoning', 'include_reasoning', 'response_format'];
@@ -2114,17 +2129,20 @@ async function fetchModelList(override) {
   // doit pas laisser le chargement de modèles en attente indéfinie.
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 30000);
-  let res;
+  // Le corps est lu SOUS le timer : un endpoint qui envoie ses en-têtes puis
+  // gèle (catalogue de plusieurs centaines de Ko derrière un proxy lent) doit
+  // rester borné lui aussi.
+  let data;
   try {
-    res = await fetch(cfg.url + '/models', {
+    const res = await fetch(cfg.url + '/models', {
       headers: { 'Authorization': 'Bearer ' + (cfg.key || 'no-key') },
       signal: ctrl.signal,
     });
+    if (!res.ok) throw new Error('models ' + res.status);
+    data = await res.json();
   } finally {
     clearTimeout(timer);
   }
-  if (!res.ok) throw new Error('models ' + res.status);
-  const data = await res.json();
   return modelListFromResponse(data);
 }
 

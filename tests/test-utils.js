@@ -5436,6 +5436,8 @@ describe('webRefDomain', function() {
     expect(webRefDomain('https://WWW.Example.COM/x')).toBe('example.com');
     expect(webRefDomain('http://user:pw@host.org:8080/p')).toBe('host.org');
     expect(webRefDomain('ftp://x')).toBe('');
+    // l'antislash clôt l'autorité (lecture du navigateur) : pas d'usurpation par @
+    expect(webRefDomain('https://evil.test\\@trusted.com/x')).toBe('evil.test');
   });
 });
 
@@ -5535,6 +5537,28 @@ describe('tipAnchorRect', function() {
     var withEmpty = [{ top: 10, bottom: 30, left: 400, right: 400 }, two[1]];
     expect(tipAnchorRect(withEmpty, null)).toBe(two[1]);
     expect(tipAnchorRect([], null)).toBe(null);
+  });
+});
+
+describe('mapOutsideCode — prose seulement', function() {
+  var up = function(seg) { return seg.toUpperCase(); };
+  it('code inline et bloc clôturé intacts, prose transformée', function() {
+    expect(mapOutsideCode('a `b` c', up)).toBe('A `b` C');
+    expect(mapOutsideCode('x\n```js\ny\n```\nz', up)).toBe('X\n```js\ny\n```\nZ');
+    expect(mapOutsideCode('x\n~~~\ny\n~~~\nz', up)).toBe('X\n~~~\ny\n~~~\nZ');
+  });
+  it('clôture plus courte que l\'ouverture : le bloc continue', function() {
+    expect(mapOutsideCode('````\n```\ny\n````\nz', up)).toBe('````\n```\ny\n````\nZ');
+  });
+  it('sans code : chaque ligne passe', function() {
+    expect(mapOutsideCode('a\nb', up)).toBe('A\nB');
+  });
+});
+
+describe('normalizeRefLinkForms — exemple de syntaxe dans du code', function() {
+  it('lien-marqueur en code inline ou en bloc : laissé tel qu\'écrit', function() {
+    expect(normalizeRefLinkForms('écris `[x](file_ref:res_1)` ici')).toBe('écris `[x](file_ref:res_1)` ici');
+    expect(normalizeRefLinkForms('```\n[x](conv_ref:c1)\n```')).toBe('```\n[x](conv_ref:c1)\n```');
   });
 });
 

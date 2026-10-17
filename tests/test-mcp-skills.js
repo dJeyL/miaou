@@ -708,6 +708,7 @@ function mountSkillServer(opts) {
   var body = o.body != null ? o.body : 'BODY';
   mcpRpc = function(server, method, params) {
     calls.push(method + ' ' + (params && params.uri || ''));
+    if (o.failOn === method && (o.failTimes == null || o.failTimes-- > 0)) return Promise.reject(o.failWith);
     if (method === 'skills/get') return Promise.resolve({ skill: o.entry || BENCH_ENTRY });
     if (method === 'resources/read') return Promise.resolve({ contents: [{ uri: params.uri, text: o.textFor ? o.textFor(params.uri) : body }] });
     return Promise.resolve({});
@@ -777,6 +778,125 @@ describe('miaou__skills__read sur une skill MCP', function() {
       saveMcpSkillApprovals(approveMcpSkill({}, 'proxy', BENCH_NORM, 1));   // autre empreinte
       var r = flattenToolResult(runAsync(callTool('miaou__skills__read', { server: 'proxy', uri: BENCH_ENTRY.uri })));
       expect(r).toContain('a changé depuis');
+    } finally { m.done(); }
+  });
+});
+
+// Erreur levée par mcpRpc pour un refus d'autorisation : `data` porte l'objet
+// applicatif complet, comme mcpRpcAttempt.
+function authError(message) {
+  var e = new Error(message || 'Le serveur exige une autorisation.');
+  e.data = { code: AUTHORIZATION_REQUIRED_ERROR_CODE, authorization_url: '/authorize/jira', upstream: 'jira' };
+  return e;
+}
+
+describe('withMcpReadRefusal', function() {
+  it('garde l\'objet applicatif d\'un refus d\'autorisation ou de mot de passe, rien sinon', function() {
+    var e = authError();
+    expect(withMcpReadRefusal({ problem: 'p' }, e)).toEqual({ problem: 'p', authorization: e.data });
+    var other = new Error('x'); other.data = { code: SECRET_REQUIRED_ERROR_CODE, upstream: 'api' };
+    expect(withMcpReadRefusal({ problem: 'p' }, other)).toEqual({ problem: 'p', secret: other.data });
+    var unrelated = new Error('x'); unrelated.data = { code: 'REF_UNKNOWN' };
+    expect(withMcpReadRefusal({ problem: 'p' }, unrelated)).toEqual({ problem: 'p' });
+    expect(withMcpReadRefusal({ problem: 'p' }, new Error('x'))).toEqual({ problem: 'p' });
+    expect(withMcpReadRefusal({ problem: 'p' }, null)).toEqual({ problem: 'p' });
+  });
+});
+
+describe('miaou__skills__read refusée faute d\'autorisation', function() {
+  function failedAck() {
+    return getPendingToolAcks().filter(function(a) { return a.kind === 'tool_failed'; })[0];
+  }
+  it('resources/read refusé : ack porteur du lien, consigne au modèle seul, approbation intacte', function() {
+    var m = mountSkillServer({ entry: REAL_ENTRY, catalogue: [REAL_NORM], body: REAL_MD,
+      failOn: 'resources/read', failWith: authError() });
+    try {
+      saveMcpSkillApprovals(approveMcpSkill({}, 'proxy', REAL_NORM, 1));
+      var r = flattenToolResult(runAsync(callTool('miaou__skills__read', { server: 'proxy', uri: BENCH_ENTRY.uri })));
+      expect(r).toContain('approbation de la skill est intacte');
+      expect(r).toContain('seul l\'utilisateur peut accorder');
+      var ack = failedAck();
+      expect(ack.errorCode).toBe(AUTHORIZATION_REQUIRED_ERROR_CODE);
+      expect(ack.mcpServer).toBe('proxy');
+      expect(ack.upstream).toBe('jira');
+      expect(ack.message.indexOf('seul l\'utilisateur')).toBe(-1);
+      expect(ackAuthorizationTarget(ack, 'http://127.0.0.1:8765/mcp')).toEqual({ url: 'http://127.0.0.1:8765/authorize/jira', origin: '127.0.0.1:8765', upstream: 'jira' });
+      expect(Object.keys(loadMcpSkillApprovals().proxy)).toEqual(['bench']);
+    } finally { m.done(); }
+  });
+  it('skills/get refusé : même ack porteur du lien', function() {
+    var m = mountSkillServer({ entry: REAL_ENTRY, catalogue: [REAL_NORM], failOn: 'skills/get', failWith: authError() });
+    try {
+      var r = flattenToolResult(runAsync(callTool('miaou__skills__read', { server: 'proxy', uri: BENCH_ENTRY.uri })));
+      expect(r).toContain('illisible');
+      expect(r).toContain('seul l\'utilisateur peut accorder');
+      expect(failedAck().errorCode).toBe(AUTHORIZATION_REQUIRED_ERROR_CODE);
+    } finally { m.done(); }
+  });
+  it('autre échec de lecture : ni marqueur ni consigne', function() {
+    var m = mountSkillServer({ entry: REAL_ENTRY, catalogue: [REAL_NORM], body: REAL_MD,
+      failOn: 'resources/read', failWith: new Error('Connection closed') });
+    try {
+      saveMcpSkillApprovals(approveMcpSkill({}, 'proxy', REAL_NORM, 1));
+      var r = flattenToolResult(runAsync(callTool('miaou__skills__read', { server: 'proxy', uri: BENCH_ENTRY.uri })));
+      expect(r).toContain('Connection closed');
+      expect(r.indexOf('seul l\'utilisateur')).toBe(-1);
+      expect(failedAck().errorCode).toBe(undefined);
+    } finally { m.done(); }
+  });
+});
+
+describe('miaou__skills__read refusée faute de mot de passe volatil', function() {
+  function secretError() {
+    var e = new Error('Le serveur \'api\' attend un mot de passe.');
+    e.data = { code: SECRET_REQUIRED_ERROR_CODE, upstream: 'api' };
+    return e;
+  }
+  function withRecover(result, fn) {
+    var saved = recoverVolatileSecretForCall;
+    var seen = [];
+    recoverVolatileSecretForCall = function(server, upstream) { seen.push(server.name + ' ' + upstream); return Promise.resolve(result); };
+    try { fn(seen); } finally { recoverVolatileSecretForCall = saved; }
+  }
+  it('rien à renvoyer : ack porteur du bouton, consigne au modèle seul, approbation intacte', function() {
+    var m = mountSkillServer({ entry: REAL_ENTRY, catalogue: [REAL_NORM], body: REAL_MD,
+      failOn: 'resources/read', failWith: secretError() });
+    try {
+      saveMcpSkillApprovals(approveMcpSkill({}, 'proxy', REAL_NORM, 1));
+      withRecover(false, function(seen) {
+        var r = flattenToolResult(runAsync(callTool('miaou__skills__read', { server: 'proxy', uri: BENCH_ENTRY.uri })));
+        expect(r).toContain('Ne lui demande JAMAIS ce mot de passe');
+        var ack = getPendingToolAcks().filter(function(a) { return a.kind === 'tool_failed'; })[0];
+        expect(ack.errorCode).toBe(SECRET_REQUIRED_ERROR_CODE);
+        expect(ack.upstream).toBe('api');
+        expect(ack.message.indexOf('JAMAIS')).toBe(-1);
+        expect(ackSecretTarget(ack, true)).toEqual({ server: 'proxy', upstream: 'api' });
+        expect(seen).toEqual(['proxy api']);
+        expect(Object.keys(loadMcpSkillApprovals().proxy)).toEqual(['bench']);
+      });
+    } finally { m.done(); }
+  });
+  it('valeur gardée renvoyée : la lecture est rejouée une fois et réussit', function() {
+    var m = mountSkillServer({ entry: REAL_ENTRY, catalogue: [REAL_NORM], body: REAL_MD,
+      failOn: 'skills/get', failWith: secretError(), failTimes: 1 });
+    try {
+      saveMcpSkillApprovals(approveMcpSkill({}, 'proxy', REAL_NORM, 1));
+      withRecover(true, function(seen) {
+        var r = flattenToolResult(runAsync(callTool('miaou__skills__read', { server: 'proxy', uri: BENCH_ENTRY.uri })));
+        expect(r).toContain('Signaler le banc.');
+        expect(seen).toEqual(['proxy api']);
+        expect(m.calls.filter(function(c) { return c.indexOf('skills/get') === 0; }).length).toBe(2);
+        expect(getPendingToolAcks().filter(function(a) { return a.kind === 'tool_failed'; }).length).toBe(0);
+      });
+    } finally { m.done(); }
+  });
+  it('refus d\'autorisation : aucun renvoi de mot de passe tenté', function() {
+    var m = mountSkillServer({ entry: REAL_ENTRY, catalogue: [REAL_NORM], failOn: 'skills/get', failWith: authError() });
+    try {
+      withRecover(true, function(seen) {
+        runAsync(callTool('miaou__skills__read', { server: 'proxy', uri: BENCH_ENTRY.uri }));
+        expect(seen).toEqual([]);
+      });
     } finally { m.done(); }
   });
 });

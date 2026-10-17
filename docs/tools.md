@@ -1770,7 +1770,12 @@ s'y ajoute.
    pas de duplication du chemin existant.
 5. **Deux points de résolution, une fonction.** `resolveRefMarkers` (ui.js) est
    appelée par `renderMd` ET par le rendu par blocs du streaming
-   (`renderStreamBlocks`). Elle ramène d'abord au marqueur la **forme
+   (`renderStreamBlocks`). Elle ne résout **rien dans le code** : la
+   normalisation passe sur le texte entier (ses formes multi-lignes écartent
+   le code d'elles-mêmes), puis les trois résolveurs ne voient que les segments
+   de prose (`mapOutsideCode`, utils.js — lignes d'un bloc clôturé et code
+   inline rendus intacts). Un modèle qui explique la syntaxe des marqueurs
+   affichait sinon du HTML de pastille échappé dans son exemple. Elle ramène d'abord au marqueur la **forme
    déviante** où le modèle l'emballe dans un lien Markdown,
    `[test.txt](file_ref:file-…)` ou `[Titre](conv_ref:ID)`
    (`normalizeRefLinkForms`, utils.js — observée sur un modèle de 9B pour une

@@ -194,6 +194,37 @@ function volatileSecretsWaitingCount(status, skip) {
   return status.secrets.filter(e => volatileSecretKeyState(e).waiting && !(skip && skip(e))).length;
 }
 
+// Une skill approuvée mais absente du catalogue d'une carte : le service
+// (upstream) qui la servirait et la clef qu'il attend, quand cette attente
+// explique l'absence — un upstream en attente de son mot de passe n'est pas
+// vivant pour le proxy, qui ne liste pas ses skills. Null sinon.
+// Le rattachement lit le premier segment de l'URI publiée (`skill://<upstream>/…`),
+// convention du proxy et non contrat MCP : il ne vaut que confronté à un
+// consommateur `pending` du même nom dans l'état lu, donc un serveur tiers qui
+// ne la suit pas n'obtient rien, jamais une attente inventée. `skip(entry)` :
+// comme pour `volatileSecretsWaitingCount`, une clef dont le renvoi
+// automatique est dû ou en vol n'est pas annoncée. Pure.
+function mcpSkillAwaitingSecret(uri, status, skip) {
+  if (typeof uri !== 'string' || uri.indexOf('skill://') !== 0) return null;
+  if (!status || !Array.isArray(status.secrets)) return null;
+  const upstream = uri.slice('skill://'.length).split('/')[0];
+  if (!upstream) return null;
+  for (const e of status.secrets) {
+    if (skip && skip(e)) continue;
+    if (e.consumers.some(c => c.upstream === upstream && c.state === 'pending')) return { upstream: upstream, key: e.key };
+  }
+  return null;
+}
+
+// Clef dont `upstream` est consommateur dans un état lu, ou null : un refus
+// `SECRET_REQUIRED` ne nomme que l'upstream, le champ de saisie est par clef.
+// Pure.
+function volatileSecretKeyForUpstream(status, upstream) {
+  if (!status || !Array.isArray(status.secrets) || !upstream) return null;
+  const e = status.secrets.find(x => x.consumers.some(c => c.upstream === upstream));
+  return e ? e.key : null;
+}
+
 // ── Garde en session et renvoi ───────────────────────────────────────────────
 // Une entrée `sessionStorage` par (carte, URL de la carte, clef) :
 // `{ value, acceptedInstance, resentFor }`. L'URL entre dans la clef : une carte
@@ -550,6 +581,12 @@ async function resendVolatileSecrets(server, status, opts) {
 // refus.
 async function recoverVolatileSecretForCall(server, upstream) {
   if (!server || !volatileSecretsAvailabilityFor(server).ok) return false;
+  // Lecture numérotée comme celles de readVolatileSecretsStatus : une lecture
+  // cadencée partie avant (état de l'ancien processus, si le proxy a
+  // redémarré) ne doit pas écraser celle-ci en répondant après.
+  const name = server.name;
+  const seq = (_volatileSecretReadSeq[name] || 0) + 1;
+  _volatileSecretReadSeq[name] = seq;
   let status = null;
   try {
     status = normalizeVolatileSecretsStatus(await mcpRpc(server, MCP_SECRETS_STATUS_METHOD, {}));
@@ -557,7 +594,9 @@ async function recoverVolatileSecretForCall(server, upstream) {
     return false;
   }
   if (!status) return false;
-  _volatileSecrets[server.name] = { status: status, error: null, unavailable: null, readAt: Date.now() };
+  if (_volatileSecretReadSeq[name] === seq) {
+    _volatileSecrets[name] = { status: status, error: null, unavailable: null, readAt: Date.now() };
+  }
   await resendVolatileSecrets(server, status, { noReconnect: true });
   syncVolatileSecretSurfaces();
   const cur = _volatileSecrets[server.name] && _volatileSecrets[server.name].status;
@@ -623,6 +662,11 @@ async function forgetVolatileSecret(name, key) {
     if (!entry) return { entry: null, error: 'réponse illisible' };
     _volatileSecretPutEntry(name, entry);
     _volatileSecretMarkAnnounced(name, entry);
+    // Second message, après l'oubli côté proxy (piège 24 a) : la relecture
+    // déclenchée par le premier — émis avant pour que les voisins lâchent la
+    // valeur sans attendre, ils la renverraient sinon — a pu voir l'état
+    // d'avant l'oubli.
+    if (typeof syncPost === 'function') syncPost('secrets-changed', { server: name, forget: key });
     return { entry: entry, error: null };
   } catch (e) {
     return { entry: null, error: volatileSecretFailureText(e) };
@@ -836,6 +880,20 @@ function volatileSecretRowLabel(entry, busy) {
   if (st.waiting) return 'requis';
   if (st.replacementRefused) return 'en service, remplacement refusé';
   return entry.held ? 'en service' : '';
+}
+
+// Mène au champ de saisie d'une clef sur la carte de `name` (déjà rendue) :
+// geste du bouton « Saisir le mot de passe » d'une skill absente, dont le
+// formulaire est quelques rangées plus haut sur la même carte. Sans champ (un
+// envoi est en cours), la rangée de la clef est amenée en vue.
+function focusVolatileSecretInput(name, key) {
+  const card = typeof mcpCardEl === 'function' ? mcpCardEl(name) : null;
+  if (!card) return;
+  const row = Array.from(card.querySelectorAll('.mcp-secret-row')).find(r => r.dataset.secretKey === key);
+  if (!row) return;
+  const pw = row.querySelector('.volatile-secret-pw');
+  row.scrollIntoView({ block: 'nearest' });
+  if (pw) pw.focus({ preventScroll: true });
 }
 
 // Section « Mots de passe » de la carte d'un serveur qui déclare l'extension.

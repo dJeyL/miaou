@@ -1067,6 +1067,10 @@
 .mcp-skill-row[data-state="session-pending"] .mcp-skill-state { color: var(--pending); }
 .mcp-skill-row[data-state="invalid"] .mcp-skill-state { color: var(--err); }
 .mcp-skill-row[data-state="absent"] { opacity: .6; }
+/* Absente parce que son service attend un mot de passe : une action est
+   possible (bouton « Saisir le mot de passe »), donc ni estompée ni muette. */
+.mcp-skill-row[data-state="absent"][data-awaiting="secret"] { opacity: 1; }
+.mcp-skill-row[data-awaiting="secret"] .mcp-skill-state { color: var(--pending); }
 .mcp-skill-actions { display: flex; gap: 6px; margin-left: auto; }
 .mcp-skill-desc { color: var(--text-2); font-size: 11.5px; line-height: 1.45; }
 .mcp-skill-note { color: var(--text-3); font-size: 11px; line-height: 1.45; }

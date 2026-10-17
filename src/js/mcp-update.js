@@ -195,8 +195,15 @@ function proxyRestartWaitPlan(instanceBefore, headBefore) {
 // nouvelle déclare l'extension que le plan lit. Ne la déclarant plus, le proxy
 // est forcément un autre processus (l'ancien la publiait) : revenu, rien à
 // relire — c'est le cas d'une mise à jour vers une version sans l'extension.
-function proxyRestartLandedFor(plan, declared, status) {
-  if (!declared) return true;
+// Mais seulement si `era` vaut 'modern' : les extensions ne se lisent que dans
+// le DiscoverResult, et une connexion legacy n'en déclare aucune par
+// construction. Or la sonde d'ère se replie en legacy sur une erreur réseau ou
+// un statut sans corps, ce qu'un proxy en pleine relance produit volontiers :
+// une telle connexion ne prouve rien, on re-sonde au tour suivant. Coût
+// assumé : un retour arrière vers un proxy antérieur à l'ère moderne attend
+// le plafond et finit en « pas revenu ».
+function proxyRestartLandedFor(plan, declared, status, era) {
+  if (!declared) return era === 'modern';
   return plan && plan.by === 'instance' ? proxyInstanceChanged(status, plan.before) : proxyRestartLanded(status, plan && plan.before);
 }
 
@@ -923,6 +930,7 @@ async function restartProxy(name, opts) {
     releaseProxyBusy(name);
     syncProxyUpdateSurfaces();
   }
+  if (back === 'gone') { dismissToast(key + ':result'); return; }
   if (!back) {
     showToast({ key: key + ':result', level: 'error', theme: 'update', persistent: true,
       text: proxyRestartTimeoutText(Math.round(PROXY_RESTART_WAIT_MS / 60000), cut),
@@ -1002,7 +1010,9 @@ function proxyReloadDecision(newBuild, blockReason) {
 // processus : l'ancien répond encore pendant son arrêt en douceur. Le plan
 // (`proxyRestartWaitPlan`) dit comment le reconnaître — `instance` de
 // `miaou/lifecycle`, ou `head` en repli. Rend vrai s'il est revenu avant
-// `PROXY_RESTART_WAIT_MS`.
+// `PROXY_RESTART_WAIT_MS`, faux sinon, et 'gone' si la carte a été supprimée
+// ou désactivée pendant l'attente : plus rien à annoncer, surtout pas un
+// « pas revenu à temps ».
 const PROXY_RESTART_WAIT_MS = 180000;
 const PROXY_RESTART_POLL_MS = 2000;
 
@@ -1015,7 +1025,7 @@ async function waitForProxyRestart(name, plan) {
     // Relue à chaque tour : supprimée ou désactivée entre-temps (ici ou dans un
     // autre onglet), la carte n'est plus à attendre.
     const server = getMcpServer(name);
-    if (!server || server.enabled === false) return false;
+    if (!server || server.enabled === false) return 'gone';
     disconnectMcpServer(name);
     const ok = await connectMcpServer(server);
     if (typeof renderMcpServersIfOpen === 'function') renderMcpServersIfOpen();
@@ -1025,7 +1035,7 @@ async function waitForProxyRestart(name, plan) {
     const declared = !!(st && (byInstance ? st.lifecycleDeclared : st.updateDeclared));
     const status = !declared ? null
       : byInstance ? await readProxyLifecycleStatus(server) : await readProxyUpdateStatus(server, false);
-    if (proxyRestartLandedFor(plan, declared, status)) return true;
+    if (proxyRestartLandedFor(plan, declared, status, st && st.era)) return true;
   }
   return false;
 }
@@ -1062,13 +1072,15 @@ async function afterProxyUpdateApplied(server, result, status, servedByThis, ins
       syncProxyUpdateSurface();
       showToast({ key: resultKey, level: 'info', theme: 'update', persistent: true,
         text: label + '\u00a0: mise à jour appliquée, redémarrage du proxy MCP…' });
-      const plan = proxyRestartWaitPlan(instanceBefore, result.before);
-      const back = await runBackgroundTask('redémarrage du proxy MCP…', () => waitForProxyRestart(name, plan));
+      const waitPlan = proxyRestartWaitPlan(instanceBefore, result.before);
+      const back = await runBackgroundTask('redémarrage du proxy MCP…', () => waitForProxyRestart(name, waitPlan));
+      if (back === 'gone') { dismissToast(resultKey); return; }
       if (!back) {
         showToast({ key: resultKey, level: 'error', theme: 'update', persistent: true,
           text: 'Le proxy MCP n\'est pas revenu après ' + Math.round(PROXY_RESTART_WAIT_MS / 60000)
-            + ' minutes. Cause probable\u00a0: son démarrage échoue après la mise à jour (dépendances, configuration)\u00a0; '
-            + 'le journal de son superviseur donne la commande de retour arrière.',
+            + ' minutes. Causes probables\u00a0: il télécharge encore ses nouvelles dépendances (réseau lent), '
+            + 'ou son démarrage échoue après la mise à jour (dépendances, configuration)\u00a0; '
+            + 'le journal de son superviseur le dit, et donne la commande de retour arrière.',
           action: proxyServerCardAction(name) });
         return;
       }

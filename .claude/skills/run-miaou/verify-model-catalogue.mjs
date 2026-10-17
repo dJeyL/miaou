@@ -37,7 +37,9 @@
 //      champ, Échap vide puis ferme, ↓ Entrée choisit
 //  13. palette : masqués exclus, même filtre ; sélecteur visible sur un serveur
 //      en erreur grâce à ses modèles ajoutés à la main
-//  14. aucune erreur console
+//  14. serveur sans défaut (fiche neuve, entrée config.json sans `model`) :
+//      la première liste lue y pose le premier modèle montré (seedDefaultModel)
+//  15. aucune erreur console
 //
 // VERIFY_DIST=<chemin> rejoue sur un autre build : sur celui d'avant le
 // catalogue, tout ce qui touche au tableau et au menu tombe au rouge.
@@ -359,7 +361,20 @@ const vis13 = await page.evaluate(() => {
 check('13. seul serveur, liste en erreur : sélecteur visible grâce aux modèles à la main, masqué sans eux',
   vis13.withHand === true && vis13.without === false, vis13);
 
-check('14. aucune erreur console', errors.length === 0, errors);
+// ── 14. serveur sans défaut ──────────────────────────────────────────────────
+// C, défaut retiré et c-1 masqué : la liste lue doit poser c-2 (premier montré),
+// ni '' (repli sur le modèle d'un autre serveur) ni c-1 (premier listé).
+const seed14 = await page.evaluate(async () => {
+  upsertApiServer(Object.assign({}, getApiServer('srv-c'), { model: '', disabled: false,
+    modelVisibility: { newHidden: false, except: ['c-1'] } }));
+  const before = getApiServer('srv-c').model;
+  await loadServerModels(getApiServer('srv-c'), true);
+  return { before, after: getApiServer('srv-c').model };
+});
+check('14. serveur sans défaut : le premier modèle montré de sa liste devient le défaut',
+  seed14.before === '' && seed14.after === 'c-2', seed14);
+
+check('15. aucune erreur console', errors.length === 0, errors);
 await browser.close();
 console.log(failures.length ? `\n${failures.length} échec(s)` : '\nTout est vert.');
 process.exit(failures.length ? 1 : 0);

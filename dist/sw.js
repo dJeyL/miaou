@@ -35,14 +35,15 @@ async function networkFirst(e, req) {
   const network = fetch(req);
 
   e.waitUntil(network.then(function (r) {
-    if (r.ok) return cache.put(key, r.clone());
+    if (r.ok && /^text\/html/i.test(r.headers.get('content-type') || '')) return cache.put(key, r.clone());
   }).catch(function () {}));
   const timeout = new Promise(function (resolve) {
     setTimeout(function () { resolve(null); }, NAV_TIMEOUT_MS);
   });
   try {
     const first = await Promise.race([network, timeout]);
-    if (first) return first;
+    if (first && first.status < 500) return first;
+    if (first) return (await cache.match(key)) || first;
 
     const cached = await cache.match(key);
     if (cached) return cached;

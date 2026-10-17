@@ -929,8 +929,8 @@ function ackSecretTarget(m, cardExists) {
 // ET de l'origine à afficher, et un booléen l'aurait forcé à re-dériver les deux.
 //
 // Les DEUX champs sont requis pour rendre un lien. Le code seul dit qu'il faut
-// autoriser mais pas où aller (le proxy renvoie `authorization_url: null` quand
-// il n'a pas de parcours à proposer) ; l'URL seule ne distingue pas un refus
+// autoriser mais pas où aller (le proxy n'émet jamais le code sans URL, mais un
+// serveur tiers ou un ack persisté le peut) ; l'URL seule ne distingue pas un refus
 // d'autorisation d'une erreur ordinaire. `upstream` NOMME l'upstream qui a
 // refusé — et depuis le lot AB-5, MIAOU le modélise pour de bon (cf. le bloc
 // « Upstreams en attente d'autorisation » plus haut) ; ce commentaire a
@@ -1727,11 +1727,14 @@ function resolveFileRefMarkers(text, lookup, opts) {
 // une seule intention est possible. PUR.
 const REF_LINK_FORM_RE = /\[([^\]\n]*)\]\((conv_ref|file_ref):([^)\s|\]]+)\)/g;
 function normalizeRefLinkForms(text) {
-  const out = String(text == null ? '' : text).replace(REF_LINK_FORM_RE, function(match, label, kind, ref) {
-    const l = label.trim();
-    return '[' + kind + ':' + ref + (l ? '|' + l : '') + ']';
+  // Hors code (mapOutsideCode) : un exemple de syntaxe reste tel qu'écrit.
+  const out = mapOutsideCode(text, function(seg) {
+    return seg.replace(REF_LINK_FORM_RE, function(match, label, kind, ref) {
+      const l = label.trim();
+      return '[' + kind + ':' + ref + (l ? '|' + l : '') + ']';
+    });
   });
-  return reduceSourceLines(moveWebRefsAfterPunctuation(convertSourceFootnotes(out)));
+  return reduceSourceLines(mapOutsideCode(convertSourceFootnotes(out), moveWebRefsAfterPunctuation));
 }
 
 // Troisième forme déviante, la plus tenace : les notes numérotées. Le modèle
@@ -1919,6 +1922,29 @@ function reduceSourceLines(text) {
 // qu'au RENDU (resolveRefMarkers) : à la copie et au `.md`, une URL nue est
 // déjà un lien. PUR.
 const WEB_COLON_URL_RE = /([^\s:\/]):(https?:\/\/[^\s<>()\[\]`]+?)([.!?…]*)(?=[ \t]*$|[ \t])/gm;
+
+// Applique `fn` aux seuls segments de PROSE d'un Markdown : les lignes d'un
+// bloc clôturé (``` ou ~~~, clôture de même caractère et au moins aussi
+// longue) et le code inline (`…`, segments impairs du découpage d'une ligne)
+// sont rendus intacts. `fn` reçoit un segment d'une seule ligne, jamais de
+// saut de ligne. Sert à la résolution des marqueurs de référence : un modèle
+// qui explique la syntaxe (« cite avec `[web_ref:…]` ») doit voir son exemple
+// tel quel, pas du HTML de pastille échappé dans le code. PUR.
+function mapOutsideCode(text, fn) {
+  const src = String(text == null ? '' : text);
+  if (src.indexOf('`') < 0 && src.indexOf('~~~') < 0) return src.split('\n').map(fn).join('\n');
+  let fence = null;
+  return src.split('\n').map(function(line) {
+    const f = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      if (f && f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = null;
+      return line;
+    }
+    if (f) { fence = f[1]; return line; }
+    return line.split(/(`[^`]*`)/).map(function(seg, i) { return i % 2 ? seg : fn(seg); }).join('');
+  }).join('\n');
+}
+
 function convertColonUrlCitations(text, registry) {
   const src = String(text == null ? '' : text);
   if (src.indexOf(':http') < 0) return src;
@@ -1935,23 +1961,16 @@ function convertColonUrlCitations(text, registry) {
       return before + punct + ' [web_ref:' + url + ']';
     });
   };
-  let fence = null;
-  return src.split('\n').map(function(line) {
-    const f = /^\s*(`{3,}|~{3,})/.exec(line);
-    if (fence) {
-      if (f && f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = null;
-      return line;
-    }
-    if (f) { fence = f[1]; return line; }
-    // Segments impairs = code inline, laissés intacts.
-    return line.split(/(`[^`]*`)/).map(function(seg, i) { return i % 2 ? seg : convert(seg); }).join('');
-  }).join('\n');
+  return mapOutsideCode(src, convert);
 }
 
 // Domaine affichable d'une URL de source : hôte en minuscules, sans `www.`,
 // sans identifiants ni port. Pur, sans `URL` (absent du harnais QuickJS).
 function webRefDomain(url) {
-  const m = /^https?:\/\/([^\/?#]*)/i.exec(String(url || ''));
+  // `\` clôt l'autorité comme `/` : le navigateur le lit ainsi pour http(s),
+  // et `https://a.test\@b.org` ouvre a.test — l'afficher « b.org » ferait
+  // d'un lien un leurre.
+  const m = /^https?:\/\/([^\/\\?#]*)/i.exec(String(url || ''));
   if (!m) return '';
   const host = m[1].replace(/^.*@/, '').replace(/:\d*$/, '').toLowerCase();
   return host.replace(/^www\./, '');

@@ -178,7 +178,7 @@ const API_PROBE_MIN_INTERVAL_MS = 120000;
 // `setTimeout`. Absent → le défaut.
 // Jeton : jamais en clair dans `config.json`. L'entrée nomme une variable
 // d'environnement (`authorization_token_env`), que le build résout en
-// `authorization_token` et refuse si elle manque (`resolve_mcp_token_env`) —
+// `authorization_token` et refuse si elle manque (`resolve_server_token_env`) —
 // seul le build qui la définit embarque le secret, lisible par quiconque reçoit
 // CE bundle-là.
 const BUILD_MCP_SERVERS = (function () {
@@ -537,6 +537,20 @@ function isModelShown(server, model, pinnedModel) {
   return !modelHiddenByUser(server, m);
 }
 
+// Pure : modèle par défaut à poser sur un serveur qui n'en a pas, d'après sa
+// liste fraîchement lue — le premier modèle montré au menu, à défaut le premier
+// listé ; '' si le serveur a déjà un défaut ou si la liste est vide. Une fiche
+// neuve s'enregistre sans défaut (il se choisit dans le catalogue, qui n'existe
+// qu'une fois la fiche enregistrée), une entrée `api_servers` de config.json
+// peut n'en pas porter : sans ce choix, `activeApiConfig` retomberait sur le
+// modèle des réglages, celui d'un AUTRE serveur, et le premier message
+// partirait vers un modèle que ce serveur ne connaît pas.
+function seedDefaultModel(server, listedIds) {
+  if (!server || String(server.model || '').trim()) return '';
+  const ids = (Array.isArray(listedIds) ? listedIds : []).filter(id => typeof id === 'string' && id);
+  return ids.find(id => isModelShown(server, id, '')) || ids[0] || '';
+}
+
 // Pure : liste effective d'un serveur, `[{id, origin}]`.
 //   'listed'      — exposé par le serveur (ordre du serveur) ; un modèle aussi
 //                   ajouté à la main y est rangé : la liste l'emporte ;
@@ -856,11 +870,23 @@ function activeApiConfig() {
 // d'écrire (lecture-modification-écriture synchrone).
 const MODEL_PROPS_KEY = 'miaou-model-props';
 
+// Mémo sur la chaîne brute : chaque ligne du catalogue et du menu de modèles
+// lit ces propriétés, et la clé pèse ~100 Ko pour un agrégateur (centaines de
+// modèles) — un JSON.parse par ligne rendait la frappe dans le filtre
+// saccadée. Toute écriture, d'ici ou d'un autre onglet, change la chaîne et
+// invalide d'elle-même. Les appelants ne mutent jamais le résultat
+// (saveModelProps reçoit une copie construite par l'écrivain).
+let _modelPropsRaw = null;
+let _modelPropsParsed = {};
+
 function loadModelProps() {
-  try {
-    const m = JSON.parse(localStorage.getItem(MODEL_PROPS_KEY));
-    return (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
-  } catch (e) { return {}; }
+  const raw = localStorage.getItem(MODEL_PROPS_KEY);
+  if (raw === _modelPropsRaw) return _modelPropsParsed;
+  let m = null;
+  try { m = JSON.parse(raw); } catch (e) { m = null; }
+  _modelPropsRaw = raw;
+  _modelPropsParsed = (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
+  return _modelPropsParsed;
 }
 
 function saveModelProps(map) {
@@ -1166,7 +1192,7 @@ function listEnabledMcpServers() {
 }
 
 // Approbations des skills servies par les serveurs MCP (cf. mcp-skills.js) :
-// `{ <carte>: { <name>: { uri, manifest, description, approvedAt } } }`.
+// `{ <carte>: { <name>: { uri, manifest, title, description, approvedAt } } }`.
 // Clé DÉDIÉE plutôt qu'un champ de la carte : la carte est réécrite en entier
 // par son formulaire (`normalizeMcpServer` ne garde qu'une liste fermée de
 // champs), qui deviendrait un second écrivain des approbations. Écrite par les
@@ -1676,8 +1702,6 @@ async function readAllSummariesFromDB() {
 // deux onglets qui génèrent en même temps — en localStorage, la
 // lecture-modification-écriture de l'un écraserait l'incrément de l'autre.
 //
-// Pas de `syncPost` : aucun onglet n'affiche ces chiffres en continu, la vue
-// relit le store à chaque ouverture (choix, pas oubli — docs/multitab-sync.md).
 // Pas d'ack ni de trace dans le fil non plus : c'est une télémétrie locale de
 // l'application, pas une écriture de contenu à l'initiative du modèle.
 //

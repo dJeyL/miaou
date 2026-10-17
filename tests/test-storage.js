@@ -1880,6 +1880,23 @@ describe('catalogue de modèles : champs serveur (normalizeApiServer)', function
   });
 });
 
+describe('seedDefaultModel (serveur sans modèle par défaut)', function() {
+  it('premier modèle montré au menu', function() {
+    var s = { model: '', modelVisibility: { newHidden: false, except: ['a'] } };
+    expect(seedDefaultModel(s, ['a', 'b', 'c'])).toBe('b');
+  });
+  it('tout masqué : premier listé', function() {
+    var s = { model: '', modelVisibility: { newHidden: true, except: [] } };
+    expect(seedDefaultModel(s, ['a', 'b'])).toBe('a');
+  });
+  it('défaut déjà posé, liste vide ou absente : rien', function() {
+    expect(seedDefaultModel({ model: 'x' }, ['a'])).toBe('');
+    expect(seedDefaultModel({ model: '' }, [])).toBe('');
+    expect(seedDefaultModel({ model: '' }, null)).toBe('');
+    expect(seedDefaultModel(null, ['a'])).toBe('');
+  });
+});
+
 describe('catalogue de modèles : visibilité (modelHiddenByUser / isModelShown)', function() {
   var showAll = { model: 'def', modelVisibility: { newHidden: false, except: ['h1'] } };
   var hideAll = { model: 'def', modelVisibility: { newHidden: true, except: ['s1'] } };

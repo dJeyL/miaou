@@ -533,10 +533,32 @@ d'injection. Cf. §2, et `docs/compaction.md` pour le geste qu'elles déclenchen
       (aucune empreinte, donc rien à quoi lier une approbation persistée) une
       approbation de **session**, en mémoire, propre à l'onglet, libellée
       « contenu variable ». Une approbation ne tombe que sur Désapprouver, la
-      suppression de la carte, un manifeste changé, ou un contenu qui échoue à
-      la vérification — jamais par élagage contre `skills/list` : une skill
+      suppression de la carte, un manifeste changé, ou un contenu LU qui échoue
+      à la vérification (taille, empreinte, frontmatter : `integrity` de
+      `readVerifiedMcpSkillFile`) — ni sur une URI hors manifeste ni sur une
+      lecture ratée, qui ne disent rien de la skill — y compris une lecture
+      refusée faute d'autorisation ou de mot de passe volatil
+      (`AUTHORIZATION_REQUIRED` / `SECRET_REQUIRED` sur `skills/get` ou
+      `resources/read`, gardés par `withMcpReadRefusal`), qui pose en plus
+      l'affordance de l'appel d'outil : sur l'ack `tool_failed` du modèle
+      (`mcpSkillReadFail`, mêmes marqueurs qu'`applyAuthorizationRefusal` /
+      `applySecretRefusal`, consigne au modèle seul), et en bouton dans la
+      fiche (`_mcpSkillRefusalRow` ; « Autoriser » par `window.open` synchrone
+      dans le clic ; « Saisir le mot de passe » ferme la fiche, ouverte depuis
+      la carte du serveur juste dessous, et met le focus sur le champ de la
+      clef — `volatileSecretKeyForUpstream`). Un mot de passe que MIAOU détient est d'abord renvoyé et
+      l'étape rejouée une fois (`withMcpSkillSecretRecovery`, même
+      `recoverVolatileSecretForCall` que `callRemoteTool`) —, et jamais par
+      élagage contre `skills/list` : une skill
       absente (upstream tombé) garde la sienne, montrée grisée « non présentée
-      actuellement » (`mcpSkillRows`). Le renommage d'une carte migre ses
+      actuellement » (`mcpSkillRows`). Absente parce que son upstream attend
+      son mot de passe volatil (le proxy ne liste pas les skills d'un upstream
+      qui n'est pas vivant), la rangée le dit et offre « Saisir le mot de
+      passe », qui mène au champ de la section « Mots de passe » de la même
+      carte (`mcpSkillAwaitingSecret`, `focusVolatileSecretInput`). Le
+      rattachement lit le premier segment de l'URI publiée, convention du
+      proxy, confronté à un consommateur `pending` de l'état lu : un serveur
+      qui ne la suit pas n'obtient rien, jamais une attente inventée. Le renommage d'une carte migre ses
       approbations (`renameMcpSkillApprovals`).
     - **Fiche et lecteur.** Une rangée par skill sous la carte
       (`appendMcpSkillRows`, ui.js) : Lire, Approuver, Désapprouver ; les

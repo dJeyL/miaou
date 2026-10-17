@@ -628,3 +628,39 @@ describe('volatileSecretAcceptedNotice — confirmation d\'une saisie acceptée'
     expect(volatileSecretAcceptedNotice(null)).toBe(null);
   });
 });
+
+describe('mcpSkillAwaitingSecret', function() {
+  var STATUS = normalizeVolatileSecretsStatus({ status: { instance: 'i1', secrets: [
+    { key: 'API_TOKEN', held: false, consumers: [{ upstream: 'api', state: 'pending' }, { upstream: 'docs', state: 'ready' }] },
+  ] } });
+  it('upstream en attente nommé par le premier segment de l\'URI : service et clef', function() {
+    expect(mcpSkillAwaitingSecret('skill://api/bench/SKILL.md', STATUS)).toEqual({ upstream: 'api', key: 'API_TOKEN' });
+  });
+  it('upstream prêt, inconnu, ou URI hors convention : rien', function() {
+    expect(mcpSkillAwaitingSecret('skill://docs/x/SKILL.md', STATUS)).toBe(null);
+    expect(mcpSkillAwaitingSecret('skill://other/x/SKILL.md', STATUS)).toBe(null);
+    expect(mcpSkillAwaitingSecret('skill:///x/SKILL.md', STATUS)).toBe(null);
+    expect(mcpSkillAwaitingSecret('https://api/x', STATUS)).toBe(null);
+    expect(mcpSkillAwaitingSecret('', STATUS)).toBe(null);
+  });
+  it('état illisible : rien', function() {
+    expect(mcpSkillAwaitingSecret('skill://api/bench/SKILL.md', null)).toBe(null);
+  });
+  it('renvoi automatique dû ou en vol : pas annoncé', function() {
+    expect(mcpSkillAwaitingSecret('skill://api/bench/SKILL.md', STATUS, function(e) { return e.key === 'API_TOKEN'; })).toBe(null);
+  });
+});
+
+describe('volatileSecretKeyForUpstream', function() {
+  var STATUS = normalizeVolatileSecretsStatus({ status: { instance: 'i1', secrets: [
+    { key: 'A', held: false, consumers: [{ upstream: 'api', state: 'pending' }] },
+    { key: 'B', held: true, consumers: [{ upstream: 'docs', state: 'ready' }] },
+  ] } });
+  it('la clef dont l\'upstream est consommateur, null sinon', function() {
+    expect(volatileSecretKeyForUpstream(STATUS, 'docs')).toBe('B');
+    expect(volatileSecretKeyForUpstream(STATUS, 'api')).toBe('A');
+    expect(volatileSecretKeyForUpstream(STATUS, 'autre')).toBe(null);
+    expect(volatileSecretKeyForUpstream(null, 'api')).toBe(null);
+    expect(volatileSecretKeyForUpstream(STATUS, null)).toBe(null);
+  });
+});

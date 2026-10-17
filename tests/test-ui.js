@@ -236,6 +236,16 @@ describe('buildExportHtml', function() {
   });
 });
 
+describe('exportMermaidThemeCss', function() {
+  it('variante sombre par défaut, claire sous la case du thème clair', function() {
+    var css = exportMermaidThemeCss();
+    expect(css).toContain('.mermaid-for-light{display:none}');
+    expect(css).toContain(exportLightSelector('.mermaid-for-dark') + '{display:none}');
+    expect(css).toContain(exportLightSelector('.mermaid-for-light') + '{display:block}');
+    expect(exportLightSelector('.mermaid-for-dark')).toContain('#theme-switch:checked');
+  });
+});
+
 describe('exportColWidthCss / exportColWidthControlHtml', function() {
   it('largeurs = base x cran, la première en défaut sur body', function() {
     var css = exportColWidthCss([1, 1.25, 1.5], 900);

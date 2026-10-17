@@ -1023,15 +1023,21 @@ function _appendAckSecretBtn(wrap, target) {
   icon.innerHTML = ICON_KEY;   // SVG statique author-controlled uniquement
   btn.appendChild(icon);
   btn.appendChild(document.createTextNode('Saisir le mot de passe'));
-  setTip(btn, target.upstream
-    ? 'Ouvrir la carte du serveur «\u00a0' + target.server + '\u00a0» (service ' + target.upstream + ')'
-    : 'Ouvrir la carte du serveur «\u00a0' + target.server + '\u00a0»');
+  setTip(btn, mcpSecretCardTip(target));
   btn.addEventListener('click', () => openMcpServerCard(target.server));
   box.appendChild(btn);
   const after = wrap.querySelector('.ack-undo, .ack-resolved');
   if (after) wrap.insertBefore(box, after);
   else wrap.appendChild(box);
   return box;
+}
+
+// Infobulle du bouton « Saisir le mot de passe », partagée par l'ack et la
+// fiche d'une skill MCP. `target` : forme d'`ackSecretTarget`.
+function mcpSecretCardTip(target) {
+  return target.upstream
+    ? 'Ouvrir la carte du serveur «\u00a0' + target.server + '\u00a0» (service ' + target.upstream + ')'
+    : 'Ouvrir la carte du serveur «\u00a0' + target.server + '\u00a0»';
 }
 
 function _ackSecretTarget(entry) {

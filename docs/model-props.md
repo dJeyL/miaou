@@ -435,7 +435,12 @@ Animations, 180 ms), sauf sous le réglage « Animations » coupé
 s'animent pas. Les gestes sont des purs de storage.js qui rendent
 les champs à écrire, un refus, ou null :
 - défaut : écrit `model` ; choisir un masqué le rend visible, l'ancien défaut
-  reprend l'état que dit sa liste d'exceptions ;
+  reprend l'état que dit sa liste d'exceptions. Un serveur SANS défaut (fiche
+  neuve, entrée `api_servers` de `config.json` sans `model`) en reçoit un à la
+  première liste lue (`seedDefaultModel` : premier modèle montré, sinon premier
+  listé), appliqué par le même `applyApiServerModelsPatch` depuis
+  `loadServerModels` — sinon `activeApiConfig` retombait sur le modèle des
+  réglages, celui d'un autre serveur ;
 - case « Menu » : `toggleModelVisibility` bascule l'appartenance aux
   exceptions du mode courant ;
 - « Tout afficher » / « Tout masquer » : changent le mode ET vident les

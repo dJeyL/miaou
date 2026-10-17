@@ -54,9 +54,11 @@ Figtree/Fira Code).
   fronce les sourcils dès qu'un service est en panne, et se déride tout seul
   quand il revient ; des sourcils horizontaux signalent un stockage plein, et
   des notifications en annoncent les changements (panne, retour, échec d'une
-  action) — cf. [docs/toasts.md](docs/toasts.md) — cf. [docs/backend-health.md](docs/backend-health.md).
+  action) — cf. [docs/backend-health.md](docs/backend-health.md),
+  [docs/toasts.md](docs/toasts.md).
 - Affichage du raisonnement des modèles thinking-capable, dans un bloc dépliable
-  alimenté en direct.
+  alimenté en direct ; le niveau de raisonnement se choisit parmi ceux que le
+  modèle accepte.
 - Rendu Markdown, coloration syntaxique, tables, blocs de code avec « copier » et
   « télécharger ». Un grand tableau déborde de la colonne de lecture, centré,
   plutôt que de comprimer ses colonnes — réglable, et respecté à l'export HTML.

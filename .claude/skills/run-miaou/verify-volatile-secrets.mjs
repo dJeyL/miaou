@@ -37,12 +37,21 @@
 //   J. renvoi REFUSÉ (proxy relancé en attendant une autre valeur) : annonce
 //      du renvoi, puis retirée ; pilule et toast de saisie (qui dit le renvoi
 //      refusé, pas « incorrect ») seulement après le refus ; valeur oubliée ;
-//      un onglet voisin, prévenu par `secrets-changed`, dit la même chose.
+//      un onglet voisin, prévenu par `secrets-changed`, dit la même chose ;
+//   K. skill servie par le service en attente (`secret-demo`, servie par
+//      secret_demo) : (1) cache plein, aucune valeur — fiche « Saisir le mot
+//      de passe », qui ferme la fiche et mène au champ de la carte, lecture par le modèle refusée avec la consigne, ligne rouge
+//      porteuse du bouton, approbation intacte ; (2) valeur gardée, proxy
+//      redémarré — la lecture découvre le refus, MIAOU renvoie et relit, le
+//      modèle reçoit la skill ; (3) cache vidé (le proxy ne présente plus la
+//      skill) — la rangée approuvée dit l'attente, n'est pas estompée, son
+//      bouton met le focus sur le champ de la clef ; la saisie acceptée la
+//      rend à son état normal.
 //
 // Usage : node verify-volatile-secrets.mjs [--headed] [--keep]
 
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, openSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, openSync, readFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -65,6 +74,8 @@ const ACCEPTED_SEL = `.toast[data-key="${TOAST}:accepted"]`;
 const RESEND_SEL = `.toast[data-key="${TOAST}:resend"]`;
 const RESENDING_TEXT = `Proxy redémarré\u00a0: renvoi du mot de passe «\u00a0${KEY}\u00a0»…`;
 const RESENT_TEXT = `Mot de passe «\u00a0${KEY}\u00a0» renvoyé et accepté\u00a0: secret_demo prêt.`;
+const SKILL_NAME = 'secret-demo';
+const SKILL_URI = 'skill://secret_demo/secret-demo/SKILL.md';
 
 const failures = [];
 let passed = 0;
@@ -75,6 +86,9 @@ function check(label, cond, extra) {
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'miaou-au2-'));
 const cfg = path.join(tmp, 'test.json');
+// Dossier d'état du proxy : `state/<nom du maillon local>/` à côté de lui
+// (mcp_proxy/state.py) ; le cache d'outils y porte aussi les skills.
+const TOOLS_CACHE = path.join(tmp, 'state', 'test', 'tools-cache.json');
 const logPath = path.join(tmp, 'proxy.log');
 writeCfg(VALUE);
 
@@ -389,6 +403,7 @@ try {
     pi.on('console', m => consoleLines.push(m.text()));
     const toolMsgs = [];
     let toolName = '';
+    let toolArgs = '{}';
     await pi.route('**/chat/completions', async (route) => {
       let body = {};
       try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* illisible */ }
@@ -402,7 +417,7 @@ try {
       let out;
       if (!tool) {
         out = sse({ choices: [{ delta: { role: 'assistant', content: 'Je regarde.' } }] })
-          + sse({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: toolName, arguments: '{}' } }] } }] })
+          + sse({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: toolName, arguments: toolArgs } }] } }] })
           + sse({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }) + 'data: [DONE]\n\n';
       } else {
         toolMsgs.push(typeof tool.content === 'string' ? tool.content : JSON.stringify(tool.content));
@@ -520,6 +535,154 @@ try {
     }, toastSel, { timeout: 15000 }).then(() => true, () => false);
     check('J : l\'onglet voisin dit aussi le renvoi refusé, pas « incorrect »', peerJ, await toastText(pj));
     check('J : valeur refusée oubliée de la session', await pi.evaluate(() => Object.keys(sessionStorage).every(k => k.indexOf('miaou-volatile-secret:') !== 0)));
+
+    // ── K ───────────────────────────────────────────────────────────────────
+    // Suite de J : le proxy attend VALUE-autre, `pi` ne garde rien, et le cache
+    // d'outils est plein (service vivant en C et I) — le proxy resservant les
+    // skills du service en attente depuis ce cache, la skill est au catalogue.
+    console.log('\nK. skill d\'un service en attente');
+    const VALUE_K = VALUE + '-autre';
+    await pj.close();
+    for (const t of await pi.evaluate(() => Array.from(document.querySelectorAll('.toast')).map(x => x.dataset.key))) {
+      await pi.evaluate((k) => dismissToast(k), t);
+    }
+    // Journal des lectures de skill et de leurs refus (code applicatif seul).
+    await pi.evaluate(() => {
+      window.__skillRpc = [];
+      const real = mcpRpc;
+      mcpRpc = async function (server, method, params, opts) {
+        const isSkill = method === 'skills/get' || method === 'resources/read';
+        try {
+          const r = await real(server, method, params, opts);
+          if (isSkill) window.__skillRpc.push(method + ' ok');
+          return r;
+        } catch (e) {
+          if (isSkill) window.__skillRpc.push(method + ' ' + ((e && e.data && e.data.code) || 'erreur'));
+          throw e;
+        }
+      };
+    });
+    const catK = await pi.evaluate((u) => { const s = getMcpStatus('sec'); return !!(s && s.skillsDeclared && (s.skillCatalogue || []).some(e => e.uri === u)); }, SKILL_URI);
+    check('K1 : prémisse : service en attente, skill présentée depuis le cache', catK
+      && await pi.evaluate(() => volatileSecretsEntry('sec').status.secrets[0].consumers[0].state === 'pending'));
+    await pi.evaluate((n) => onApproveMcpSkill('sec', n), SKILL_NAME);
+    check('K1 : skill approuvée', await pi.evaluate((n) => !!(loadMcpSkillApprovals().sec || {})[n], SKILL_NAME));
+
+    // Fiche : la lecture est refusée, le bouton mène à la carte.
+    // Comme l'utilisateur : la fiche s'ouvre par « Lire », depuis la carte.
+    await pi.evaluate(() => openMcpServers());
+    await pi.locator(`#mcp-list .mcp-skill-row[data-skill="${SKILL_NAME}"] .mcp-skill-read`).click();
+    const ficheBtn = await pi.waitForFunction(() => {
+      const b = document.querySelector('#mcp-skill-body .mcp-skill-authorize button');
+      return b && b.textContent === 'Saisir le mot de passe' && b.getClientRects().length > 0;
+    }, null, { timeout: 15000 }).then(() => true, () => false);
+    check('K1 : fiche : lecture impossible, bouton « Saisir le mot de passe » visible', ficheBtn,
+      await pi.evaluate(() => (document.getElementById('mcp-skill-body') || {}).textContent));
+    check('K1 : fiche : aucun bouton « Autoriser » (ce n\'est pas un refus d\'autorisation)', await pi.evaluate(() =>
+      !Array.from(document.querySelectorAll('#mcp-skill-body button')).some(b => b.textContent === 'Autoriser')));
+    // Le clic doit RAMENER à la carte : la fiche s'ouvre par-dessus le drawer
+    // des serveurs, et une carte révélée dessous ne se voit pas.
+    await pi.locator('#mcp-skill-body .mcp-skill-authorize button').click();
+    const ficheFocus = await pi.waitForFunction((k) => {
+      const a = document.activeElement;
+      const row = a && a.closest('#mcp-list .mcp-secret-row');
+      return !document.getElementById('mcp-skill-drawer').classList.contains('show')
+        && document.getElementById('mcp-drawer').classList.contains('show')
+        && !!a && a.classList.contains('volatile-secret-pw') && !!row && row.dataset.secretKey === k;
+    }, KEY, { timeout: 5000 }).then(() => true, () => false);
+    check('K1 : fiche : le bouton ferme la fiche et met le focus sur le champ de la clef de la carte', ficheFocus,
+      await pi.evaluate(() => ({ fiche: document.getElementById('mcp-skill-drawer').classList.contains('show'),
+        active: document.activeElement && (document.activeElement.className || document.activeElement.tagName) })));
+    await pi.evaluate(() => { closeMcpSkillViewer(); closeMcpServers(); });
+
+    // Lecture par le modèle : refusée, sans valeur à renvoyer.
+    toolName = 'miaou__skills__read';
+    toolArgs = JSON.stringify({ server: 'sec', uri: SKILL_URI });
+    await pi.evaluate(() => { window.__secretCalls = []; window.__skillRpc = []; });
+    await send('Lis la skill du service.');
+    const ackK = await pi.evaluate(() => {
+      const n = document.querySelector('#thread .tool-ack');
+      return n ? { error: n.classList.contains('ack-error'), btn: !!n.querySelector('.ack-secret-btn'), text: n.textContent } : null;
+    });
+    check('K1 : lecture par le modèle : ligne rouge, « Saisir le mot de passe »', !!ackK && ackK.error && ackK.btn, ackK);
+    check('K1 : la consigne au modèle n\'est pas dans la ligne affichée', !!ackK && !/JAMAIS/.test(ackK.text), ackK && ackK.text);
+    const tK1 = toolMsgs[toolMsgs.length - 1] || '';
+    check('K1 : texte au modèle : skill non lue, jamais demander le mot de passe dans la conversation',
+      tK1.includes(SKILL_URI) && /JAMAIS ce mot de passe dans la conversation/.test(tK1) && !tK1.includes('ne jamais le lui demander'), tK1.slice(0, 300));
+    check('K1 : le refus vient bien du proxy (SECRET_REQUIRED sur la lecture)', await pi.evaluate(() =>
+      window.__skillRpc.some(x => / SECRET_REQUIRED$/.test(x))), await pi.evaluate(() => window.__skillRpc));
+    check('K1 : approbation intacte', await pi.evaluate((n) => !!(loadMcpSkillApprovals().sec || {})[n], SKILL_NAME));
+
+    // K2 : valeur saisie (gardée), proxy redémarré, la lecture découvre l'oubli.
+    console.log('\nK2. renvoi pendant une lecture de skill');
+    await pi.locator('#thread .ack-secret-btn').click();
+    await pi.waitForSelector('#mcp-list .mcp-secret-row input.volatile-secret-pw', { timeout: 10000 });
+    await pi.locator('#mcp-list .mcp-secret-row input.volatile-secret-pw').fill(VALUE_K);
+    await pi.locator('#mcp-list .mcp-secret-row input.volatile-secret-pw').press('Enter');
+    check('K2 : valeur acceptée depuis la carte', await waitConsumer(pi, "c.verdict === 'accepted' && c.state === 'ready'", 'acceptation K2'));
+    await pi.evaluate(() => closeMcpServers());
+    await stopProxy();
+    check('K2 : proxy redémarré', await startProxy());
+    await pi.evaluate(() => { window.__secretCalls = []; window.__skillRpc = []; });
+    await send('Relis la skill du service.');
+    const rpcK2 = await pi.evaluate(() => window.__skillRpc);
+    check('K2 : prémisse : la première lecture a bien été refusée (SECRET_REQUIRED), puis relue',
+      rpcK2[0] === 'skills/get SECRET_REQUIRED' && rpcK2.includes('skills/get ok') && rpcK2.includes('resources/read ok'), rpcK2);
+    check('K2 : un seul dépôt, le renvoi', await pi.evaluate(() => window.__secretCalls.filter(m => m === 'miaou/secrets/submit').length === 1),
+      await pi.evaluate(() => window.__secretCalls));
+    const tK2 = toolMsgs[toolMsgs.length - 1] || '';
+    check('K2 : le modèle reçoit la skill, rien du refus', tK2.includes('serveur de démonstration') && !/SECRET_REQUIRED|JAMAIS/.test(tK2), tK2.slice(0, 200));
+    check('K2 : aucune ligne rouge dans la conversation', await pi.evaluate(() => !document.querySelector('#thread .tool-ack.ack-error')));
+
+    // K3 : cache vidé, aucune valeur : le proxy ne présente plus la skill.
+    console.log('\nK3. skill approuvée absente pendant l\'attente');
+    await pi.evaluate(() => openMcpServers());
+    await pi.waitForSelector('#mcp-list .volatile-secret-forget', { timeout: 10000 });
+    await pi.locator('#mcp-list .volatile-secret-forget').click();
+    await waitConsumer(pi, "c.state === 'pending' && c.verdict === null", 'oubli K3');
+    await pi.evaluate(() => closeMcpServers());
+    await stopProxy();
+    check('K3 : prémisse : le cache existait avant d\'être vidé', existsSync(TOOLS_CACHE), TOOLS_CACHE);
+    rmSync(TOOLS_CACHE, { force: true });
+    check('K3 : proxy redémarré à cache vide', await startProxy());
+    await pi.evaluate(() => connectMcpServer(getMcpServer('sec')));
+    await waitConsumer(pi, "c.state === 'pending'", 'attente K3');
+    check('K3 : prémisse : la skill n\'est plus présentée', await pi.evaluate((u) => {
+      const s = getMcpStatus('sec');
+      return !!s && s.state === 'ok' && !(s.skillsDeclared && (s.skillCatalogue || []).some(e => e.uri === u));
+    }, SKILL_URI));
+    await pi.evaluate(() => openMcpServers());
+    const rowSel = `#mcp-list .mcp-skill-row[data-skill="${SKILL_NAME}"]`;
+    await pi.waitForSelector(rowSel, { timeout: 10000 });
+    const rowK3 = await pi.evaluate((s) => {
+      const r = document.querySelector(s);
+      const btn = Array.from(r.querySelectorAll('button')).find(b => b.textContent === 'Saisir le mot de passe');
+      return { state: r.dataset.state, awaiting: r.dataset.awaiting || null, label: r.querySelector('.mcp-skill-state').textContent,
+        note: Array.from(r.querySelectorAll('.mcp-skill-note')).map(n => n.textContent).join(' | '),
+        opacity: getComputedStyle(r).opacity, btn: !!btn && btn.getClientRects().length > 0 };
+    }, rowSel);
+    check('K3 : rangée absente, marquée en attente d\'un mot de passe', rowK3.state === 'absent' && rowK3.awaiting === 'secret'
+      && rowK3.label === 'en attente d\u2019un mot de passe', rowK3);
+    check('K3 : la note nomme le service', rowK3.note.includes('«\u00a0secret_demo\u00a0»') && rowK3.note.includes('attend son mot de passe'), rowK3.note);
+    check('K3 : rangée non estompée (opacité calculée 1)', rowK3.opacity === '1', rowK3.opacity);
+    check('K3 : bouton « Saisir le mot de passe » visible', rowK3.btn);
+    await pi.evaluate((s) => Array.from(document.querySelector(s).querySelectorAll('button')).find(b => b.textContent === 'Saisir le mot de passe').click(), rowSel);
+    const focused = await pi.waitForFunction((k) => {
+      const a = document.activeElement;
+      const row = a && a.closest('.mcp-secret-row');
+      return !!a && a.classList.contains('volatile-secret-pw') && !!row && row.dataset.secretKey === k && !!a.closest('.mcp-card, #mcp-list');
+    }, KEY, { timeout: 5000 }).then(() => true, () => false);
+    check('K3 : le bouton met le focus sur le champ de la clef, sur la même carte', focused,
+      await pi.evaluate(() => document.activeElement && (document.activeElement.className || document.activeElement.tagName)));
+    await pi.keyboard.type(VALUE_K);
+    await pi.keyboard.press('Enter');
+    await waitConsumer(pi, "c.verdict === 'accepted' && c.state === 'ready'", 'acceptation K3');
+    const back = await pi.waitForFunction((s) => {
+      const r = document.querySelector(s);
+      return !!r && r.dataset.state === 'approved' && !r.dataset.awaiting;
+    }, rowSel, { timeout: 20000 }).then(() => true, () => false);
+    check('K3 : saisie acceptée : la skill revient, approuvée, sans marque d\'attente', back,
+      await pi.evaluate((s) => { const r = document.querySelector(s); return r ? [r.dataset.state, r.dataset.awaiting] : null; }, rowSel));
   } finally {
     await bI.close().catch(() => {});
   }

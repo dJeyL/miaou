@@ -115,7 +115,7 @@ uv run --with quickjs python tests/runner.py
 
 Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
 échoué(s) is what matters). This only covers pure functions (see
-`CLAUDE.md` → Tests); UI/drawer rendering is what `driver.mjs` is for.
+`docs/tests.md`); UI/drawer rendering is what `driver.mjs` is for.
 
 ---
 
@@ -224,7 +224,7 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   `waitForSelector('.boot-done')` resolves (measured ~1.3s — it is waiting for
   the app, then catching the overlay still on screen). Called later — after
   `#composer-text` has already resolved, i.e. once the overlay is gone — the
-  same line can only time out. That is why the ~17 scripts already in this
+  same line can only time out. That is why the scripts already in this
   folder get away with it: they all append `.catch(() => {})`, so whichever way
   the race falls, the failure is swallowed and something downstream does the
   real synchronising. `waitForFunction` is 4ms and deterministic in both
@@ -290,15 +290,16 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   conversation" / default settings. That's a feature for a smoke test,
   not a bug: don't expect prior `node driver.mjs` runs to have left
   state behind.
-- **`page.reload()` keeps the storage but NOT the open conversation.** MIAOU
-  boots to an empty "Nouvelle conversation" — it does not reopen whatever was
-  displayed before. The data survived (it is in IDB); the *screen* did not. So
-  reading `currentThread` right after a reload reads an empty array, and every
-  assertion about the messages that were there fails on a false premise rather
-  than on a defect. It reads like data loss, which is the expensive part:
-  the reflex is to go looking at persistence.
-  Capture the id **before** the reload and reopen explicitly after it, then wait
-  on a terminal state rather than a delay:
+- **`page.reload()` reopens the displayed conversation — but asynchronously,
+  and only within the active Space.** Since 2026-10-16 the open conversation's
+  id is written to `sessionStorage` on `pagehide` and reopened at boot
+  (`takeOpenConvForReload`, filtered by `restorableConvId`). Two consequences
+  for a verify. (1) `openConversation` is not awaited by `init`: reading
+  `currentThread` right after the boot wait can still read an empty array, so
+  wait on a terminal state of the thread, never on a delay. (2) Scripts written
+  before that date reopen explicitly after a reload; that stays correct (a
+  second `openConversation` of the same id is harmless) and is still needed
+  when the conversation is outside the active Space or the key was consumed.
 
   ```js
   const convId = await page.evaluate(() => currentConvId);
@@ -309,11 +310,11 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   await page.waitForFunction(() => !!document.querySelector('#thread .tool-ack'));
   ```
 
-  Paid on 2026-09-11: four assertions red on a correct feature, on a 4-minute
-  run. Note the shape — the one check that *passed* in that block ("nothing is
-  pending after reload") passed **because** the thread was empty, i.e. it was
-  vacuous. A green sitting next to reds on the same fixture deserves as much
-  suspicion as the reds.
+  Paid on 2026-09-11, before the reopening existed: four assertions red on a
+  correct feature, read as data loss. The one check that *passed* in that block
+  ("nothing is pending after reload") passed **because** the thread was empty,
+  i.e. it was vacuous. A green sitting next to reds on the same fixture deserves
+  as much suspicion as the reds.
 
 ### Screenshots: wait for `.boot-done`, or capture the boot overlay instead
 

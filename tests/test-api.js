@@ -48,6 +48,9 @@ describe('serverVerdictOnFailure (un échec accuse-t-il le payload ou le réseau
     var e = new TypeError('Failed to fetch');
     expect(serverVerdictOnFailure(e)).toBe(false);
   });
+  it('SyntaxError (corps 200 non JSON, page de proxy) → aucun verdict serveur', function() {
+    expect(serverVerdictOnFailure(new SyntaxError('Unexpected token <'))).toBe(false);
+  });
   it('refus HTTP du serveur → verdict, le paramètre est bien accusé', function() {
     expect(serverVerdictOnFailure(new Error('silentCompletion 400'))).toBe(true);
   });
@@ -266,6 +269,12 @@ describe('normalizeTitle — rejette ce qui n\'est pas un titre', function() {
   it('une sortie JSON (objet ou tableau) : rejetée', function() {
     expect(normalizeTitle('{"tools": [{"name": "agent__spawn"}]}')).toBe('');
     expect(normalizeTitle('  [1, 2]')).toBe('');
+    expect(normalizeTitle('{\n  "title": "x"')).toBe('');
+    expect(normalizeTitle('[{"name": "x"}]')).toBe('');
+  });
+  it('un crochet ou une accolade de titre : conservé', function() {
+    expect(normalizeTitle('[WIP] refonte du build')).toBe('[WIP] refonte du build');
+    expect(normalizeTitle('{{jeton}} dans help.md')).toBe('{{jeton}} dans help.md');
   });
   it('un titre de 3 à 6 mots, même avec du formatage : conservé', function() {
     expect(normalizeTitle('**Météo à venir en France**')).toBe('Météo à venir en France');

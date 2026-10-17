@@ -2487,6 +2487,9 @@ async function onSaveMcpCard(cardEl, originalName) {
   }
   upsertMcpServer(server);
   disconnectMcpServer(name);
+  // Carte désactivée ou renommée : ses skills ne sont plus « à approuver »
+  // sous ce nom, le toast persistant ne doit pas les annoncer encore.
+  syncMcpSkillApprovalToast(false);
   renderMcpServers();
   if (server.enabled) {
     await runBackgroundTask('connexion MCP…', () => connectMcpServer(getMcpServer(name)));
@@ -2501,6 +2504,7 @@ async function onDeleteMcpCard(cardEl, originalName) {
     updateMcpSkillApprovals(all => removeMcpSkillApprovals(all, originalName));
     removeMcpSkillSessionApprovals(originalName);
     pruneVolatileSecrets();   // valeurs gardées en session : supprimées avec la carte
+    syncMcpSkillApprovalToast(false);
   }
   renderMcpServers();
 }

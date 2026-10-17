@@ -678,7 +678,8 @@ remet à jour tout seul.
 
 Si l'appel a lieu avant que tu aies autorisé, il échoue proprement : la ligne
 d'appel devient rouge dans la conversation et porte elle aussi un lien
-**Autoriser**. Une fois l'accès accordé, il suffit de redemander la même chose
+**Autoriser**. Il en va de même quand le modèle tente de lire une skill servie
+par ce serveur, et la fiche de la skill, si tu l'ouvres, propose le même bouton. Une fois l'accès accordé, il suffit de redemander la même chose
 au modèle. Ce lien-là reste attaché à la conversation : tu peux fermer MIAOU, y
 revenir plus tard et cliquer à ce moment-là.
 
@@ -737,6 +738,13 @@ qu'il ne peut pas le saisir à ta place et qu'il ne doit pas te le demander
 dans la conversation : ne le tape jamais dans un message. Si MIAOU a déjà le
 mot de passe en main (le proxy a seulement redémarré), il le renvoie et
 relance l'appel de lui-même : seules les notifications du renvoi le signalent.
+Il en va de même quand le modèle tente de lire une skill servie par ce service.
+
+Tant qu'un service attend son mot de passe, le serveur ne présente pas ses
+skills. Une skill que tu avais approuvée reste dans la liste de la carte et y
+indique qu'elle attend le mot de passe de son service, avec un
+bouton **Saisir le mot de passe** qui mène au champ juste au-dessus. Une fois
+le mot de passe accepté, elle redevient disponible avec son approbation.
 
 **Quand un serveur donne des consignes d'usage.** Un serveur compagnon peut
 publier, en se connectant, une consigne qui vaut pour l'ensemble de ses outils —
@@ -1342,8 +1350,10 @@ Quelques repères pour te déplacer dans MIAOU :
   un serveur qui en expose des dizaines. Un modèle que le serveur ne liste pas
   s'ajoute à la main en bas du tableau (il arrive proposé au menu) et se retire
   depuis sa ligne, sauf s'il est le modèle par défaut : il faut d'abord en
-  choisir un autre. Un modèle par défaut que le serveur ne liste plus est marqué
-  « absent de la liste ». Sur la fiche du serveur actif, le modèle de la
+  choisir un autre. Un serveur ajouté sans modèle par défaut prend le premier
+  modèle de sa liste dès qu'elle est lue, à changer ensuite dans ce tableau. Un
+  modèle par défaut que le serveur ne liste plus est marqué « absent de la
+  liste ». Sur la fiche du serveur actif, le modèle de la
   conversation affichée est marqué « actif » — le défaut, ou celui choisi dans
   le composer pour cette conversation. Le chevron d'une ligne ouvre ses réglages : lecture
   des images (« Sans vision » quand le serveur ne dit pas si le modèle les lit
@@ -1589,8 +1599,8 @@ tes fichiers sont stockés **localement**, sur ta machine, dans le stockage du
 navigateur. Rien n'est envoyé ailleurs que vers l'API du modèle que tu as
 configurée (et vers les serveurs compagnons que tu aurais ajoutés).
 
-Le navigateur offre deux emplacements de stockage, et MIAOU se sert des deux
-selon la taille de ce qu'il range :
+Le navigateur offre deux emplacements de stockage durables, et MIAOU se sert
+des deux selon la taille de ce qu'il range :
 
 - **Le stockage local** (`localStorage`), petit mais simple, garde ce qui est de
   taille stable : tes réglages, ta clef d'API, tes serveurs API et compagnons,
@@ -1601,6 +1611,11 @@ selon la taille de ce qu'il range :
   résumés, tes skills, les fichiers de tes bibliothèques d'Espaces ainsi que
   les pièces jointes de tes messages, et les statistiques de ta consommation
   de tokens.
+
+À côté, un stockage **de session**, propre à l'onglet et effacé à sa
+fermeture, ne garde que l'éphémère : la conversation à rouvrir après un
+rechargement, et les mots de passe de serveurs compagnons que tu as saisis.
+Il n'entre pas dans la sauvegarde.
 
 Les conversations ont vécu dans le stockage local jusqu'à ce qu'elles en
 saturent la capacité (quelques mégaoctets) ; elles sont désormais dans la base,

@@ -487,18 +487,27 @@ function resolveConvRefs(text, opts) {
 // défaut que `refCtx` et pour la même raison : le fil affiché, dont le thread
 // EST `currentThread` quand une génération le peint (openConversation adopte
 // `gen.thread`). L'export passe le sien.
+// Hors code seulement (mapOutsideCode) : un marqueur cité dans un bloc ou en
+// code inline est un exemple de syntaxe, rendu tel quel. La normalisation des
+// formes déviantes passe d'abord, sur le texte ENTIER : notes en fin de
+// réponse et ligne de sources finale se lisent sur plusieurs lignes (elles
+// écartent le code d'elles-mêmes).
 function resolveRefMarkers(text, opts) {
   const ctx = (opts && opts.refCtx) || null;
-  const withFiles = resolveFileRefMarkers(resolveConvRefs(normalizeRefLinkForms(text), opts), function(h) {
-    return fileRefRecord(h, ctx);
-  }, opts);
-  const hasColonUrl = withFiles.indexOf(':http') >= 0;
-  if (withFiles.indexOf('[web_ref:') < 0 && !hasColonUrl) return withFiles;
-  const reg = (opts && opts.webSources) || displayedWebSources();
-  // URL nue collée à un deux-points, page lue : ramenée au marqueur
-  // (convertColonUrlCitations, utils.js) avant la résolution en pastilles.
-  const withWeb = hasColonUrl ? convertColonUrlCitations(withFiles, reg) : withFiles;
-  return resolveWebRefMarkers(withWeb, reg, opts);
+  const normalized = normalizeRefLinkForms(text);
+  let reg = null;
+  return mapOutsideCode(normalized, function(seg) {
+    const withFiles = resolveFileRefMarkers(resolveConvRefs(seg, opts), function(h) {
+      return fileRefRecord(h, ctx);
+    }, opts);
+    const hasColonUrl = withFiles.indexOf(':http') >= 0;
+    if (withFiles.indexOf('[web_ref:') < 0 && !hasColonUrl) return withFiles;
+    if (!reg) reg = (opts && opts.webSources) || displayedWebSources();
+    // URL nue collée à un deux-points, page lue : ramenée au marqueur
+    // (convertColonUrlCitations, utils.js) avant la résolution en pastilles.
+    const withWeb = hasColonUrl ? convertColonUrlCitations(withFiles, reg) : withFiles;
+    return resolveWebRefMarkers(withWeb, reg, opts);
+  });
 }
 
 // Registre des sources web du fil affiché, recalculé seulement quand ce qu'il
@@ -5862,6 +5871,15 @@ function loadServerModels(server, force) {
       // Propriétés déclarées persistées au passage (lot AF), même appel.
       try { recordListedModelProps(server, r.ids, r.props); } catch (err) { /* cache : un échec d'écriture ne coûte pas la liste */ }
       e.models = r.ids; e.error = null;
+      // Serveur sans modèle par défaut : le premier montré au menu
+      // (seedDefaultModel), décidé sur l'enregistrement frais, dans le même
+      // tour que l'écriture (applyApiServerModelsPatch).
+      if (typeof applyApiServerModelsPatch === 'function' && server.id && getApiServer(server.id)) {
+        applyApiServerModelsPatch(server.id, fresh => {
+          const m = seedDefaultModel(fresh, r.ids);
+          return m ? { model: m } : null;
+        });
+      }
       // Chemin natif d'Ollama, NON attendu : la liste (et le verdict de santé
       // qu'en tire `probeBackend`) ne doit pas patienter derrière trois appels
       // de plus. Qui a besoin de la fin (glyphe de la fiche) attend `e.native`.
@@ -8761,7 +8779,16 @@ function renderMcpServersIfOpen() {
   // cet appel ici EN PLUS de celui de `renderMcpServers` : le drawer fermé,
   // celle-ci ne tourne pas, et le boot passe précisément par là.
   syncAuthorizationPending();
-  if ($('mcp-drawer') && $('mcp-drawer').classList.contains('show')) renderMcpServers();
+  if (!($('mcp-drawer') && $('mcp-drawer').classList.contains('show'))) return;
+  // Une carte en cours d'édition (ou neuve, pas encore enregistrée) serait
+  // vidée par la reconstruction, et les appelants d'ici sont des sondes, des
+  // lectures cadencées, la boucle d'attente d'un redémarrage ou une lecture
+  // de skill par le modèle — jamais un geste sur cette carte. Le
+  // rafraîchissement attend la fin de l'édition (cf. le bouton Annuler), comme
+  // pour les fiches API (onModelPropsChanged).
+  const list = $('mcp-list');
+  if (list && list.querySelector('.mcp-card.is-editing')) return;
+  renderMcpServers();
 }
 
 // Drawer skills ouvert ? (synchro multi-onglets, lot J : re-render du drawer sur
@@ -9099,7 +9126,12 @@ function buildMcpCard(server, isNew) {
   saveBtn.addEventListener('click', () => onSaveMcpCard(card, originalName));
   const cancelBtn = document.createElement('button');
   cancelBtn.className = 'drawer-btn mcp-cancel'; cancelBtn.textContent = 'Annuler';
-  cancelBtn.addEventListener('click', () => { if (isNew) card.remove(); else card.classList.remove('is-editing'); });
+  // Les rafraîchissements suspendus pendant l'édition (renderMcpServersIfOpen)
+  // se rattrapent ici.
+  cancelBtn.addEventListener('click', () => {
+    if (isNew) card.remove(); else card.classList.remove('is-editing');
+    renderMcpServersIfOpen();
+  });
   actions.appendChild(saveBtn);
   actions.appendChild(cancelBtn);
   if (!isNew) {
@@ -9129,6 +9161,11 @@ function appendMcpSkillRows(parent, card, liveStatus) {
   const rows = mcpSkillRows(catalogue, approvals, mcpSkillSessionApprovalsFor(card),
     listAllSkillsCache().map(sk => sk.slug));
   if (!rows.length) return;
+  // Une skill absente parce que son service attend un mot de passe le dit, et
+  // mène au formulaire de la section « Mots de passe » juste au-dessus.
+  const secrets = volatileSecretsEntry(card);
+  const awaiting = r => r.state !== 'absent' ? null
+    : mcpSkillAwaitingSecret(r.uri, secrets && secrets.status, e => volatileSecretResendAwaited(card, e));
   const box = document.createElement('div');
   box.className = 'mcp-skills';
   const title = document.createElement('div');
@@ -9165,6 +9202,13 @@ function appendMcpSkillRows(parent, card, liveStatus) {
     if (r.state === 'pending' || r.state === 'changed' || r.state === 'session-pending') {
       mkBtn('primary mcp-skill-approve', 'Approuver', () => onApproveMcpSkill(card, r.name));
     }
+    const waitingFor = awaiting(r);
+    if (waitingFor) {
+      // Pas estompée comme une absence ordinaire : il y a quelque chose à faire.
+      row.dataset.awaiting = 'secret';
+      state.textContent = 'en attente d\u2019un mot de passe';
+      mkBtn('primary mcp-skill-secret', 'Saisir le mot de passe', () => focusVolatileSecretInput(card, waitingFor.key));
+    }
     if (r.state === 'approved' || r.state === 'changed' || r.state === 'absent' || r.state === 'session-approved') {
       mkBtn('mcp-skill-disapprove', 'Désapprouver', () => onDisapproveMcpSkill(card, r.name));
     }
@@ -9178,6 +9222,12 @@ function appendMcpSkillRows(parent, card, liveStatus) {
     desc.textContent = r.problem ? ('Non chargeable\u00a0: ' + r.problem) : (r.title || r.description);
     if (!r.problem && r.title && r.description) setTip(desc, r.description);
     if (desc.textContent) row.appendChild(desc);
+    if (waitingFor) {
+      const note = document.createElement('div');
+      note.className = 'mcp-skill-note';
+      note.textContent = 'Absente tant que le service «\u00a0' + waitingFor.upstream + '\u00a0» attend son mot de passe.';
+      row.appendChild(note);
+    }
     if (r.dynamic) {
       const note = document.createElement('div');
       note.className = 'mcp-skill-note';
@@ -9243,6 +9293,54 @@ function _mcpSkillField(parent, key, value, mono) {
   return v;
 }
 
+// Affordance sous une lecture de skill refusée (cf. `withMcpReadRefusal`).
+// Faute d'autorisation : bouton « Autoriser », même garde que l'ack
+// (`ackAuthorizationTarget`, sur l'URL configurée de la carte), même bouton que
+// les upstreams en attente de la carte serveur ; `window.open` SYNCHRONE dans
+// le clic, jamais après un await : hors du geste, la navigation perd
+// `Sec-Fetch-User: ?1` et le proxy la refuse. Faute de mot de passe : bouton
+// « Saisir le mot de passe », qui ramène à la carte du serveur et au champ de
+// la clef.
+function _mcpSkillRefusalRow(parent, failure, server) {
+  if (!failure || !server) return;
+  let btn = null;
+  if (failure.authorization) {
+    const target = ackAuthorizationTarget(
+      applyAuthorizationRefusal({}, AUTHORIZATION_REQUIRED_ERROR_CODE, failure.authorization, server.name), server.url);
+    if (!target) return;
+    btn = document.createElement('button');
+    btn.textContent = 'Autoriser';
+    setTip(btn, target.upstream
+      ? 'Autoriser l\'accès à ' + target.upstream + ' sur ' + target.origin
+      : 'Autoriser l\'accès sur ' + target.origin);
+    btn.addEventListener('click', () => window.open(target.url, '_blank', 'noopener'));
+  } else if (failure.secret) {
+    const target = ackSecretTarget(applySecretRefusal({}, SECRET_REQUIRED_ERROR_CODE, failure.secret, server.name), true);
+    if (!target) return;
+    btn = document.createElement('button');
+    btn.textContent = 'Saisir le mot de passe';
+    setTip(btn, mcpSecretCardTip(target));
+    // La fiche ne s'ouvre que depuis la carte de son serveur, dans le drawer
+    // juste dessous : la refermer révèle exactement la destination. C'est
+    // l'exception à « une action en drawer empilé ne ferme rien », qui vise
+    // un niveau inférieur SANS rapport avec l'action ; sans cette fermeture, le
+    // clic mène à une carte cachée sous la fiche et paraît ne rien faire.
+    btn.addEventListener('click', () => {
+      closeMcpSkillViewer();
+      openMcpServerCard(target.server);
+      const e = volatileSecretsEntry(target.server);
+      const key = volatileSecretKeyForUpstream(e && e.status, target.upstream);
+      if (key) focusVolatileSecretInput(target.server, key);
+    });
+  }
+  if (!btn) return;
+  btn.className = 'drawer-btn mcp-authorize-btn';
+  const row = document.createElement('div');
+  row.className = 'inspect-field mcp-skill-authorize';
+  row.appendChild(btn);
+  parent.appendChild(row);
+}
+
 async function renderMcpSkillViewer(view) {
   const body = $('mcp-skill-body');
   const titleEl = $('mcp-skill-title');
@@ -9290,11 +9388,13 @@ async function renderMcpSkillViewer(view) {
     verifyVal.textContent = 'lecture impossible\u00a0: ' + fresh.problem;
     verifyVal.classList.add('is-error');
     stateEl.textContent = '';
+    _mcpSkillRefusalRow(meta, fresh, server);
     return;
   }
   view.entry = fresh.entry;
   const approvals = loadMcpSkillApprovals()[view.card] || {};
-  const state = mcpSkillApprovalState(fresh.entry, approvals[view.name] || null,
+  const state = mcpSkillApprovalState(fresh.entry,
+    Object.prototype.hasOwnProperty.call(approvals, view.name) ? approvals[view.name] : null,
     mcpSkillSessionApprovalsFor(view.card)[view.name] || null);
   stateEl.textContent = MCP_SKILL_STATE_LABELS[state] || state;
   stateEl.dataset.state = state;
@@ -9305,8 +9405,9 @@ async function renderMcpSkillViewer(view) {
   if (fresh.entry.dynamic) {
     _mcpSkillField(meta, 'Contenu', 'variable\u00a0: ce qui est lu ici peut différer de ce que le modèle lira');
   }
+  let approveBtn = null;
   if (state === 'pending' || state === 'changed' || state === 'session-pending') {
-    const btn = document.createElement('button');
+    const btn = approveBtn = document.createElement('button');
     btn.className = 'drawer-btn primary mcp-skill-approve';
     btn.textContent = 'Approuver';
     // Approuve l'entrée qui vient d'être LUE, pas celle du catalogue de la
@@ -9321,6 +9422,10 @@ async function renderMcpSkillViewer(view) {
   if (r.problem) {
     verifyVal.textContent = 'en échec (' + r.problem + ')\u00a0; contenu non affiché';
     verifyVal.classList.add('is-error');
+    // Approuver ce qu'on n'a pas pu lire : la lecture du modèle échouerait
+    // de toute façon sur la même vérification.
+    if (approveBtn) approveBtn.remove();
+    _mcpSkillRefusalRow(meta, r, server);
     return;
   }
   verifyVal.textContent = fresh.entry.dynamic
@@ -9385,6 +9490,7 @@ async function showMcpSkillAnnex(view, server, entry, uri, parent) {
   if (r.problem) {
     verifyVal.textContent = 'en échec (' + r.problem + ')\u00a0; contenu non affiché';
     verifyVal.classList.add('is-error');
+    _mcpSkillRefusalRow(meta, r, server);
   } else {
     verifyVal.textContent = 'conforme à l\u2019entrée (taille, empreinte)';
     _mcpSkillRenderFile(parent, r.text, uri, false);

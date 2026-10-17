@@ -59,7 +59,15 @@ function fetchCors(url) {
 }
 
 // Une seule entrée pour le HTML, sous la racine de la portée : /app/ et
-// /app/miaou.html, ou une URL à paramètres, servent le même document.
+// /app/miaou.html, ou une URL à paramètres, servent le même document. Seule
+// une réponse HTML y entre : version.json ou le manifeste, ouverts dans un
+// onglet, sont aussi des navigations dans la portée, et seraient sinon servis
+// comme page d'appli au lancement suivant proxy coupé.
+//
+// Une réponse 5xx compte comme un échec : derrière un reverse proxy, un proxy
+// MCP coupé répond 502 sans faire échouer fetch, et c'est exactement le cas
+// où l'appli en cache doit être servie. Les 4xx passent, eux : les masquer
+// derrière le cache cacherait une vraie erreur de configuration.
 async function networkFirst(e, req) {
   const cache = await caches.open(CACHE);
   const key = self.registration.scope;
@@ -70,14 +78,15 @@ async function networkFirst(e, req) {
   // gestionnaire) : la mise en cache aboutit même quand c'est le cache qui a
   // répondu après le délai.
   e.waitUntil(network.then(function (r) {
-    if (r.ok) return cache.put(key, r.clone());
+    if (r.ok && /^text\/html/i.test(r.headers.get('content-type') || '')) return cache.put(key, r.clone());
   }).catch(function () {}));
   const timeout = new Promise(function (resolve) {
     setTimeout(function () { resolve(null); }, NAV_TIMEOUT_MS);
   });
   try {
     const first = await Promise.race([network, timeout]);
-    if (first) return first;
+    if (first && first.status < 500) return first;
+    if (first) return (await cache.match(key)) || first;
     // Délai dépassé : le cache s'il existe, sinon on continue d'attendre.
     const cached = await cache.match(key);
     if (cached) return cached;

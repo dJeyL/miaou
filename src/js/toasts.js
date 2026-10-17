@@ -249,7 +249,9 @@ function wireToastLayout() {
   }
   // Ouverture/fermeture d'un drawer : la classe `show` bascule sur l'élément.
   // Un observateur d'attribut plutôt qu'un appel dans chaque open*/close* : ils
-  // sont une dizaine, et un drawer ajouté plus tard serait oublié.
+  // sont une dizaine, et un nouvel open* oublierait l'appel. Les drawers sont
+  // tous statiques dans index.html, observés une fois au premier toast : un
+  // drawer créé par script après ce moment ne serait PAS observé.
   if (typeof MutationObserver === 'function') {
     const mo = new MutationObserver(function() { layoutToasts(); });
     document.querySelectorAll('.drawer').forEach(function(d) {
@@ -339,8 +341,6 @@ function toastRenameFailed(name) {
     text: 'Renommage de ' + quoted(name) + ' impossible' + NBSP + ': le stockage l\'a refusé.' });
 }
 
-// Presse-papier refusé (permission, page sans focus) : les trois boutons
-// « Copier » passent ici plutôt que de laisser leur promesse rejeter en silence.
 // Lien [file_ref:…] dont le fichier ne se résout pas dans la conversation
 // affichée (openFileRef, ui.js) : handle inventé, fichier supprimé, ou
 // ressource d'une autre conversation.
@@ -349,6 +349,8 @@ function toastFileRefMissing() {
     text: 'Fichier introuvable dans cette conversation.' });
 }
 
+// Presse-papier refusé (permission, page sans focus) : les trois boutons
+// « Copier » passent ici plutôt que de laisser leur promesse rejeter en silence.
 function toastCopyFailed() {
   showToast({ key: 'clipboard', level: 'warn', theme: 'clipboard',
     text: 'Copie refusée par le navigateur.' });
