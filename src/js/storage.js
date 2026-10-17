@@ -235,6 +235,7 @@ const DEFAULT_SETTINGS = {
   palette: 'ambre',        // 'ambre' | 'encre' | 'foret' (axe orthogonal au thème, lot S-a)
   fonts: 'graphite',      // 'graphite' | 'atelier' | 'chaleur' (lot de fontes, lot S-b)
   showModelSelector: false, // sélecteur serveur/modèle dans le composer
+  showConvModel: false,     // modèle à droite de l'horodatage dans la liste des conversations
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
   colWidth: 0,             // largeur de la colonne centrale : index dans COL_WIDTH_STEPS (ui.js), 0 = la plus étroite
   intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
@@ -1372,7 +1373,41 @@ function splitConvRecord(conv) {
   // quel en base au saveConversation suivant et de devenir un second porteur
   // d'état, périmable indépendamment de ce qu'il compte.
   meta._messageCount = Array.isArray(conv.messages) ? conv.messages.length : 0;
+  // Dernier modèle ayant répondu, pour la ligne de la sidebar (réglage
+  // « modèle dans la liste des conversations »). Même statut que
+  // `_messageCount` : dérivé des messages à chaque passage ici, donc jamais
+  // périmé, et retiré par `joinConvRecord`. C'est ce qui le rend gratuit sur
+  // une conversation FROIDE : l'hydratation lit les records complets avant de
+  // les scinder, on le calcule au passage plutôt que de rouvrir IDB au rendu.
+  const last = lastAnsweringModel(conv.messages);
+  if (last) { meta._lastModel = last.model; meta._lastServer = last.server; }
+  else { delete meta._lastModel; delete meta._lastServer; }
   return { meta: meta, messages: Array.isArray(conv.messages) ? conv.messages : [] };
+}
+
+// Modèle (et serveur, tel que nommé au moment de la génération) de la DERNIÈRE
+// réponse assistant qui en porte un. Rend null si aucune — conversation vide,
+// ou réponses antérieures à la persistance du modèle que le backfill n'a pas
+// encore traitées. Pure.
+function lastAnsweringModel(messages) {
+  if (!Array.isArray(messages)) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m && m.role === 'assistant' && typeof m.model === 'string' && m.model) {
+      return { model: m.model, server: typeof m.server === 'string' ? m.server : '' };
+    }
+  }
+  return null;
+}
+
+// Modèle à afficher sur la ligne d'une conversation : celui de la dernière
+// réponse, sinon l'override enregistré sur la conversation (sans serveur
+// connu), sinon rien. Prend la projection de `listAllConversations`. Pure.
+function convDisplayModel(c) {
+  if (!c) return null;
+  if (c.lastModel) return { model: c.lastModel, server: c.lastServer || '' };
+  if (c.model) return { model: c.model, server: '' };
+  return null;
 }
 
 // Compte de messages d'une conversation, CHAUDE OU FROIDE. Lit l'étage 1, seul
@@ -1390,6 +1425,8 @@ function conversationMessageCount(id) {
 function joinConvRecord(meta, messages) {
   const out = Object.assign({}, meta, { messages: Array.isArray(messages) ? messages : [] });
   delete out._messageCount;   // interne au cache, jamais réécrit en base (cf. splitConvRecord)
+  delete out._lastModel;
+  delete out._lastServer;
   return out;
 }
 
@@ -2166,7 +2203,11 @@ function listAllConversations() {
     // les lignes froides de la sidebar, de façon intermittente, sans qu'aucun
     // test de fonction pure ne le voie.
     out.push({ id: id, title: c.title, timestamp: c.timestamp, updatedAt: c.updatedAt, pinned: !!c.pinned, spaceId: c.spaceId || DEFAULT_SPACE_ID,
-      parentConvId: c.parentConvId, agentIntent: c.agentIntent, snippet: c.snippet });
+      parentConvId: c.parentConvId, agentIntent: c.agentIntent, snippet: c.snippet,
+      // Modèle de la ligne (convDisplayModel) : même raison que `snippet`, un
+      // libellé lu par la sidebar doit voyager avec la méta, sinon il manque
+      // sur toutes les lignes froides.
+      model: c.model, lastModel: c._lastModel, lastServer: c._lastServer });
   }
   return out.sort((a, b) => (b.updatedAt || b.timestamp || 0) - (a.updatedAt || a.timestamp || 0));
 }

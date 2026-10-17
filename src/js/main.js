@@ -5830,6 +5830,7 @@ async function init() {
   highlightEnabled = s.highlight !== false;
   $('set-pin-sent-message').checked = s.pinSentMessage !== false;
   $('set-wide-tables').checked = s.wideTables !== false;
+  $('set-conv-model').checked = !!s.showConvModel;
   applyWideTables(s.wideTables !== false);
   $('set-modelselector').checked = !!s.showModelSelector;
   $('set-reasoning-effort').value = s.reasoningEffort || '';
@@ -5889,6 +5890,7 @@ async function init() {
   initSidebarResize();
   applyColWidth(loadSettings().colWidth);   // largeur de colonne persistée (cran)
   initComposerModelLabelFit();
+  initConvModelLabelFit();
   initVisualViewport();
   wireTitleEditing();
 

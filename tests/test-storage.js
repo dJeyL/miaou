@@ -2147,3 +2147,40 @@ describe('conversation rouverte au rechargement (restorableConvId)', function() 
     expect(restorableConvId('c', DEFAULT_SPACE_ID, convs)).toBe('c');
   });
 });
+
+describe('lastAnsweringModel / convDisplayModel (modèle de la ligne de sidebar)', function() {
+  it('prend la DERNIÈRE réponse assistant qui porte un modèle, avec son serveur', function() {
+    var msgs = [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'b', model: 'ancien', server: 'S1' },
+      { role: 'user', content: 'c' },
+      { role: 'assistant', content: 'd', model: 'recent', server: 'S2' },
+      { role: 'user', content: 'e' }
+    ];
+    expect(lastAnsweringModel(msgs)).toEqual({ model: 'recent', server: 'S2' });
+  });
+  it('saute une réponse sans modèle, serveur vide si absent', function() {
+    var msgs = [
+      { role: 'assistant', content: 'b', model: 'm1' },
+      { role: 'assistant', content: 'd' }
+    ];
+    expect(lastAnsweringModel(msgs)).toEqual({ model: 'm1', server: '' });
+  });
+  it('null sans réponse portant un modèle', function() {
+    expect(lastAnsweringModel([{ role: 'user', content: 'a' }])).toBe(null);
+    expect(lastAnsweringModel(undefined)).toBe(null);
+  });
+  it('dernière réponse d\'abord, puis override de conversation sans serveur, puis rien', function() {
+    expect(convDisplayModel({ lastModel: 'r', lastServer: 'S', model: 'o' })).toEqual({ model: 'r', server: 'S' });
+    expect(convDisplayModel({ model: 'o' })).toEqual({ model: 'o', server: '' });
+    expect(convDisplayModel({})).toBe(null);
+  });
+  it('splitConvRecord le dérive en étage 1, joinConvRecord ne le rend jamais', function() {
+    var split = splitConvRecord({ id: 'x', messages: [{ role: 'assistant', content: 'b', model: 'm', server: 'S' }] });
+    expect(split.meta._lastModel).toBe('m');
+    expect(split.meta._lastServer).toBe('S');
+    var joined = joinConvRecord(split.meta, split.messages);
+    expect('_lastModel' in joined).toBe(false);
+    expect('_lastServer' in joined).toBe(false);
+  });
+});

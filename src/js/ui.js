@@ -3841,7 +3841,7 @@ function searchExcerptEl(excerpt, className) {
   return el;
 }
 
-function convItemEl(c, convs) {
+function convItemEl(c, convs, showModel) {
   const el = document.createElement('div');
   el.className = 'conv' + (c.id === currentConvId ? ' active' : '') + (c.pinned ? ' pinned' : '');
   el.onclick = () => selectConv(c.id);
@@ -3868,7 +3868,9 @@ function convItemEl(c, convs) {
     `<input type="checkbox" class="conv-select" onclick="event.stopPropagation();toggleConvSelection('${c.id}',this.checked)"${checked}${lockAttrs}>
      <div class="conv-body">
        <div class="${titleCls}">${escHtml(lbl.text || 'Nouvelle conversation')}</div>
-       <div class="conv-date"${tipAttrs(formatFullDateFr(c.updatedAt || c.timestamp), { text: relativeWhen(c.updatedAt || c.timestamp) })}>${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>
+       <div class="conv-meta">
+         <div class="conv-date"${tipAttrs(formatFullDateFr(c.updatedAt || c.timestamp), { text: relativeWhen(c.updatedAt || c.timestamp) })}>${escHtml(relativeWhen(c.updatedAt || c.timestamp))}</div>${showModel ? convModelHtml(c) : ''}
+       </div>
      </div>
      <div class="conv-actions">
        <button class="conv-pin"${tipAttrs(c.pinned ? 'Désépingler' : 'Épingler')} onclick="event.stopPropagation();togglePin('${c.id}')">${PIN_SVG}</button>
@@ -3925,6 +3927,76 @@ let _convListAnim = false;
 
 function animateNextConvList() { _convListAnim = true; }
 
+// Modèle à droite de l'horodatage (réglage d'apparence `showConvModel`, désactivé
+// par défaut). Le gabarit ne pose que le nom COMPLET en attribut : l'abréviation
+// dépend de la largeur restante sur la ligne, que seul le DOM inséré connaît —
+// fitConvModelLabels l'écrit après coup, avec l'infobulle.
+function convModelHtml(c) {
+  const dm = convDisplayModel(c);
+  if (!dm) return '';
+  return '<span class="conv-sep" aria-hidden="true">·</span>'
+    + '<span class="conv-model" data-model="' + escHtml(dm.model) + '" data-server="' + escHtml(dm.server) + '">'
+    + escHtml(dm.model) + '</span>';
+}
+
+// Largeur moyenne d'un glyphe de la police de texte à 11px (~0,55em) — la même
+// que la date, pas la mono du composer : la taille est RECOPIÉE de `.conv-model`
+// (sidebar.css). Police proportionnelle, donc estimation : un nom riche en
+// glyphes larges peut dépasser, et c'est l'ellipsis CSS qui rattrape ; la
+// changer là-bas sans la changer ici déplace seulement le seuil d'abréviation.
+const CONV_MODEL_CHAR_PX = 11 * 0.55;
+
+// Infobulle du modèle d'une ligne : même forme que celle de la pilule
+// (activeModelTip) — nom complet en libellé, serveur en détail seulement quand
+// plusieurs serveurs sont sélectionnables. Le serveur est le nom ENREGISTRÉ sur
+// la réponse, tel qu'il était à la génération ; inconnu pour le repli sur le
+// modèle de la conversation, la bulle se réduit alors au nom.
+function convModelTip(model, server, multiServer) {
+  return (server && multiServer) ? { label: model, detail: server } : model;
+}
+
+// Abrège les modèles de la liste selon la place réellement disponible sur
+// chaque ligne (largeur de la ligne moins horodatage et séparateur), avec la
+// même règle que le composer (shortenModelLabel : auteur d'abord, puis la fin).
+// Toutes les lectures AVANT toutes les écritures : un seul calcul de layout
+// pour la liste entière, pas un par ligne. Largeur nulle (sidebar masquée) →
+// budget 0 → nom intact ; le ResizeObserver repasse quand elle réapparaît.
+function fitConvModelLabels() {
+  const list = $('conv-list');
+  if (!list) return;
+  const spans = list.querySelectorAll('.conv-model');
+  if (!spans.length) return;
+  const budgets = [];
+  for (const span of spans) {
+    const meta = span.parentElement;
+    const date = meta.querySelector('.conv-date');
+    const sep = meta.querySelector('.conv-sep');
+    const px = meta.clientWidth - (date ? date.offsetWidth : 0) - (sep ? sep.offsetWidth : 0);
+    budgets.push(px > 0 ? Math.floor(px / CONV_MODEL_CHAR_PX) : 0);
+  }
+  const multiServer = listSelectableApiServers().length >= 2;
+  spans.forEach((span, i) => {
+    const model = span.dataset.model || '';
+    span.textContent = shortenModelLabel(model, budgets[i]);
+    setTip(span, convModelTip(model, span.dataset.server || '', multiServer));
+  });
+}
+
+// La largeur des lignes suit celle de la sidebar (poignée de redimensionnement,
+// fenêtre, barre de défilement qui apparaît) : on ré-abrège sans re-rendre.
+let _convListRO = null;
+function initConvModelLabelFit() {
+  const list = $('conv-list');
+  if (!list || typeof ResizeObserver === 'undefined' || _convListRO) return;
+  _convListRO = new ResizeObserver(() => fitConvModelLabels());
+  _convListRO.observe(list);
+}
+
+function onToggleConvModel() {
+  saveSettings({ showConvModel: $('set-conv-model').checked });
+  renderConvList();
+}
+
 function renderConvList() {
   const list = $('conv-list');
   const animate = _convListAnim;
@@ -3950,11 +4022,14 @@ function renderConvList() {
   let convs = all;
   if (convSearchFilter) convs = convs.filter(convSearchFilter);
 
+  // Lu une fois pour toute la liste, pas par ligne (loadSettings parse le stockage).
+  const showModel = !!loadSettings().showConvModel;
+
   // Section « Épinglé » en tête (au singulier, choix assumé), si au moins une.
   const pinned = convs.filter(c => c.pinned);
   if (pinned.length) {
     list.appendChild(sectionEl('Épinglé'));
-    for (const c of pinned) list.appendChild(convItemEl(c, everyConv));
+    for (const c of pinned) list.appendChild(convItemEl(c, everyConv, showModel));
   }
 
   // Le reste, regroupé par tranches temporelles.
@@ -3966,8 +4041,9 @@ function renderConvList() {
       list.appendChild(sectionEl(section));
       lastSection = section;
     }
-    list.appendChild(convItemEl(c, everyConv));
+    list.appendChild(convItemEl(c, everyConv, showModel));
   }
+  fitConvModelLabels();
 
   if (animate) {
     // `--i` porte le rang pour l'échelonnement, plafonné (ANIM_STAGGER_MAX) :

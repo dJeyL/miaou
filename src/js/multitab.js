@@ -427,6 +427,12 @@ function applySyncedSettings(keys) {
     const cbWide = $('set-wide-tables');
     if (cbWide) cbWide.checked = s.wideTables !== false;
   }
+  // Auto-persisté (onToggleConvModel) : refléter la case et re-rendre la liste.
+  if (set.has('showConvModel')) {
+    const cbModel = $('set-conv-model');
+    if (cbModel) cbModel.checked = !!s.showConvModel;
+    renderConvList();
+  }
   // Auto-persisté aussi (onTogglePinSentMessage) : refléter la case, et
   // retirer l'espace posé si le pair a décoché — même effet qu'ici.
   if (set.has('pinSentMessage')) {

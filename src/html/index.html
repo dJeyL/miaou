@@ -582,6 +582,19 @@ if (window.requestAnimationFrame) {
       <div class="field">
         <div class="check-row">
           <div class="label-col">
+            <label>Modèle dans la liste des conversations</label>
+            <span class="hint">Affiche, à côté de la date, le modèle qui a produit la dernière réponse. Le nom complet et le serveur apparaissent au survol.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-conv-model" onchange="onToggleConvModel()">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <div class="check-row">
+          <div class="label-col">
             <label>Export HTML interactif</label>
             <span class="hint">Ajoute à l'export un script&nbsp;: boutons copier/télécharger sur les blocs de code, et mémorisation du thème, de la palette et de la largeur choisis à la lecture. Décoché, l'export reste sans JavaScript — ces trois commandes, elles, fonctionnent dans les deux cas.</span>
           </div>

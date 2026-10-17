@@ -118,6 +118,16 @@ simplement pas en RAM. Trois conséquences dures :
    appelants, sous peine d'être réécrit tel quel en base au `saveConversation`
    suivant et de devenir un second porteur d'état, périmable indépendamment de
    ce qu'il compte.
+4. **`_lastModel` / `_lastServer`, même statut que `_messageCount`** : le modèle
+   et le serveur de la dernière réponse assistant qui en porte un
+   (`lastAnsweringModel`), dérivés par `splitConvRecord` à chaque passage et
+   retirés par `joinConvRecord`. Ils servent le réglage d'apparence « modèle
+   dans la liste des conversations » (`convDisplayModel`, ui.js
+   `fitConvModelLabels`). Les calculer à la scission les rend gratuits sur une
+   conversation froide : l'hydratation lit déjà les records complets. Exception
+   à la règle du point 3 : ils SONT exposés par la projection de
+   `listAllConversations`, sous les noms `lastModel` / `lastServer` — c'est une
+   projection, jamais réécrite en base, pas un record.
 
 **Écriture froide** : `persistConversationCold(conv)` écrit un record complet
 comme `persistConversation`, même transaction et même broadcast post-commit,

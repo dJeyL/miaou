@@ -1408,6 +1408,12 @@ et ton choix est conservé d'une session à l'autre.
   strictement dans la colonne. Il vaut aussi pour les pages HTML exportées, où
   l'état choisi au moment de l'export est conservé dans le fichier. Un tableau
   placé dans un de tes propres messages, lui, reste toujours dans sa bulle.
+- **Modèle dans la liste des conversations** (désactivé par défaut) : dans la
+  barre latérale, chaque conversation affiche à droite de sa date le modèle qui
+  a produit sa dernière réponse — à défaut, le modèle choisi pour la
+  conversation ; rien si aucun n'est connu. Un nom trop long perd d'abord son
+  préfixe d'auteur, puis sa fin. Au survol, une infobulle donne le nom complet,
+  et le serveur qui l'a servi quand plusieurs serveurs sont configurés.
 - **Astuce à l'accueil** : sous l'écran d'accueil d'une conversation vierge,
   un encart présente une capacité de MIAOU, tirée au hasard de cette aide,
   sous une introduction accordée à l'écran d'accueil affiché. Il se place au
