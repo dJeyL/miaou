@@ -4230,13 +4230,13 @@ describe('instructions MCP de portee serveur — parsing et injection', function
   it('rattache la section au prefixe REEL <slug>__<serveur>', function() {
     // Le titre rendu est le prefixe d'outil vu par le modele, pas le nom nu
     // publie par le proxy : MIAOU re-prefixe du slug de la carte.
-    var secs = mcpInstructionSectionsForServer('miaou-proxy', PROXY);
+    var secs = mcpInstructionSectionsForServer('miaou-proxy', PROXY, ['miaou-proxy__bench__echo']);
     expect(secs.length).toBe(1);
     expect(secs[0].prefix).toBe('miaou-proxy__bench');
   });
 
   it('suit le renommage de la carte serveur — le slug vit cote client', function() {
-    var secs = mcpInstructionSectionsForServer('proxy', PROXY);
+    var secs = mcpInstructionSectionsForServer('proxy', PROXY, ['proxy__bench__echo']);
     expect(secs[0].prefix).toBe('proxy__bench');
   });
 
@@ -4255,8 +4255,47 @@ describe('instructions MCP de portee serveur — parsing et injection', function
     expect(mcpInstructionSectionsForServer('', PROXY).length).toBe(0);
   });
 
+  // Serveur unitaire qui structure ses consignes en Markdown : ses outils sont
+  // <slug>__<outil>, aucun namespace <slug>__<titre> n'existe. Le texte entier
+  // doit rester la consigne, preambule compris, sous le slug.
+  var UNITAIRE = [
+    'Texte de base du serveur.',
+    '',
+    '## Instructions utilisateur',
+    '',
+    'Ajout configurable.',
+  ].join('\n');
+
+  it('serveur unitaire titre en ## : texte entier sous le slug', function() {
+    var secs = mcpInstructionSectionsForServer('notes', UNITAIRE, ['notes__search', 'notes__read']);
+    expect(secs.length).toBe(1);
+    expect(secs[0].prefix).toBe('notes');
+    expect(secs[0].body).toBe(UNITAIRE);
+  });
+
+  it('serveur unitaire titre en ## : affiche au drawer et injecte sous son slug', function() {
+    var servers = [{ slug: 'notes', instructions: UNITAIRE, toolNames: ['notes__search'] }];
+    var idx = mcpInstructionsByPrefix(servers);
+    expect(idx['notes']).toBe(UNITAIRE);
+    var block = buildMcpInstructionsBlock(servers);
+    expect(block.indexOf('## notes\n\nTexte de base du serveur.') >= 0).toBe(true);
+    expect(block.indexOf('## notes__Instructions utilisateur') >= 0).toBe(false);
+  });
+
+  it('sans outils connus, rien ne prouve l\'agregation : unitaire', function() {
+    var secs = mcpInstructionSectionsForServer('proxy', PROXY);
+    expect(secs.length).toBe(1);
+    expect(secs[0].prefix).toBe('proxy');
+  });
+
+  it('agregateur reconnu a un namespace reel <slug>__<serveur>', function() {
+    // Un outil <slug>__bench (namespace <slug>, pas <slug>__bench) ne suffit pas.
+    expect(mcpInstructionSectionsForServer('proxy', PROXY, ['proxy__bench'])[0].prefix).toBe('proxy');
+    expect(mcpInstructionSectionsForServer('proxy', PROXY, ['proxy__bench__echo'])[0].prefix).toBe('proxy__bench');
+  });
+
   it('ecarte une section titree mais vide', function() {
-    var secs = mcpInstructionSectionsForServer('p', '## vide\n\n## plein\n\ntexte');
+    var secs = mcpInstructionSectionsForServer('p', '## vide\n\n## plein\n\ntexte', ['p__plein__x']);
     expect(secs.length).toBe(1);
     expect(secs[0].prefix).toBe('p__plein');
   });
@@ -4271,7 +4310,7 @@ describe('instructions MCP de portee serveur — parsing et injection', function
     // Le rattachement compte autant que l'injection : un bloc dont on ne sait
     // plus a quels outils il s'applique est pire qu'absent.
     var block = buildMcpInstructionsBlock([
-      { slug: 'proxy', instructions: PROXY },
+      { slug: 'proxy', instructions: PROXY, toolNames: ['proxy__bench__echo'] },
       { slug: 'meteo', instructions: 'Toujours donner la temperature en Celsius.' },
     ]);
     expect(block.indexOf('## proxy__bench') >= 0).toBe(true);
@@ -4284,7 +4323,7 @@ describe('instructions MCP de portee serveur — parsing et injection', function
     // « les outils sont prefixes <serveur>__<outil> » est vrai pour un client
     // parlant au proxy en direct, faux une fois passe par MIAOU. C'est la
     // raison d'etre du parsing : MIAOU ecrit son propre cadrage.
-    var block = buildMcpInstructionsBlock([{ slug: 'miaou-proxy', instructions: PROXY }]);
+    var block = buildMcpInstructionsBlock([{ slug: 'miaou-proxy', instructions: PROXY, toolNames: ['miaou-proxy__bench__echo'] }]);
     expect(block.indexOf('Ce serveur agrege') >= 0).toBe(false);
     expect(block.indexOf('est le PRÉFIXE des noms') >= 0).toBe(true);
   });
@@ -4298,7 +4337,7 @@ describe('instructions MCP de portee serveur — parsing et injection', function
   it('index par prefixe : clef = prefixe d\'outil, pas le slug nu', function() {
     // La clef doit etre directement comparable au `namespace` rendu par
     // groupByNamespace au drawer : un serveur agregateur donne `<slug>__<serveur>`.
-    var idx = mcpInstructionsByPrefix([{ slug: 'proxy', instructions: PROXY }]);
+    var idx = mcpInstructionsByPrefix([{ slug: 'proxy', instructions: PROXY, toolNames: ['proxy__bench__echo'] }]);
     expect(Object.prototype.hasOwnProperty.call(idx, 'proxy__bench')).toBe(true);
     expect(idx['proxy__bench'].indexOf('banc d\'essai bench') >= 0).toBe(true);
   });
@@ -4318,7 +4357,7 @@ describe('instructions MCP de portee serveur — parsing et injection', function
     // Le drawer ne doit pas pouvoir montrer une version divergente de ce que
     // le modele recoit : les deux passent par mcpInstructionSectionsForServer.
     var servers = [
-      { slug: 'proxy', instructions: PROXY },
+      { slug: 'proxy', instructions: PROXY, toolNames: ['proxy__bench__echo'] },
       { slug: 'meteo', instructions: 'Toujours donner la temperature en Celsius.' },
     ];
     var idx = mcpInstructionsByPrefix(servers);
@@ -4329,7 +4368,7 @@ describe('instructions MCP de portee serveur — parsing et injection', function
   });
 
   it('index par prefixe : le preambule FAUX du proxy n\'y entre pas non plus', function() {
-    var idx = mcpInstructionsByPrefix([{ slug: 'miaou-proxy', instructions: PROXY }]);
+    var idx = mcpInstructionsByPrefix([{ slug: 'miaou-proxy', instructions: PROXY, toolNames: ['miaou-proxy__bench__echo'] }]);
     var joined = Object.keys(idx).map(function(k) { return idx[k]; }).join('\n');
     expect(joined.indexOf('Ce serveur agrege') >= 0).toBe(false);
   });

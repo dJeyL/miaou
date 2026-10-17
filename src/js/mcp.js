@@ -96,7 +96,10 @@ function mcpInstructionSources() {
   for (const name of Object.keys(_remoteStatus)) {
     const st = _remoteStatus[name];
     if (!st || st.state !== 'ok' || !st.instructions) continue;
-    out.push({ slug: name, instructions: st.instructions });
+    // Les noms d'outils exposés décident si le texte se découpe en sections
+    // d'agrégateur (`mcpInstructionSectionsForServer`) : ils changent au même
+    // geste que les consignes (connexion), jamais d'un tour à l'autre.
+    out.push({ slug: name, instructions: st.instructions, toolNames: (_remoteTools[name] || []).map(t => t.name) });
   }
   out.sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
   return out;

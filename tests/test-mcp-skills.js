@@ -411,7 +411,7 @@ describe('rewriteMcpUpstreamToolPrefixes', function() {
     expect(rewriteMcpUpstreamToolPrefixes('`web__fetch` `x_bench__y`', 'proxy', 'bench')).toBe('`web__fetch` `x_bench__y`');
   });
   it('appliquée par mcpInstructionSectionsForServer, pas à un serveur unitaire', function() {
-    var secs = mcpInstructionSectionsForServer('proxy', 'préambule\n\n## bench\n\nAvant `bench__echo`, lire.');
+    var secs = mcpInstructionSectionsForServer('proxy', 'préambule\n\n## bench\n\nAvant `bench__echo`, lire.', ['proxy__bench__echo']);
     expect(secs[0].body).toBe('Avant `proxy__bench__echo`, lire.');
     var solo = mcpInstructionSectionsForServer('srv', 'Avant `srv__x`, lire.');
     expect(solo[0].body).toBe('Avant `srv__x`, lire.');

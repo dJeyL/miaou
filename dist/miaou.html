@@ -5853,7 +5853,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-17 12:40 UTC */
+/* miaou — built: 2026-10-17 13:28 UTC */
 
 /* ── utils.js ── */
 
@@ -6227,20 +6227,26 @@ function splitMcpInstructionSections(text) {
   };
 }
 
-function mcpInstructionSectionsForServer(slug, instructions) {
+function mcpInstructionSectionsForServer(slug, instructions, toolNames) {
   const name = typeof slug === 'string' ? slug.trim() : '';
   const text = typeof instructions === 'string' ? instructions.trim() : '';
   if (!name || !text) return [];
   const split = splitMcpInstructionSections(text);
-  if (split.sections.length) {
+  const namespaces = {};
+  const defs = (Array.isArray(toolNames) ? toolNames : [])
+    .filter(n => typeof n === 'string')
+    .map(n => ({ name: n }));
+  for (const g of groupByNamespace(defs)) namespaces[g.namespace] = true;
+  const aggregated = split.sections.some(s =>
+    Object.prototype.hasOwnProperty.call(namespaces, name + '__' + s.name));
+  if (aggregated) {
     return split.sections.map(s => ({
       prefix: name + '__' + s.name,
       body: rewriteMcpUpstreamToolPrefixes(s.body, name, s.name),
     }));
   }
 
-  if (!split.preamble) return [];
-  return [{ prefix: name, body: split.preamble }];
+  return [{ prefix: name, body: text }];
 }
 
 function buildMcpInstructionsBlock(servers) {
@@ -6248,7 +6254,7 @@ function buildMcpInstructionsBlock(servers) {
   const blocks = [];
   for (const s of list) {
     if (!s) continue;
-    for (const sec of mcpInstructionSectionsForServer(s.slug, s.instructions)) {
+    for (const sec of mcpInstructionSectionsForServer(s.slug, s.instructions, s.toolNames)) {
       blocks.push('## ' + sec.prefix + '\n\n' + sec.body);
     }
   }
@@ -6267,7 +6273,7 @@ function mcpInstructionsByPrefix(servers) {
   const out = {};
   for (const s of list) {
     if (!s) continue;
-    for (const sec of mcpInstructionSectionsForServer(s.slug, s.instructions)) {
+    for (const sec of mcpInstructionSectionsForServer(s.slug, s.instructions, s.toolNames)) {
 
       if (!Object.prototype.hasOwnProperty.call(out, sec.prefix)) out[sec.prefix] = sec.body;
     }
@@ -11479,7 +11485,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1792240809}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1792243696}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11499,7 +11505,7 @@ const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || ''
 const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "5654b6dc37cdc2da"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "1015c6b21330e5eb"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -16825,7 +16831,8 @@ function mcpInstructionSources() {
   for (const name of Object.keys(_remoteStatus)) {
     const st = _remoteStatus[name];
     if (!st || st.state !== 'ok' || !st.instructions) continue;
-    out.push({ slug: name, instructions: st.instructions });
+
+    out.push({ slug: name, instructions: st.instructions, toolNames: (_remoteTools[name] || []).map(t => t.name) });
   }
   out.sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
   return out;

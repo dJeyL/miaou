@@ -724,10 +724,23 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       `<slug>` seul pour un serveur unitaire (dont les outils sont
       `<slug>__<outil>`). C'est un **préfixe, jamais un nom d'outil complet** :
       la consigne porte sur tout ce qui commence par là.
-    - **Le cas unitaire tient sans branche dédiée** : un texte sans aucune
-      entête `## ` tombe entièrement dans la part préambule, que
-      `mcpInstructionSectionsForServer` reprend sous le slug. Il n'y a pas de
-      convention à respecter pour un serveur qui n'agrège rien.
+    - **Ce qui fait un agrégateur, ce sont ses outils, pas son texte.** Une
+      entête `## ` n'est pas un signal : un serveur unitaire qui structure ses
+      consignes en Markdown en porte aussi. Les découper perdait tout son
+      préambule (écran et modèle) et rattachait le reste à un préfixe
+      `<slug>__<titre>` sans aucun outil. `mcpInstructionSectionsForServer` ne
+      découpe donc que si au moins une section a pour préfixe un namespace
+      **réel** des outils de la carte — calculé par `groupByNamespace`, le
+      prédicat même du drawer ; `mcpInstructionSources` lui passe pour ça les
+      noms exposés (`toolNames`, lus dans `_remoteTools`, qui ne bougent qu'à la
+      connexion comme les consignes : aucun effet sur le cache). Sinon le texte
+      **entier**, verbatim, est la consigne du slug — y compris sans outils
+      connus. Aucune convention n'est donc imposée à un serveur qui n'agrège
+      rien. Limite assumée : un proxy dont aucun upstream n'expose d'outil
+      retombe en unitaire, préambule compris — il n'a alors aucun outil auquel
+      l'appliquer. Piste écartée pour l'instant : une extension « agrégateur »
+      déclarée dans le DiscoverResult, plus explicite mais qui engage aussi le
+      proxy et laisse le legacy sans réponse.
     - **Source** : `mcpInstructionSources` (mcp.js) lit `_remoteStatus`, **pas
       la config** — une consigne n'existe que pour un serveur dont le handshake a
       abouti. Un serveur en erreur n'expose aucun outil (dégradation gracieuse) :

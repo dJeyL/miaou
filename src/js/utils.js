@@ -759,7 +759,9 @@ function mcpStatusPill(status, secretWaiting) {
 //
 // Un proxy d'agrégation publie un texte STRUCTURÉ : un préambule, puis une
 // section `## <serveur>` par upstream, titrée du préfixe d'outil. Un serveur
-// unitaire publie son texte NU, sans préambule ni section.
+// unitaire publie son texte comme il l'entend — y compris en Markdown titré
+// `## ` : la présence d'une entête ne dit donc RIEN de la nature du serveur
+// (cf. `mcpInstructionSectionsForServer` pour ce qui en décide).
 //
 // LE PRÉAMBULE DU PROXY EST FAUX D'UN CRAN UNE FOIS PASSÉ PAR MIAOU, et c'est
 // la raison d'être de ce parsing. Le proxy écrit « les outils sont préfixés
@@ -775,10 +777,8 @@ const MCP_INSTRUCTIONS_SECTION_RE = /^##[ \t]+(.+?)[ \t]*$/;
 // Découpe un texte d'instructions en sections `## <nom>`.
 //
 // Rend `{ preamble, sections: [{ name, body }] }`. Un texte SANS aucune entête
-// `## ` (serveur unitaire) rend donc `sections: []` et tout le texte en
-// préambule — l'appelant décide quoi en faire, et c'est ce qui fait tenir le
-// cas unitaire sans branche dédiée : il n'y a pas de convention à respecter
-// pour un serveur qui n'agrège rien.
+// `## ` rend `sections: []` et tout le texte en préambule. Découpage purement
+// syntaxique : il ne décide pas si le serveur agrège — l'appelant le fait.
 //
 // Les corps de section passent VERBATIM (seuls les blancs de bord sont
 // rognés) : c'est du texte d'auteur, adressé au modèle, dont MIAOU n'a aucune
@@ -829,21 +829,39 @@ function splitMcpInstructionSections(text) {
 // lit à chaque tour « avant tout appel d'un outil `bench__…` » sous un titre qui
 // lui dit `<carte>__bench` — et c'est précisément le bloc des skills du proxy
 // qui porte ces noms. Le reste du texte passe verbatim.
+//
+// CE QUI FAIT UN AGRÉGATEUR, CE SONT SES OUTILS, PAS SON TEXTE. Une entête
+// `## ` n'est pas un signal : un serveur unitaire qui structure ses consignes
+// en Markdown en porte aussi, et les traiter en sections d'agrégateur jetait
+// tout son préambule — à l'écran comme pour le modèle — et rattachait le reste
+// à un préfixe `<slug>__<titre>` qui ne couvre aucun outil. Le texte n'est donc
+// découpé que si au moins une section a pour préfixe un namespace RÉEL des
+// outils exposés par la carte (`toolNames`, noms complets `<slug>__…`), calculé
+// par `groupByNamespace` — le prédicat même du drawer, où la consigne doit
+// tomber. Sinon c'est une consigne unitaire : le texte ENTIER, verbatim, sous
+// le slug. Sans outils connus (`toolNames` absent ou vide), rien ne prouve
+// l'agrégation : unitaire.
 // Pure, testable en QuickJS.
-function mcpInstructionSectionsForServer(slug, instructions) {
+function mcpInstructionSectionsForServer(slug, instructions, toolNames) {
   const name = typeof slug === 'string' ? slug.trim() : '';
   const text = typeof instructions === 'string' ? instructions.trim() : '';
   if (!name || !text) return [];
   const split = splitMcpInstructionSections(text);
-  if (split.sections.length) {
+  const namespaces = {};
+  const defs = (Array.isArray(toolNames) ? toolNames : [])
+    .filter(n => typeof n === 'string')
+    .map(n => ({ name: n }));
+  for (const g of groupByNamespace(defs)) namespaces[g.namespace] = true;
+  const aggregated = split.sections.some(s =>
+    Object.prototype.hasOwnProperty.call(namespaces, name + '__' + s.name));
+  if (aggregated) {
     return split.sections.map(s => ({
       prefix: name + '__' + s.name,
       body: rewriteMcpUpstreamToolPrefixes(s.body, name, s.name),
     }));
   }
   // Serveur unitaire : le texte entier est la consigne, le préfixe est le slug.
-  if (!split.preamble) return [];
-  return [{ prefix: name, body: split.preamble }];
+  return [{ prefix: name, body: text }];
 }
 
 // Bloc `<miaou_mcp_instructions>` injecté dans le MESSAGE SYSTÈME
@@ -857,7 +875,8 @@ function mcpInstructionSectionsForServer(slug, instructions) {
 // coûtent une invalidation ponctuelle au geste, que le piège 16 accepte (il vise
 // les invalidations RÉCURRENTES).
 //
-// `servers` : `[{ slug, instructions }]`, dans l'ordre de configuration.
+// `servers` : `[{ slug, instructions, toolNames }]`, dans l'ordre de
+// configuration (cf. `mcpInstructionSources`, mcp.js).
 // Rend '' quand aucun serveur ne publie rien — le cas majoritaire, et pas un
 // token dépensé pour une liste vide.
 // Pure, testable en QuickJS.
@@ -866,7 +885,7 @@ function buildMcpInstructionsBlock(servers) {
   const blocks = [];
   for (const s of list) {
     if (!s) continue;
-    for (const sec of mcpInstructionSectionsForServer(s.slug, s.instructions)) {
+    for (const sec of mcpInstructionSectionsForServer(s.slug, s.instructions, s.toolNames)) {
       blocks.push('## ' + sec.prefix + '\n\n' + sec.body);
     }
   }
@@ -892,7 +911,7 @@ function buildMcpInstructionsBlock(servers) {
 // exactement le `namespace` que `groupByNamespace` (tools.js) rend au drawer :
 // l'appelant fait un lookup direct, sans reconstruire le nom.
 //
-// `servers` : `[{ slug, instructions }]` (cf. `mcpInstructionSources`, mcp.js).
+// `servers` : `[{ slug, instructions, toolNames }]` (cf. `mcpInstructionSources`, mcp.js).
 // Rend un objet nu, vide quand personne ne publie rien.
 // Pure, testable en QuickJS.
 function mcpInstructionsByPrefix(servers) {
@@ -900,7 +919,7 @@ function mcpInstructionsByPrefix(servers) {
   const out = {};
   for (const s of list) {
     if (!s) continue;
-    for (const sec of mcpInstructionSectionsForServer(s.slug, s.instructions)) {
+    for (const sec of mcpInstructionSectionsForServer(s.slug, s.instructions, s.toolNames)) {
       // Premier gagnant : deux cartes ne peuvent pas porter le même slug (le
       // préfixe est unique par construction), donc la collision n'existe pas —
       // mais si elle survenait, écraser silencieusement serait pire qu'ignorer.
