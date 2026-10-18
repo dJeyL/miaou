@@ -652,6 +652,18 @@ Si aucun serveur n'est configuré, ces capacités ne sont simplement pas là ; l
 reste de MIAOU fonctionne normalement. Un serveur injoignable est ignoré sans
 bloquer les autres : ses outils disparaissent, les autres serveurs continuent.
 
+**Choisir les serveurs d'une conversation.** La pilule « n MCP » au-dessus du
+champ de saisie liste les serveurs compagnons, et ceux qu'un proxy regroupe
+sous lui. Un serveur décoché est retiré du contexte du modèle : ni ses outils,
+ni ses consignes, ni ses skills ne lui sont plus envoyés, et le modèle ne peut
+plus l'appeler ; l'inspecteur de contexte en tient compte. Un choix fait sur
+une conversation vierge devient le réglage par défaut des nouvelles
+conversations ; fait dans une conversation déjà commencée, il ne vaut que pour
+elle, à partir du message suivant. Chaque conversation garde le choix qu'elle
+avait à son premier message. Un serveur nouvellement ajouté est coché
+d'office. Un agent lancé par le modèle reçoit les mêmes serveurs que sa
+conversation.
+
 **Quand un serveur ne répond pas.** Une pastille rouge apparaît en haut à droite
 (« 1 serveur injoignable ») et t'emmène sur la liste des serveurs compagnons.
 C'est le cas courant quand un serveur tourne sur ta machine et n'est pas encore
@@ -990,7 +1002,8 @@ Les **vrais leviers** pour alléger ce qui part à chaque tour :
   déjà une optimisation intégrée.
 - **Serveurs compagnons** : chaque serveur branché ajoute la définition de ses
   outils au contexte, et éventuellement ses consignes d'usage (sujet `mcp`). En
-  débrancher un allège la liste d'outils envoyée.
+  débrancher un, ou le décocher pour la seule conversation en cours avec la
+  pilule « n MCP » du composer, allège la liste d'outils envoyée.
 
 Note sur le **cache KV** : MIAOU est conçu pour que la partie stable du contexte
 reste **identique octet pour octet** d'un tour à l'autre, et place en préfixe
@@ -1017,7 +1030,7 @@ serveur.
 
 Certains gestes cassent volontairement ce préfixe stable, parce que le contexte
 change réellement : changer d'Espace actif, modifier tes instructions système,
-brancher ou débrancher un serveur compagnon, activer une skill ou approuver
+brancher, débrancher, cocher ou décocher un serveur compagnon, activer une skill ou approuver
 celle d'un serveur, déposer un
 fichier dans la bibliothèque. C'est attendu, et sans conséquence durable — le
 préfixe se re-stabilise dès le tour suivant.
@@ -1334,6 +1347,14 @@ Quelques repères pour te déplacer dans MIAOU :
   niveaux acceptés, le sélecteur ne propose plus qu'eux, et l'inspecteur les
   montre comme « appris d'un refus ». Les niveaux déclarés apparaissent
   aussi dans l'inspecteur de contexte, sur la ligne des capacités.
+- **Sélecteur de serveurs MCP** (affiché dès qu'un serveur compagnon est
+  configuré ; se masque dans Paramètres › Outils & extensions) : la pilule à
+  la clé à molette, à gauche du niveau de raisonnement, indique combien de
+  serveurs sont actifs (« 3 MCP ») et permet de cocher ou décocher chacun. Les
+  serveurs regroupés derrière un proxy sont listés en retrait sous lui, et se
+  cochent un par un ; décocher le proxy les coupe tous, en gardant leurs cases
+  telles quelles pour quand tu le recocheras. Voir le sujet `mcp` pour ce que
+  change un serveur décoché.
 - **Modèles d'un serveur** (Paramètres › Connexion › Gérer les serveurs API,
   sur chaque fiche) : un
   tableau repliable « Modèles » liste tous les modèles du serveur, avec ce que

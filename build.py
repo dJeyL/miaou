@@ -28,6 +28,7 @@ JS_ORDER = [
     'resources.js',
     'skills.js',
     'mcp-skills.js',
+    'mcp-select.js',
     'mcp.js',
     'tools.js',
     'api.js',

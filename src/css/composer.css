@@ -263,6 +263,11 @@
   cursor: pointer;
   margin-left: auto;   /* colle la pilule à droite quand elle n'est précédée d'aucune marge auto (raisonnement masqué) */
   overflow: hidden;    /* la barre de cache reste sous le rayon des bords */
+  /* Jamais sur deux lignes : quand la rangée manque de place (nom de modèle
+     très long, plusieurs pilules), c'est le bouton de modèle qui cède — il
+     tronque son libellé —, pas les pilules courtes qui le suivent. */
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
 }
 /* Liseré de cache, en bas de la pilule (miroir compact de .ctx-bar-cache dans
@@ -276,12 +281,16 @@
   background: var(--ctx-cache);
   transition: width 140ms var(--ease);
 }
-/* Quand le sélecteur de raisonnement est visible juste avant, c'est LUI qui
-   porte la marge auto (il ouvre l'espace flexible) et la pilule de contexte le
-   suit collée via le gap. Deux margin-left:auto consécutifs répartiraient
-   l'espace libre en deux, poussant le raisonnement au milieu au lieu de le
-   grouper à droite avec le contexte. */
-.pill-select:not([hidden]) + .ctx-counter { margin-left: 0; }
+/* Quand au moins un sélecteur pilule est visible avant, c'est le PREMIER qui
+   porte la marge auto (il ouvre l'espace flexible) et les suivants le suivent
+   collés via le gap. Deux (ou trois) margin-left:auto consécutifs répartiraient
+   l'espace libre entre eux, poussant les pilules au milieu au lieu de les
+   grouper à droite avec le contexte. D'où le combinateur GÉNÉRAL (~) et la
+   règle pilule-suit-pilule : sur un composer où seuls `.model` et la pilule de
+   contexte sont là, ou sur celui où MCP ET raisonnement le sont, le compte de
+   porteurs de marge auto reste à un. */
+.pill-select:not([hidden]) ~ .pill-select { margin-left: 0; }
+.pill-select:not([hidden]) ~ .ctx-counter { margin-left: 0; }
 .ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
 .ctx-counter.ctx-counter-warn { color: var(--ctx-warn); border-color: var(--ctx-warn-bd); background: var(--ctx-warn-dim); }
 .ctx-counter.ctx-counter-over { color: var(--ctx-over); border-color: var(--ctx-over-bd); background: var(--ctx-over-dim); }
@@ -379,7 +388,7 @@
    sélecteur de raisonnement du composer, celui des réglages globaux, et
    cfgPillSelect (formulaires de cartes, filtres) — même mécanique que .composer-model,
    liste statique de valeurs fixes, pas de fetch, pas de recherche. */
-.pill-select { position: relative; margin-left: auto; display: flex; }
+.pill-select { position: relative; margin-left: auto; display: flex; flex-shrink: 0; }
 .pill-select[hidden] { display: none; }
 .pill-select-btn {
   display: inline-flex;
@@ -397,6 +406,7 @@
   border-radius: 100px;
   cursor: pointer;
   max-width: 100%;
+  white-space: nowrap;   /* « 5 MCP » ne se casse jamais en deux lignes (cf. .ctx-counter) */
   transition: background 140ms var(--ease);
 }
 .pill-select-btn:hover { background: var(--accent-bd); }
@@ -409,6 +419,7 @@
 }
 .pill-select-btn.is-default:hover { background: var(--border); }
 .pill-select-btn .reasoning-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
+.pill-select-btn .mcp-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
 .pill-select-btn .chev { width: 12px; height: 12px; opacity: .7; }
 #composer-reasoning-menu {
   top: auto;
@@ -420,6 +431,28 @@
   transform: translateY(4px);
 }
 #composer-reasoning-menu.show { transform: none; }
+/* Menu du sélecteur MCP : même anatomie que celui du raisonnement (ouvert
+   AU-DESSUS de la pilule), un peu plus large — les lignes portent un nom et,
+   pour un agrégateur, un enfant décalé et une mention d'état. */
+#composer-mcp-menu {
+  top: auto;
+  bottom: calc(100% + 4px);
+  left: auto;
+  right: 0;
+  min-width: 160px;
+  max-width: 260px;
+  transform: translateY(4px);
+}
+#composer-mcp-menu.show { transform: none; }
+/* Enfant d'un serveur agrégateur : décalé sous sa carte, pour que la
+   hiérarchie se lise sans avoir à interpréter les noms. */
+#composer-mcp-menu .mcp-child { padding-left: 22px; }
+/* Nœud NON modifiable (enfant d'une carte coupée, cf. mcpNodeEditable) : grisé,
+   jamais masqué ni décoché — son propre état est conservé pour la prochaine
+   réactivation de la carte. */
+#composer-mcp-menu .mcp-node-locked { opacity: .5; cursor: default; }
+/* Mention discrète après le nom (« hors ligne », « à autoriser »). */
+#composer-mcp-menu .mcp-node-status { color: var(--text-3); font-size: 10px; }
 .pill-select.is-compact { margin-left: 0; flex-shrink: 0; }
 /* Dropdowns de formulaire (cfgPillSelect : Vision, Disponibilité, Transport MCP,
    destination du mode déplacement). Le sans-serif des OPTIONS vient désormais de

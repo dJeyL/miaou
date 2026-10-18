@@ -245,6 +245,10 @@ Détail : [docs/skills.md](docs/skills.md).
   sur la carte du serveur concerné — sans attendre qu'un appel échoue ; si
   l'appel a lieu avant, la ligne d'appel porte elle aussi le lien. Seul
   l'utilisateur peut l'accorder ; le modèle n'a aucun outil pour le faire.
+- Une pilule du composer coupe ou rétablit chaque serveur, et chacun de ceux
+  qu'agrège un proxy, pour la conversation en cours ou comme défaut des
+  nouvelles : un serveur coupé n'envoie plus ni outils, ni consignes, ni skills
+  — cf. `docs/mcp.md`.
 - Un serveur peut publier une consigne valant pour l'ensemble de ses outils
   (champ `instructions` du protocole) : MIAOU la transmet au modèle rattachée au
   préfixe des outils qu'elle couvre, jamais aux autres.

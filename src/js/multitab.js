@@ -399,6 +399,17 @@ function applySyncedSettings(keys) {
   // Serveurs MCP : re-render cartes (les outils distants se rebranchent à la
   // prochaine reconnexion manuelle ; pas de reconnexion auto imposée ici).
   if (set.has('mcp-servers') && typeof renderMcpServers === 'function') renderMcpServers();
+  // Sélecteur MCP du composer : la pilule (`syncMcpSelectorUI`) et le menu
+  // relisent les serveurs et les défauts globaux à chaque appel. Re-rendre après
+  // une écriture d'un pair (serveurs, défauts, visibilité), et le menu s'il est
+  // ouvert — sans quoi il montrerait encore l'état d'avant.
+  if (set.has('mcp-disabled-defaults') || set.has('mcp-servers') || set.has('showMcpSelector')) {
+    if (typeof syncMcpSelectorUI === 'function') syncMcpSelectorUI();
+    const mcpMenu = $('composer-mcp-menu');
+    if (mcpMenu && mcpMenu.classList.contains('show') && typeof renderComposerMcpOptions === 'function') {
+      renderComposerMcpOptions();
+    }
+  }
   // Approbations de skills MCP : les rangées de la fiche relisent la table à
   // chaque rendu, et la lecture d'une skill la relit à chaque appel — seul
   // l'affichage est à rafraîchir.

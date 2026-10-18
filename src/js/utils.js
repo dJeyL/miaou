@@ -879,13 +879,29 @@ function mcpInstructionSectionsForServer(slug, instructions, toolNames) {
 // configuration (cf. `mcpInstructionSources`, mcp.js).
 // Rend '' quand aucun serveur ne publie rien — le cas majoritaire, et pas un
 // token dépensé pour une liste vide.
+//
+// `disabled` (facultatif, liste de clés DÉSACTIVÉES du sélecteur de serveurs,
+// mcp-select.js) : quand elle est fournie, tout serveur dont le slug y figure et
+// toute section dont le préfixe est INACTIF au sens de `mcpNodeActive` en sont
+// omis. Couper une carte cachait sinon au modèle des consignes dont il n'a plus
+// les outils ; à l'inverse, injecter l'usage d'un outil absent est pire que le
+// silence. Absente ou non tableau, la sortie est strictement celle d'avant.
+//
+// PIÈGE : ne JAMAIS filtrer `toolNames` avant l'appel ci-dessous. C'est la
+// présence d'outils `<carte>__<enfant>__…` qui fait reconnaître un agrégateur à
+// `mcpInstructionSectionsForServer` ; retirer les outils d'un enfant coupé la
+// fait basculer en mode « serveur unitaire » et rend le texte ENTIER, section
+// coupée comprise. On calcule donc TOUTES les sections, puis on les filtre.
 // Pure, testable en QuickJS.
-function buildMcpInstructionsBlock(servers) {
+function buildMcpInstructionsBlock(servers, disabled) {
   const list = Array.isArray(servers) ? servers : [];
+  const off = Array.isArray(disabled) ? disabled : null;
   const blocks = [];
   for (const s of list) {
     if (!s) continue;
+    if (off && !mcpNodeActive(s.slug, off)) continue;
     for (const sec of mcpInstructionSectionsForServer(s.slug, s.instructions, s.toolNames)) {
+      if (off && !mcpNodeActive(sec.prefix, off)) continue;
       blocks.push('## ' + sec.prefix + '\n\n' + sec.body);
     }
   }

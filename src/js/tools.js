@@ -922,6 +922,15 @@ async function readMcpSkillForModel(target, c) {
   const name = target.entry.name;
   const server = getMcpServer(card);
   if (!server || server.enabled === false) return toolFail('skills__read', 'Serveur MCP inconnu ou désactivé : ' + card);
+  // Carte ou enfant coupé par le sélecteur du composer pour la conversation qui
+  // demande : même refus que le serveur absent. La lecture directe par (server,
+  // uri) est ainsi fermée au même titre que la liste (`skills__list`).
+  const disabledKeys = mcpDisabledFor(c);
+  if (!mcpSkillAllowed(card, target.entry.uri, disabledKeys)) {
+    const cut = disabledKeys.find(k => typeof k === 'string' && k && k.indexOf(card + '__') === 0
+      && target.entry.uri.indexOf('skill://' + k.slice(card.length + 2) + '/') === 0);
+    return toolFail('skills__read', 'Serveur MCP inconnu ou désactivé : ' + (cut || card));
+  }
   const skillIdentity = { server: card, uri: target.entry.uri };
   if (!target.isSkillMd && !skillReadSince(skillIdentity, toolConvThread(c && c.convId), _pendingToolAcks)) {
     return toolFail('skills__read', 'Refusé : lis d\'abord la skill elle-même avec ' +
@@ -1860,12 +1869,15 @@ const TOOLS = [
       "ni modifiable ni supprimable — miaou__skills__write la refuse.",
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false },
-    handler: () => {
+    handler: (args, ctx) => {
       // listEnabledSkills (skills.js) lit le cache mémoire — synchrone.
       // Skills servies par les serveurs MCP connectés en queue, marquées
-      // `source: 'mcp'` et sans slug (cf. mcpSkillListEntries).
+      // `source: 'mcp'` et sans slug (cf. mcpSkillListEntries). Une skill d'une
+      // carte (ou d'un enfant) coupée par le sélecteur du composer n'est PAS
+      // listée : lister ce que le serveur ne sert plus enverrait le modèle
+      // appeler une lecture qui sera refusée.
       const list = listEnabledSkills().map(s => ({ slug: s.slug, name: s.name, description: s.description, system: s.system === true }))
-        .concat(mcpSkillListEntries(mcpSkillCatalogues()));
+        .concat(filterMcpSkillEntries(mcpSkillListEntries(mcpSkillCatalogues()), mcpDisabledFor(ctx)));
       _pendingToolAcks.push({ kind: 'skill_list', count: list.length });
       return JSON.stringify(list);
     },
@@ -2930,7 +2942,7 @@ const TOOLS = [
       if (limitError) return toolFail('agent__spawn', limitError);
       // Validation de la liste d'outils déléguée : nom inconnu → refus listant
       // les noms valides (referme la découverte sans outil dédié).
-      const v = validateAgentToolList(args && args.tools, agentDelegatableToolNames());
+      const v = validateAgentToolList(args && args.tools, agentDelegatableToolNames(c));
       if (!v.ok) return toolFail('agent__spawn', v.error);
       // Un outil délégué qui exige une skill emmène l'outil de lecture avec lui
       // (withSkillReaderIfGated) : le retour l'annonce, l'agent l'a vraiment.
@@ -3117,8 +3129,12 @@ const TOOLS = [
 // (X-b), les trois autres parce qu'un agent n'a pas d'enfants à consulter — les
 // lui donner serait annoncer une capacité sans handle atteignable
 // (project_model_facing_text_indicative_and_reachable).
-function agentDelegatableToolNames() {
-  return exposedTools().map(t => t.name).filter(n => n.indexOf('miaou__agent__') !== 0);
+//
+// `ctx` (optionnel) : la liste suit `exposedTools`, donc la sélection MCP de la
+// conversation qui SPAWNE. Un agent ne peut pas recevoir d'outil d'un serveur que
+// son parent a coupé — la validation et la trousse liront la même sélection.
+function agentDelegatableToolNames(ctx) {
+  return exposedTools(ctx).map(t => t.name).filter(n => n.indexOf('miaou__agent__') !== 0);
 }
 
 // Défaut de reasoning_effort annoncé ET appliqué (X-h). UNE fonction pour les
@@ -3247,7 +3263,12 @@ function exposedTools(ctx) {
       inputSchema: dyn ? dyn.inputSchema : t.inputSchema,
     };
   });
-  return internal.concat(remoteToolDefs());
+  // Les outils DISTANTS passent par le filtre de sélection de la conversation
+  // (`mcpDisabledFor`, mcp-select.js) : un serveur ou un enfant coupé par le
+  // sélecteur du composer n'est plus proposé au modèle — il n'est pas
+  // « appelable et refusé ». `ctx` optionnel, même repli documenté que le reste
+  // (drawer d'outils : il décrit, il ne s'exécute pas).
+  return internal.concat(filterMcpToolDefs(remoteToolDefs(), mcpDisabledFor(ctx)));
 }
 
 // ── Contexte d'exécution d'un outil (lot T-1c) ──────────────────────────────
@@ -3380,11 +3401,23 @@ function callTool(name, args, ctx) {
   if (!server || server.enabled === false) {
     return { content: [{ type: 'text', text: 'Serveur MCP inconnu ou désactivé : ' + parsed.serverPrefix }], isError: true };
   }
+  // Carte (ou enfant d'agrégateur) COUPÉE pour CETTE conversation par le
+  // sélecteur du composer : même refus que « inconnu ou désactivé », parce que
+  // c'est le même fait vu du modèle — l'outil n'est pas à sa disposition. Le
+  // préfixe annoncé est la CLÉ désactivée qui l'écarte (`p` pour la carte,
+  // `p__bench` pour l'enfant), sinon le nom de la carte. Pas d'ack : comme le
+  // serveur inconnu, le refus vient d'un appel que le modèle ne devrait pas
+  // tenter (l'outil est ABSENT de sa liste, cf. `exposedTools`).
+  const fullName = server.name + '__' + parsed.toolName;
+  const disabledKeys = mcpDisabledFor(ctx);
+  if (!mcpToolAllowed(fullName, disabledKeys)) {
+    const cut = disabledKeys.find(k => typeof k === 'string' && k && fullName.indexOf(k + '__') === 0);
+    return { content: [{ type: 'text', text: 'Serveur MCP inconnu ou désactivé : ' + (cut || server.name) }], isError: true };
+  }
   const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
   // Garde des skills MCP exigées (`requiresSkill` du `_meta` de l'outil). Ici,
   // entre la résolution du serveur et l'appel, et non dans un handler : un outil
   // distant n'en a pas, et rien d'autre ne se tranche avant lui.
-  const fullName = server.name + '__' + parsed.toolName;
   const refusal = mcpRemoteSkillGateRefusal(server.name, remoteToolRequiresSkill(fullName),
     mcpSkillCatalogues(), toolConvThread(toolCtx(ctx).convId), _pendingToolAcks);
   if (refusal) {
@@ -4097,8 +4130,14 @@ function intentDoctrinePrompt() {
 // le bloc peut n'en lister que des MCP. La base nomme alors leur forme de
 // lecture, sans quoi « avec son slug » renverrait le modèle chercher un slug
 // qu'elles n'ont pas.
-function skillDoctrinePrompt() {
-  const served = approvedMcpSkillsForContext().length > 0;
+//
+// `servedSkills` optionnel : la liste MCP DÉJÀ FILTRÉE par la sélection du
+// sélecteur (systemMessageParts la calcule une fois et la passe ici et à
+// buildSkillsContextBlock, pour que les deux lisent le même état). Sans
+// argument, lecture directe — et le drapeau MCP retombe alors à faux quand la
+// simple coupure d'une carte retire la dernière skill servie.
+function skillDoctrinePrompt(servedSkills) {
+  const served = (servedSkills || approvedMcpSkillsForContext()).length > 0;
   if (!getAutotriggerSkillsMeta().length && !served) return '';
   return (served ? SKILL_DOCTRINE_BASE_MCP : SKILL_DOCTRINE_BASE) + SKILL_DOCTRINE_CONFIRM_OFF + SKILL_DOCTRINE_TAIL;
 }

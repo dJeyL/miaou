@@ -148,6 +148,9 @@ function storageEventDecision(key, oldValue, newValue) {
   if (key === ACTIVE_API_SERVER_KEY) return { action: 'apply-settings', keys: ['active-api-server'] };
   if (key === MCP_SERVERS_KEY) return { action: 'apply-settings', keys: ['mcp-servers'] };
   if (key === MCP_SKILL_APPROVALS_KEY) return { action: 'apply-settings', keys: ['mcp-skill-approvals'] };
+  // Clé localStorage : le message du canal peut arriver AVANT que ce pair voie
+  // l'écriture ; l'événement `storage` est le second chemin de relecture.
+  if (key === MCP_DISABLED_DEFAULTS_KEY) return { action: 'apply-settings', keys: ['mcp-disabled-defaults'] };
   if (key === SPACES_KEY) return { action: 'space-list' };
   if (key === UNREAD_CONVS_KEY) return { action: 'unread-list' };
   return null;

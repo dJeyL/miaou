@@ -214,6 +214,10 @@ describe('storageEventDecision (relecture sur événement storage)', function() 
     expect(storageEventDecision(MCP_SERVERS_KEY, '[]', '[{}]').keys.join(',')).toBe('mcp-servers');
     expect(storageEventDecision(SPACES_KEY, '[]', '[{}]').action).toBe('space-list');
   });
+  it('défauts MCP : la même décision que le message du canal', function() {
+    expect(storageEventDecision(MCP_DISABLED_DEFAULTS_KEY, '[]', '["p"]'))
+      .toEqual({ action: 'apply-settings', keys: ['mcp-disabled-defaults'] });
+  });
   it('autre clé, ou clear() (clé null) : rien — full-reload couvre l\'import', function() {
     expect(storageEventDecision('miaou-memories', '[]', '[{}]')).toBe(null);
     expect(storageEventDecision(null, null, null)).toBe(null);

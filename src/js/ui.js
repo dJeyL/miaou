@@ -4556,13 +4556,13 @@ function setConvReadonly(on) {
   if (on) {
     if (ta) ta.disabled = true;
     if (send) send.disabled = true;
-    // Menus de modèle/raisonnement DÉJÀ ouverts quand le verrou tombe (X-1f) :
-    // le cas arrive pour de bon — on regarde un agent finir, menu déployé. La
-    // garde d'ouverture ne les concerne plus une fois ouverts ; sans cette
-    // fermeture ils resteraient déployés et cliquables au-dessus d'un composer
-    // mort. Le rail d'interjections est re-rendu pour la même raison : sa
-    // légende et ses affordances dépendent du verrou.
-    for (const id of ['composer-model-menu', 'composer-reasoning-menu']) {
+    // Menus de modèle/raisonnement/MCP DÉJÀ ouverts quand le verrou tombe
+    // (X-1f) : le cas arrive pour de bon — on regarde un agent finir, menu
+    // déployé. La garde d'ouverture ne les concerne plus une fois ouverts ; sans
+    // cette fermeture ils resteraient déployés et cliquables au-dessus d'un
+    // composer mort. Le rail d'interjections est re-rendu pour la même raison :
+    // sa légende et ses affordances dépendent du verrou.
+    for (const id of ['composer-model-menu', 'composer-mcp-menu', 'composer-reasoning-menu']) {
       const m = $(id);
       if (m) m.classList.remove('show');
     }
@@ -5196,6 +5196,10 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('#composer-model')) {
     const cm = $('composer-model-menu');
     if (cm) cm.classList.remove('show');
+  }
+  if (!e.target.closest('#composer-mcp')) {
+    const cmcp = $('composer-mcp-menu');
+    if (cmcp) cmcp.classList.remove('show');
   }
   if (!e.target.closest('#composer-reasoning')) {
     const cr = $('composer-reasoning-menu');
@@ -6688,6 +6692,7 @@ function settingsFormDirty() {
     || $('set-modelselector').checked !== !!s.showModelSelector
     || $('set-reasoning-effort').value !== (s.reasoningEffort || '')
     || $('set-reasoningselector').checked !== !!s.showReasoningSelector
+    || $('set-mcpselector').checked !== (s.showMcpSelector !== false)
     || $('set-intent-tracing').checked !== !!s.intentTracing
     || $('set-early-title').checked !== !!s.earlyTitle
     || $('set-did-you-know').checked !== !!s.didYouKnow

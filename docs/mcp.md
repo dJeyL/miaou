@@ -1450,6 +1450,62 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       un état relu se font par une boucle côté Node, un prédicat async de
       `waitForFunction` ayant passé au vert sans que sa condition soit vraie.
 
+25. **Sélecteur de serveurs par conversation (`mcp-select.js`).** La pilule
+    « n MCP » du composer coupe une carte, ou un enfant d'agrégateur, pour une
+    conversation. Les décisions qui la gouvernent :
+
+    - **L'état est une liste de clés DÉSACTIVÉES** (`<carte>` ou
+      `<carte>__<enfant>`), jamais de clés actives : tout ce qui est absent est
+      actif, y compris une carte jamais vue — elle arrive cochée sans geste.
+      Couper une carte coupe ses enfants par DÉDUCTION (`mcpNodeActive`), sans
+      écrire leurs clés : leur état survit à la réactivation, et un enfant
+      d'une carte coupée n'est pas modifiable (`mcpNodeEditable`).
+    - **Un enfant est un sous-namespace d'outil**, pas un nom de serveur :
+      deuxième segment de `<carte>__<enfant>__<outil>`, plus les upstreams de
+      `miaou/unauthorized_upstreams` qui n'exposent encore rien
+      (`mcpServerChildren`). Même prédicat que le découpage des consignes
+      (point 17) ; aucun nom de proxy n'est reconnu en dur. Une skill est d'un
+      enfant quand son URI commence par `skill://<enfant>/`.
+    - **Une seule lecture : `mcpDisabledFor(ctx)`** — génération en vol de
+      `ctx.convId` (sélection figée à `createGeneration`), sinon variable
+      d'écran `currentConvMcpDisabled` pour la conversation affichée, sinon
+      `conv.mcpDisabled`, sinon les défauts `miaou-mcp-disabled`
+      (localStorage). Tous les filtres la lisent : `exposedTools(ctx)`, le
+      refus de `callTool` (texte du serveur inconnu, aucun appel réseau), la
+      validation d'`agent__spawn`, `skills__list`, `readMcpSkillForModel`, et
+      dans `systemMessageParts(ctx)` les consignes
+      (`buildMcpInstructionsBlock(…, disabled)`), le contexte skills et la
+      doctrine skills, à qui la MÊME liste filtrée est passée. Le filtre de
+      consignes calcule les sections sur les `toolNames` COMPLETS puis les
+      écarte : filtrer les outils avant ferait retomber l'agrégateur en serveur
+      unitaire et renvoyer le texte entier.
+    - **Où s'écrit le choix** : conversation vierge (fil vide) → défauts
+      globaux ; sinon `conv.mcpDisabled` par `persistConversationField`.
+      `persistGeneration`/`persistCurrent` ne posent le champ que s'il est
+      ABSENT (copie au premier envoi) et ne l'écrasent jamais : une génération
+      qui finit ne restaure pas la sélection d'avant un geste fait pendant
+      qu'elle tournait.
+    - **Agents** : `createAgentGeneration` passe la sélection du parent ; le
+      message système d'un agent et d'un parent réveillé est construit sur le
+      `ctx` de SA génération, plus sur l'écran.
+    - **Interface** : la coche montre l'état PROPRE du nœud, le compte de la
+      pilule l'activité déduite (`countActiveMcp`). Le menu préfère la variable
+      d'écran à la génération en vol (`mcpDisabledOnScreen`) : il montre le
+      prochain envoi, pas l'échange en cours. Rafraîchi à la fin de
+      `connectMcpServer`/`disconnectMcpServer` (là où les outils changent) et,
+      chez les pairs, par `apply-settings` (`mcp-disabled-defaults`, relu aussi
+      sur l'événement `storage`). Réglage d'affichage `showMcpSelector`, vrai
+      par défaut : la pilule est de toute façon masquée sans carte activée.
+    - **Cache KV** : la sélection change le message système et `tools` d'une
+      conversation au geste seulement — invalidation ponctuelle (piège 16).
+    - Les défauts ne sont pas dans `EXPORT_KEYS` : une sauvegarde `.zip` ne les
+      emporte pas.
+    - **Verify** : `.claude/skills/run-miaou/verify-mcp-selector.mjs` — menu
+      cliqué (ordre, retrait, enfants figés, teinte à « 0 MCP »), enregistrement
+      vierge contre non vierge, corps envoyé (outils, consignes), inspecteur, et
+      refus d'un appel à un outil coupé sans appel réseau, avec un outil autorisé
+      pour témoin. Rejoué contre six régressions injectées, rouge à chaque fois.
+
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 
 Le lot V a rapatrié dans le navigateur ce que `mcp_docs` savait faire — le zip

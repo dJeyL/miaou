@@ -129,6 +129,12 @@ let needTitle = false;    // titrage auto en attente (conversation neuve)
 let titleBefore = '';
 let currentConvModel = '';  // override de modèle de la conversation courante ('' = modèle par défaut)
 let currentConvReasoningEffort = '';  // override de reasoning_effort de la conversation courante ('' = défaut, pas de paramètre)
+// Sélection de serveurs MCP de la conversation courante : liste de clés
+// DÉSACTIVÉES (mcp-select.js), `null` quand la conversation ne porte rien de
+// propre ET suit donc les défauts globaux. Version d'ÉCRAN de la sélection :
+// la génération en vol a la sienne, figée à sa création (`gen.mcpDisabled`), et
+// `mcpDisabledFor` la préfère pour tout ce qui construit un payload.
+let currentConvMcpDisabled = null;
 let pendingAttachments = [];   // pièces jointes du composer, en attente d'envoi (cf. §Pièces jointes)
 let attachIngestInFlight = 0;  // ingestions en cours (garde anti-course : envoi refusé tant que ≠ 0)
 let _sendResolving = false;    // verrou anti double-envoi pendant l'await resolveSend — cf. sendMessage
@@ -195,6 +201,15 @@ function createGeneration(convId, thread, opts) {
     reasoningEffort: o.reasoningEffort || '',
     convModel: currentConvModel,                    // override de conv, figé (persistGeneration ne lit pas l'écran)
     convReasoningEffort: currentConvReasoningEffort,
+    // Sélection de serveurs MCP FIGÉE au démarrage, comme le modèle et le
+    // niveau de raisonnement : c'est elle qui filtre les outils de CET échange
+    // (mcpDisabledFor, mcp-select.js), même si l'utilisateur rebascule le
+    // sélecteur pendant que la génération tourne. Un appelant peut la POSER
+    // (`o.mcpDisabled`, ex. un agent qui hérite de son parent) : elle est alors
+    // prise telle quelle, normalisée. Sinon `mcpDisabledFor` lit la conversation
+    // affichée ou le record au moment de la création (aucune génération n'existe
+    // pour ce convId — enregistrement APRÈS construction).
+    mcpDisabled: Array.isArray(o.mcpDisabled) ? normalizeMcpDisabled(o.mcpDisabled) : mcpDisabledFor({ convId: convId }),
     needTitle: needTitle,                           // besoin de titrage figé au démarrage (piège 9 : ne pas lire l'écran à la fin)
     abort: null,                                    // AbortController du stream courant (posé par streamCompletion)
     stopRequested: false,                           // Stop cliqué pendant un tour d'outils (gen.abort momentanément null) : honoré à la frontière de tour suivante (runConversation)
@@ -1101,6 +1116,11 @@ function persistGeneration(gen) {
   conv.updatedAt = Date.now();
   if (gen.convModel) conv.model = gen.convModel; else delete conv.model;
   if (gen.convReasoningEffort) conv.reasoningEffort = gen.convReasoningEffort; else delete conv.reasoningEffort;
+  // Sélection MCP : recopiée sur la conversation UNIQUEMENT si elle n'en porte
+  // pas encore (premier enregistrement). Une conversation qui a déjà la sienne
+  // ne doit JAMAIS être écrasée par le gel d'une génération — même règle que le
+  // sélecteur, seul écrivain autorisé à modifier une sélection existante.
+  if (!Array.isArray(conv.mcpDisabled) && Array.isArray(gen.mcpDisabled)) conv.mcpDisabled = gen.mcpDisabled.slice();
   saveConversation(conv);
   renderConvList();
 }
@@ -1542,8 +1562,14 @@ function buildSpaceBlock(space, libraryNote, memories) {
 // libellé et sa tooltip décrivent ce que le bloc porte dans l'état courant,
 // jamais ce qu'il peut porter. D'où les métadonnées de forme `libraryForm` et
 // `skillsContextForm` ci-dessous. Cf. docs/context-inspector.md.
-function systemMessageParts() {
+function systemMessageParts(ctx) {
   const settings = loadSettings();
+  // Sélection MCP de la conversation POUR LAQUELLE ce message est construit
+  // (`ctx` transmis par dispatchSend). Un seul calcul, réutilisé par les trois
+  // parts MCP ci-dessous (consignes, contexte skills, doctrine skills) : les
+  // lire séparément laisserait l'inspecteur annoncer une forme que le bloc
+  // envoyé ne porte pas. Sans ctx, repli d'écran documenté de mcpDisabledFor.
+  const mcpDisabled = mcpDisabledFor(ctx);
   const out = {
     identity: '', root: '', intent: '',
     mcpInstructions: '', memoriesProfile: '', space: '', skillsContext: '',
@@ -1574,7 +1600,7 @@ function systemMessageParts() {
   // glisser derrière chaque nouveau message utilisateur, sans jamais bénéficier
   // du cache. Cf. la garde de position de `skillsContext` juste en dessous, et
   // `buildSystemMessage()` pour l'ordre du join.
-  out.mcpInstructions = buildMcpInstructionsBlock(mcpInstructionSources());
+  out.mcpInstructions = buildMcpInstructionsBlock(mcpInstructionSources(), mcpDisabled);
   out.memoriesProfile = buildProfileMemoriesBlock();
   const space = getSpace(activeSpaceId);
   // Bibliothèque : les deux formes sont EXCLUSIVES et vivent au même endroit,
@@ -1599,10 +1625,10 @@ function systemMessageParts() {
     : (settings.libraryManifestInContext ? 'manifest' : 'note');
   out.space = buildSpaceBlock(space, libraryNote, buildSpaceMemoriesBlock());
   const localSkills = getAutotriggerSkillsMeta();
-  const servedSkills = approvedMcpSkillsForContext();
+  const servedSkills = filterMcpSkillEntries(approvedMcpSkillsForContext(), mcpDisabled);
   out.skillsContext = buildSkillsContextBlock(localSkills, servedSkills);
   out.skillsContextForm = skillsContextFormFor(localSkills.length, servedSkills.length);
-  out.skills = skillDoctrinePrompt();
+  out.skills = skillDoctrinePrompt(servedSkills);
   out.codeblock = CODEBLOCK_DOCTRINE;
   // `null` en second argument, PAS `space` : la description de l'Espace vit
   // désormais dans `out.space` (bloc unifié ci-dessus). La lui repasser ici
@@ -1842,6 +1868,10 @@ async function openConversation(id, reveal) {
   currentThread = gen ? gen.thread : projectConvMessages(conv);
   currentConvModel = conv.model || '';
   currentConvReasoningEffort = conv.reasoningEffort || '';
+  // Sélection MCP de la conversation affichée : sa liste propre, ou `null` pour
+  // « suit les défauts globaux » quand elle n'en porte pas. Copie défensive
+  // (`.slice`) : la variable d'écran ne doit jamais aliasing le record chargé.
+  currentConvMcpDisabled = Array.isArray(conv.mcpDisabled) ? conv.mcpDisabled.slice() : null;
   needTitle = !conv.title;   // conversation rouverte sans titre (streaming arrêté, etc.) : retitrer à la reprise
   // convLabel, pas `conv.title` nu (lot X-1) : un agent n'est jamais titré, son
   // libellé EST son agentIntent. Prédicat unique, partagé avec le bandeau.
@@ -1892,6 +1922,7 @@ async function openConversation(id, reveal) {
   if (reveal) revealActiveConv('center');
   syncModelUI();
   syncReasoningUI();
+  syncMcpSelectorUI();   // libellé + visibilité du sélecteur MCP de la conversation qu'on affiche
   _lastContextManifest = null;   // switch de conv : le dernier envoi réel ne s'applique plus, retombe sur simulation
   syncContextCounter();
   // Soft-lock : annoncer la conv nouvellement affichée (déclenche le
@@ -1931,6 +1962,7 @@ function resetToEmpty() {
   currentThread = [];
   currentConvModel = '';   // nouvelle conversation → modèle par défaut
   currentConvReasoningEffort = '';   // nouvelle conversation → reasoning_effort par défaut
+  currentConvMcpDisabled = null;     // nouvelle conversation → suit les défauts globaux du sélecteur MCP
   needTitle = false;
   // Titre du welcome courant AVANT vidage : Nouvelle conversation répétée depuis
   // l'écran d'accueil re-tire un accueil DIFFÉRENT (changement visible).
@@ -1959,6 +1991,7 @@ function resetToEmpty() {
   syncActivityBadges();
   syncModelUI();
   syncReasoningUI();
+  syncMcpSelectorUI();   // accueil : défauts globaux, pilule masquée si aucune carte MCP activée
   // L'accueil ne défile pas : aucun `scroll` ne viendra rafraîchir le bouton
   // « aller tout en bas », qui resterait donc affiché avec l'état du fil
   // qu'on vient de quitter. openConversation n'a pas ce défaut (son
@@ -2269,6 +2302,10 @@ function persistCurrent() {
   conv.updatedAt = Date.now();
   if (currentConvModel) conv.model = currentConvModel; else delete conv.model;
   if (currentConvReasoningEffort) conv.reasoningEffort = currentConvReasoningEffort; else delete conv.reasoningEffort;
+  // Sélection MCP : même règle que persistGeneration — on ne pose la copie
+  // d'écran que sur une conversation qui n'en porte pas encore. Une sélection
+  // déjà enregistrée (par le sélecteur ou un tour antérieur) reste intacte.
+  if (!Array.isArray(conv.mcpDisabled) && Array.isArray(currentConvMcpDisabled)) conv.mcpDisabled = currentConvMcpDisabled.slice();
   // N'écrit AUCUN titre, et ne doit jamais en écrire. Le libellé d'attente
   // existe depuis le lot AA (`snippet`), mais il vit sur la MÉTA — écrit une
   // fois par maybeWriteSnippet via persistConversationField, jamais par cette
@@ -2335,6 +2372,7 @@ function onSaveSettings() {
     showModelSelector: $('set-modelselector').checked,
     reasoningEffort: $('set-reasoning-effort').value,
     showReasoningSelector: $('set-reasoningselector').checked,
+    showMcpSelector: $('set-mcpselector').checked,
     intentTracing: $('set-intent-tracing').checked,
     earlyTitle: $('set-early-title').checked,
     didYouKnow: $('set-did-you-know').checked,
@@ -2354,6 +2392,7 @@ function onSaveSettings() {
   syncConfigured();
   syncModelUI();        // labels + visibilité du sélecteur (selon cache déjà chargé)
   syncReasoningUI();     // visibilité + valeur du sélecteur de raisonnement
+  syncMcpSelectorUI();   // visibilité + libellé du sélecteur MCP (réglage showMcpSelector)
   prefetchModels();     // (re)charge la liste si besoin, puis re-sync
   rerenderCurrentThread();   // ré-applique/retire la coloration
   syncContextCounter();
@@ -4236,7 +4275,11 @@ async function dispatchSend(matches, continuation) {
       if (i !== lastUserAt) rewriteAttachedUserMessage(gen.thread, i);
     }
   }
-  const sysParts = systemMessageParts();
+  // Le contexte de la GÉNÉRATION, pas de l'écran : la sélection MCP et les
+  // descriptions dynamiques sont celles figées par `gen` (créé juste au-dessus),
+  // donc `mcpDisabledFor` lit son champ plutôt que l'état d'écran qui a pu
+  // changer depuis.
+  const sysParts = systemMessageParts({ convId: gen.convId, spaceId: gen.spaceId });
   const sys = buildSystemMessage(sysParts);
   // Résout les références de ressources ([resource_ref:…]) dans les entry.result
   // des tool-acks avant d'appeler expandThread. Inline → contenu UTF-8 décodé
@@ -5836,6 +5879,7 @@ async function init() {
   $('set-reasoning-effort').value = s.reasoningEffort || '';
   syncSettingsReasoningLabel();
   $('set-reasoningselector').checked = !!s.showReasoningSelector;
+  $('set-mcpselector').checked = !!s.showMcpSelector;
   setSummaryInjectionModeUI(s.summaryInjectionMode);
   setThemeUI(s.theme || 'system');
   applyTheme(s.theme || 'system');
@@ -5849,6 +5893,7 @@ async function init() {
   syncActiveApiServerUI();
   syncModelUI();
   syncReasoningUI();
+  syncMcpSelectorUI();
 
   // Colonne de texte d'une .check-row cliquable (cf. onCheckRowLabelClick,
   // ui.js). Délégation sur document et non sur #drawer : la structure est

@@ -300,6 +300,17 @@ if (window.requestAnimationFrame) {
             </button>
             <div class="model-menu" id="composer-model-menu"></div>
           </div>
+          <div class="pill-select" id="composer-mcp" hidden>
+            <button type="button" class="pill-select-btn" id="composer-mcp-btn" onclick="toggleComposerMcpMenu()" data-tip="Serveurs MCP de cette conversation">
+              <!-- Clé à molette : même métaphore que l'outil MCP partout ailleurs
+                   (vocabulaire d'icônes). Pas de width/height : le CSS la règle
+                   comme les autres glyphes de pilule. -->
+              <svg class="mcp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              <span id="composer-mcp-label">MCP</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="model-menu" id="composer-mcp-menu"></div>
+          </div>
           <div class="pill-select" id="composer-reasoning" hidden>
             <button type="button" class="pill-select-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" data-tip="Niveau de raisonnement de cette conversation">
               <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.2" cy="7.1" r="0.8" fill="black"/><circle cx="8" cy="7.1" r="0.8" fill="black"/><circle cx="10.8" cy="7.1" r="0.8" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
@@ -691,6 +702,17 @@ if (window.requestAnimationFrame) {
         <label>Serveurs MCP distants</label>
         <span class="hint">Délègue des appels d'outils à des serveurs MCP externes. Leurs outils sont fusionnés au registre, préfixés par le nom du serveur.</span>
         <button class="btn-ghost" onclick="openMcpServers()">Gérer les serveurs MCP</button>
+        <div class="check-row">
+          <div class="label-col">
+            <label>Sélecteur de serveurs MCP dans le composer</label>
+            <span class="hint">Permet de couper des serveurs MCP par conversation. Affiché par défaut.</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-mcpselector">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
       </div>
       <div class="field">
         <label>Skills</label>

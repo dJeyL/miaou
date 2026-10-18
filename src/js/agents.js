@@ -747,12 +747,15 @@ function runAgentGeneration(convId, thread, opts) {
   registerGeneration(gen);
   // Filet de cache pour les fichiers délégués — avant tout appel d'outil.
   rehydrateAgentDelegatedFiles(gen.agentFiles);
-  // Le payload système est celui du parent, STRICTEMENT (X-d) : buildSystemMessage()
-  // tel quel, sans filtrage, sans paramètre. Mesuré le 2026-08-30 : aucune des
-  // six parts de systemMessageParts() n'est conditionnée à la présence d'un
+  // Le payload système est celui du parent, STRICTEMENT (X-d) : mêmes parts,
+  // construites avec le contexte de SA génération. Mesuré le 2026-08-30 : aucune
+  // des six parts de systemMessageParts() n'est conditionnée à la présence d'un
   // outil, donc restreindre la trousse de l'agent ne fait pas diverger son
-  // prompt système. Le préfixe KV reste partagé avec le parent.
-  const sys = buildSystemMessage();
+  // prompt système. Le préfixe KV reste partagé avec le parent. Le `ctx` passé
+  // (et non un appel nu) est celui de la génération d'agent : la sélection MCP
+  // qu'elle a héritée est ainsi celle qui filtre les consignes et skills du
+  // message système — un appel sans argument aurait lu l'écran, pas l'agent.
+  const sys = buildSystemMessage(systemMessageParts({ convId: convId, spaceId: gen.spaceId }));
   // matches = [] : un agent n'a pas de passé, lui injecter les résumés
   // d'autres conversations serait un gonflement gratuit. Le reste du bloc
   // <miaou_context> est identique (date, souvenirs, manifeste de bibliothèque).
@@ -784,6 +787,11 @@ function createAgentGeneration(convId, thread, opts) {
   const serverId = (parentGen && parentGen.serverName) ? (parentGen.serverId || '') : ((activeApiServer() || {}).id || '');
   const gen = createGeneration(convId, thread, {
     model: model, serverName: serverName, serverId: serverId, reasoningEffort: o.reasoningEffort || '',
+    // Sélection MCP HÉRITÉE du parent, au même titre que le modèle et le serveur :
+    // l'agent reçoit la trousse d'outils du parent, donc sa sélection. `mcpDisabledFor`
+    // lit la génération PARENTE encore en vol (le spawn a lieu dans sa boucle
+    // d'outils) — sinon le record du parent, jamais l'écran.
+    mcpDisabled: o.parentConvId ? mcpDisabledFor({ convId: o.parentConvId }) : undefined,
   });
   gen.spaceId = o.spaceId || (parent && parent.spaceId) || DEFAULT_SPACE_ID;
   gen.convModel = '';                 // l'agent n'a pas d'override de conversation propre
@@ -811,8 +819,9 @@ function buildAgentApiMessages(sys, gen) {
     // MÊME géométrie que dispatchSend, et c'est un invariant (X-d). Depuis la
     // campagne cache, le contexte skills, les consignes MCP, les souvenirs de
     // profil et tout le bloc Espace vivent dans le message SYSTÈME, que l'agent
-    // hérite tel quel du parent (`buildSystemMessage()` sans argument, cf.
-    // runAgentGeneration) : il les reçoit donc sans rien reconstruire ici, et
+    // hérite tel quel du parent (`buildSystemMessage` sur le ctx de la
+    // génération, cf. runAgentGeneration) : il les reçoit donc sans rien
+    // reconstruire ici, et
     // les rajouter au préfixe les écrirait DEUX FOIS tout en rouvrant le
     // préfixe KV partagé entre parent et agent.
     const prefix = buildContextBlock([]) + '\n\n---\n\n';
@@ -1247,7 +1256,11 @@ function runDetachedGeneration(convId, thread) {
   gen.convReasoningEffort = conv.reasoningEffort || '';
   gen.needTitle = !conv.title;
   registerGeneration(gen);
-  const apiMessages = buildAgentApiMessages(buildSystemMessage(), gen);
+  // Le message système de CETTE génération, construit sur SON contexte : la
+  // conversation détachée n'est pas forcément affichée, donc un appel nu aurait
+  // lu la sélection MCP de l'écran. `gen.mcpDisabled` a été figé par
+  // createGeneration depuis le record de `convId`.
+  const apiMessages = buildAgentApiMessages(buildSystemMessage(systemMessageParts({ convId: convId, spaceId: gen.spaceId })), gen);
   driveDetachedConversation(gen, apiMessages);
   return gen;
 }

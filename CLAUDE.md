@@ -160,7 +160,9 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   distant reste dans `tools.js`, cf. `docs/mcp.md` ; `mcp-skills.js` porte les
   purs des skills SERVIES par un serveur MCP — intégrité (SHA-256, frontmatter
   strict), à distinguer de `skills.js`, qui porte les skills locales, cf.
-  `docs/skills.md` ; `export.js` porte les
+  `docs/skills.md` ; `mcp-select.js` porte le sélecteur de serveurs MCP par
+  conversation — clés désactivées, lecture unique `mcpDisabledFor(ctx)`, pilule
+  du composer —, cf. `docs/mcp.md`, point 25 ; `export.js` porte les
   exports standalone et la conversion `.md` — pièges 21 et 22 —, cf.
   `docs/exports.md` ; `acks.js` porte le rendu des traces d'outils et
   l'inspecteur d'appel, cf. `docs/tools.md` ; `multitab.js` porte la couche
@@ -610,10 +612,10 @@ ligne qui énumérait des clés `localStorage` migrées depuis vers IndexedDB.
   par conversation, drain à la frontière de tour ou en fin d'échange, puces du
   composer, bulle `_acksOnly` (piège 27), reflux et file échouée.
 - **`docs/mcp.md`** — agrégation MCP distante (`mcp.js` contre `tools.js`) :
-  transport, handshake et révision 2026-07-28 (`server/discover`,
-  `mcpProbeVerdict`), erreurs `REF_UNKNOWN` et `AUTHORIZATION_REQUIRED`, `_meta`,
-  `instructions`, pastille et reprise, skills servies, extensions du proxy :
-  mise à jour et cycle de vie (`mcp-update.js`), secrets (`mcp-secrets.js`).
+  transport, handshake et révision 2026-07-28 (`server/discover`), erreurs
+  `REF_UNKNOWN` et `AUTHORIZATION_REQUIRED`, `_meta`, `instructions`, pastille et
+  reprise, skills servies, sélecteur par conversation (`mcp-select.js`), extensions
+  du proxy : mise à jour et cycle de vie (`mcp-update.js`), secrets (`mcp-secrets.js`).
 - **`docs/model-props.md`** — propriétés déclarées des modèles (fenêtre,
   capacités, niveaux de raisonnement) lues dans les réponses `/models`,
   `/api/tags`, `/api/show`, `/api/ps` ; `resolveContextWindow`,

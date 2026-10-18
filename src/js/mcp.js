@@ -560,10 +560,17 @@ async function connectMcpServer(server) {
     if (updateDeclared && typeof onProxyUpdateServerConnected === 'function') onProxyUpdateServerConnected(s);
     if (lifecycleDeclared && typeof onProxyLifecycleServerConnected === 'function') onProxyLifecycleServerConnected(s);
     if (secretsDeclared && typeof onProxySecretsServerConnected === 'function') onProxySecretsServerConnected(s);
+    // Le sélecteur du composer liste les ENFANTS d'un agrégateur d'après les
+    // outils réellement exposés : ils n'existent qu'à partir d'ici. Garde
+    // `typeof` — mcp.js est évalué seul par le runner de tests.
+    if (typeof syncMcpSelectorUI === 'function') syncMcpSelectorUI();
     return true;
   } catch (e) {
     delete _remoteTools[s.name];
     _remoteStatus[s.name] = { state: 'error', count: 0, error: (e && e.message) || 'échec', sessionId: null };
+    // Un serveur en erreur n'expose aucun enfant : le sélecteur doit oublier
+    // les siens (et l'état « hors ligne » de la carte).
+    if (typeof syncMcpSelectorUI === 'function') syncMcpSelectorUI();
     return false;
   }
 }
@@ -678,6 +685,8 @@ function disconnectMcpServer(name) {
   // même nom hériterait sinon du throttle de son prédécesseur, et sa première
   // vérification serait muette sans raison lisible.
   delete _mcpLastAttempt[name];
+  // La carte quitte la sélection du composer : ses enfants n'ont plus d'outils.
+  if (typeof syncMcpSelectorUI === 'function') syncMcpSelectorUI();
 }
 
 // Pose / retire les marqueurs de refus d'autorisation sur un ack (campagne AB).

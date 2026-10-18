@@ -235,6 +235,12 @@ const DEFAULT_SETTINGS = {
   palette: 'ambre',        // 'ambre' | 'encre' | 'foret' (axe orthogonal au thème, lot S-a)
   fonts: 'graphite',      // 'graphite' | 'atelier' | 'chaleur' (lot de fontes, lot S-b)
   showModelSelector: false, // sélecteur serveur/modèle dans le composer
+  // Sélecteur de serveurs MCP dans le composer. Défaut TRUE (contrairement au
+  // sélecteur de raisonnement) : il ne s'affiche de toute façon que si au moins
+  // une carte MCP est activée (syncMcpSelectorUI), donc l'install neuve sans
+  // serveur ne le voit jamais ; le montrer dès qu'un serveur existe évite
+  // d'enfouir la fonctionnalité dans les réglages.
+  showMcpSelector: true,
   showConvModel: false,     // modèle à droite de l'horodatage dans la liste des conversations
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
   colWidth: 0,             // largeur de la colonne centrale : index dans COL_WIDTH_STEPS (ui.js), 0 = la plus étroite
@@ -1221,6 +1227,34 @@ function saveMcpSkillApprovals(all) {
 // et une écriture intégrale périmée ressusciterait ce qu'il a retiré.
 function updateMcpSkillApprovals(fn) {
   return saveMcpSkillApprovals(fn(loadMcpSkillApprovals()));
+}
+
+// Défauts GLOBAUX de désactivation de serveurs MCP (sélecteur du composer,
+// mcp-select.js) : liste de clés DÉSACTIVÉES, même forme que le champ
+// `mcpDisabled` d'une conversation. Une conversation qui n'en porte pas encore
+// suit cette liste (resolveMcpDisabled) — c'est le geste sur une conversation
+// VIERGE qui l'écrit, pour ne pas figer un défaut dans un historique qui n'existe
+// pas encore.
+//
+// PAS de cache mémoire, contrairement aux approbations : `mcpDisabledFor` et le
+// sélecteur du composer (`pickComposerMcpKey`, `syncMcpSelectorUI`) relisent ce
+// réglage à chaque appel, et la liste ne change qu'aux gestes. Un cache ferait un
+// second porteur de la même donnée, à tenir en phase avec les onglets.
+const MCP_DISABLED_DEFAULTS_KEY = 'miaou-mcp-disabled';
+
+// Absent, illisible ou d'un type faux → `[]` (jamais d'exception : la clé est
+// une donnée utilisateur, une valeur abîmée ne doit pas casser le démarrage).
+function loadMcpDisabledDefaults() {
+  try {
+    return normalizeMcpDisabled(JSON.parse(localStorage.getItem(MCP_DISABLED_DEFAULTS_KEY)));
+  } catch (e) { return []; }
+}
+
+function saveMcpDisabledDefaults(list) {
+  const next = normalizeMcpDisabled(list);
+  writeLocalStorage(MCP_DISABLED_DEFAULTS_KEY, JSON.stringify(next));
+  syncPost('settings-updated', { keys: ['mcp-disabled-defaults'] });   // post-commit (piège 24)
+  return next;
 }
 
 // ── Couche IDB conversations/résumés + cache RAM (lot U-1) ──────────────────
