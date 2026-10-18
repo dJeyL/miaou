@@ -71,6 +71,8 @@
 
   --jump-shadow: 0 4px 14px rgba(0, 0, 0, .28);
 
+  --composer-foot-shade: rgba(0, 0, 0, .14);
+
   --jump-glow-a: .25;
 
   --search-hit-l: 52%;
@@ -1127,7 +1129,7 @@ html[data-motion="reduced"] *::after {
 .scroll-bottom-btn {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 8px + 34px);
   z-index: 12;
 
   display: grid !important;
@@ -2021,44 +2023,42 @@ html[data-wide-tables="off"] .table-bleed {
   transition: max-width var(--col-resize) var(--ease); }
 .input-wrap {
   position: relative;
+
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  flex-direction: column;
   background: var(--surface-2);
   border: 1px solid var(--border-2);
   border-radius: 12px;
-
-  padding: 8px 8px 8px 12px;
+  padding: 8px 6px 6px 12px;
   transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
 }
 .input-wrap:focus-within { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
 .input-wrap.disabled { border-color: rgba(255,93,93,.3); background: rgba(255,93,93,.04); }
 .input-wrap.disabled:focus-within { box-shadow: none; }
 
-.composer-btn-col {
+.composer-top {
   display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  align-self: flex-end;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .attach-btn {
   display: grid; place-items: center;
-  width: 34px; height: 32px;
+  width: 26px; height: 26px;
   flex-shrink: 0;
   background: none;
   border: none;
   color: var(--text-2);
   cursor: pointer;
-  border-radius: 9px;
+  border-radius: 8px;
   transition: background 140ms var(--ease), color 140ms var(--ease);
 }
 .attach-btn:hover { background: var(--surface-3); color: var(--text); }
-
-.attach-btn svg { width: 16px; height: 16px; transform: translateY(-2px); }
+.attach-btn svg { width: 14px; height: 14px; }
 
 #composer-text {
   flex: 1;
+  min-width: 0;
   background: transparent;
   border: none;
   outline: none;
@@ -2080,19 +2080,19 @@ html[data-wide-tables="off"] .table-bleed {
 
 .send-btn {
   display: grid; place-items: center;
-  width: 34px; height: 34px;
+  width: 26px; height: 26px;
   flex-shrink: 0;
   background: var(--accent);
   color: var(--accent-ink);
   border: none;
-  border-radius: 9px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 140ms var(--ease), opacity 140ms var(--ease), transform 100ms var(--ease);
 }
 .send-btn:hover { background: var(--accent-2); }
 .send-btn:active { transform: scale(.94); }
 .send-btn:disabled { background: var(--surface-3); color: var(--text-3); cursor: not-allowed; }
-.send-btn svg { width: 16px; height: 16px; }
+.send-btn svg { width: 14px; height: 14px; }
 
 .send-btn .ic-stop { display: none; }
 .send-btn.streaming { background: var(--surface-3); }
@@ -2162,8 +2162,13 @@ html[data-wide-tables="off"] .table-bleed {
 .composer-selectors {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 6px;
+
+  margin: 4px -6px -6px -12px;
+  padding: 6px;
+  border-top: 1px solid var(--border-2);
+  border-radius: 0 0 11px 11px;
+  background: var(--composer-foot-shade);
 }
 
 .composer-model { position: relative; margin-bottom: 0; display: flex; max-width: 55%; min-width: 0; }
@@ -2172,15 +2177,15 @@ html[data-wide-tables="off"] .table-bleed {
   display: inline-flex;
   align-items: center;
   line-height: 1;
-  min-height: 22px;
-  gap: 6px;
+  min-height: 20px;
+  gap: 5px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   color: var(--accent);
   background: var(--accent-dim);
   border: 1px solid var(--accent-bd);
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 100px;
   cursor: pointer;
   max-width: 100%;
@@ -2193,14 +2198,15 @@ html[data-wide-tables="off"] .table-bleed {
   display: inline-flex;
   align-items: center;
   line-height: 1;
-  min-height: 22px;
+  min-height: 20px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
-  color: var(--text-3);
-  background: var(--surface-3);
+
+  color: var(--text-2);
+  background: var(--surface-2);
   border: 1px solid var(--border-2);
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 100px;
   cursor: pointer;
   margin-left: auto;
@@ -2222,15 +2228,15 @@ html[data-wide-tables="off"] .table-bleed {
 
 .pill-select:not([hidden]) ~ .pill-select { margin-left: 0; }
 .pill-select:not([hidden]) ~ .ctx-counter { margin-left: 0; }
-.ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
+.ctx-counter:hover { background: var(--border); }
 .ctx-counter.ctx-counter-warn { color: var(--ctx-warn); border-color: var(--ctx-warn-bd); background: var(--ctx-warn-dim); }
 .ctx-counter.ctx-counter-over { color: var(--ctx-over); border-color: var(--ctx-over-bd); background: var(--ctx-over-dim); }
 
 .ctx-counter.ctx-counter-midturn { border-style: dashed; }
 
 .ctx-counter-compact {
-  width: 11px;
-  height: 11px;
+  width: 10px;
+  height: 10px;
   flex: none;
   color: var(--accent);
   opacity: .9;
@@ -2238,8 +2244,8 @@ html[data-wide-tables="off"] .table-bleed {
 }
 .ctx-counter-warn .ctx-counter-compact,
 .ctx-counter-over .ctx-counter-compact { color: currentColor; opacity: .8; }
-.composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; margin: -1px 0; }
-.composer-model-btn .chev { width: 12px; height: 12px; opacity: .7; }
+.composer-model-btn svg { width: 12px; height: 12px; flex-shrink: 0; margin: -1px 0; }
+.composer-model-btn .chev { width: 11px; height: 11px; opacity: .7; }
 .composer-model-btn #composer-model-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2315,6 +2321,11 @@ html[data-wide-tables="off"] .table-bleed {
 .pill-select-btn .reasoning-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
 .pill-select-btn .mcp-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
 .pill-select-btn .chev { width: 12px; height: 12px; opacity: .7; }
+
+.composer-selectors .pill-select-btn { min-height: 20px; font-size: 10px; padding: 3px 5px; }
+.composer-selectors .pill-select-btn .reasoning-icon,
+.composer-selectors .pill-select-btn .mcp-icon { width: 14px; height: 14px; }
+.composer-selectors .pill-select-btn .chev { width: 11px; height: 11px; }
 #composer-reasoning-menu {
   top: auto;
   bottom: calc(100% + 4px);
@@ -4870,6 +4881,8 @@ html[data-theme="light"] {
 
   --jump-shadow: 0 4px 12px rgba(0, 0, 0, .14);
 
+  --composer-foot-shade: rgba(0, 0, 0, .035);
+
   --jump-glow-a: .375;
 
   --sat-bg:     40.5%;
@@ -5185,42 +5198,6 @@ if (window.requestAnimationFrame) {
           <ul class="summary-banner-list" id="summary-banner-list"></ul>
         </div>
 
-        <div class="composer-selectors" id="composer-selectors">
-          <div class="composer-model" id="composer-model" hidden>
-            <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" data-tip="Modèle de cette conversation">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
-              <span id="composer-model-label">modèle</span>
-
-              <span class="composer-model-vision" id="composer-model-vision" data-tip="Ce modèle lit les images (déclaré par le serveur)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
-              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            <div class="model-menu" id="composer-model-menu"></div>
-          </div>
-          <div class="pill-select" id="composer-mcp" hidden>
-            <button type="button" class="pill-select-btn" id="composer-mcp-btn" onclick="toggleComposerMcpMenu()" data-tip="Serveurs MCP de cette conversation">
-
-              <svg class="mcp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-              <span id="composer-mcp-label">MCP</span>
-              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            <div class="model-menu" id="composer-mcp-menu"></div>
-          </div>
-          <div class="pill-select" id="composer-reasoning" hidden>
-            <button type="button" class="pill-select-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" data-tip="Niveau de raisonnement de cette conversation">
-              <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.2" cy="7.1" r="0.8" fill="black"/><circle cx="8" cy="7.1" r="0.8" fill="black"/><circle cx="10.8" cy="7.1" r="0.8" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
-              <span id="composer-reasoning-label">raisonnement</span>
-              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            <div class="model-menu" id="composer-reasoning-menu"></div>
-          </div>
-          <button type="button" class="ctx-counter" id="ctx-counter" onclick="openContextInspector()" data-tip="Inspecteur de contexte">
-
-            <svg class="ctx-counter-compact" id="ctx-counter-compact" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/><path d="M3 16v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M3 12h18"/></svg>
-            <span id="ctx-counter-label">≈ 0 tok</span>
-            <span class="ctx-counter-cache" id="ctx-counter-cache" hidden></span>
-          </button>
-        </div>
-
         <div class="attach-chips" id="attach-chips" hidden></div>
 
         <div class="ij-rail" id="ij-rail" hidden>
@@ -5231,12 +5208,48 @@ if (window.requestAnimationFrame) {
 
           <div class="skill-ac" id="skill-ac" hidden></div>
           <input type="file" id="attach-file-input" multiple hidden onchange="onAttachFilesSelected(this)">
-          <textarea id="composer-text" rows="2" placeholder="Message…"
-            onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()" onpaste="onComposerPaste(event)"></textarea>
 
-          <div class="composer-btn-col">
+          <div class="composer-top">
+            <textarea id="composer-text" rows="2" placeholder="Message…"
+              onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()" onpaste="onComposerPaste(event)"></textarea>
             <button class="attach-btn" id="attach-btn" onclick="onAttachClick()" data-tip="Joindre un fichier">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+          </div>
+
+          <div class="composer-selectors" id="composer-selectors">
+            <div class="composer-model" id="composer-model" hidden>
+              <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" data-tip="Modèle de cette conversation">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+                <span id="composer-model-label">modèle</span>
+
+                <span class="composer-model-vision" id="composer-model-vision" data-tip="Ce modèle lit les images (déclaré par le serveur)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="model-menu" id="composer-model-menu"></div>
+            </div>
+            <div class="pill-select" id="composer-mcp" hidden>
+              <button type="button" class="pill-select-btn" id="composer-mcp-btn" onclick="toggleComposerMcpMenu()" data-tip="Serveurs MCP de cette conversation">
+
+                <svg class="mcp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                <span id="composer-mcp-label">MCP</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="model-menu" id="composer-mcp-menu"></div>
+            </div>
+            <div class="pill-select" id="composer-reasoning" hidden>
+              <button type="button" class="pill-select-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" data-tip="Niveau de raisonnement de cette conversation">
+                <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.2" cy="7.1" r="0.8" fill="black"/><circle cx="8" cy="7.1" r="0.8" fill="black"/><circle cx="10.8" cy="7.1" r="0.8" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
+                <span id="composer-reasoning-label">raisonnement</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="model-menu" id="composer-reasoning-menu"></div>
+            </div>
+            <button type="button" class="ctx-counter" id="ctx-counter" onclick="openContextInspector()" data-tip="Inspecteur de contexte">
+
+              <svg class="ctx-counter-compact" id="ctx-counter-compact" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/><path d="M3 16v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M3 12h18"/></svg>
+              <span id="ctx-counter-label">≈ 0 tok</span>
+              <span class="ctx-counter-cache" id="ctx-counter-cache" hidden></span>
             </button>
             <button class="send-btn" id="send-btn" onclick="onSendBtn()" data-tip="Envoyer">
               <svg class="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
@@ -5920,7 +5933,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-18 16:58 UTC */
+/* miaou — built: 2026-10-18 18:40 UTC */
 
 /* ── utils.js ── */
 
@@ -11566,7 +11579,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1792342704}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1792348835}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11586,7 +11599,7 @@ const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || ''
 const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "635118b518e3aada"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "2ac967fb168f5dad"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -25767,10 +25780,10 @@ function loadAllServerModels(force) {
 }
 
 const COMPOSER_MODEL_MAX_RATIO = 0.55;
-const COMPOSER_MODEL_BTN_CHROME_PX = 52;
+const COMPOSER_MODEL_BTN_CHROME_PX = 48;
 
-const COMPOSER_MODEL_VISION_PX = 19;
-const COMPOSER_MODEL_CHAR_PX = 11 * 0.6;
+const COMPOSER_MODEL_VISION_PX = 17;
+const COMPOSER_MODEL_CHAR_PX = 10 * 0.6;
 
 const TOPBAR_MODEL_TEXT_PX = 210 - 34;
 const TOPBAR_MODEL_CHAR_PX = 10.5 * 0.6;

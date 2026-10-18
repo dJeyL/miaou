@@ -236,8 +236,8 @@ if (window.requestAnimationFrame) {
              donc surtout PAS dans .messages (il y défilerait avec le contenu,
              cf. le commentaire de .agent-banner, qui exploite l'inverse).
              Ancré sur .composer-inner et non sur .composer : ce qui masque la
-             fin du fil ne se limite pas au champ de saisie — la rangée de
-             sélecteurs et les bannières le surplombent et sont DANS
+             fin du fil ne se limite pas au champ de saisie — les bannières,
+             pièces jointes et interjections le surplombent et sont DANS
              .composer-inner, donc c'est le haut de celui-ci qui est le bord
              réel de la zone occultée. Toutes ces parts étant optionnelles,
              l'ancrage suit leur présence sans offset écrit en dur.
@@ -285,51 +285,6 @@ if (window.requestAnimationFrame) {
           <ul class="summary-banner-list" id="summary-banner-list"></ul>
         </div>
 
-        <!-- Sélecteurs de modèle / niveau de raisonnement (optionnels, réglables) -->
-        <div class="composer-selectors" id="composer-selectors">
-          <div class="composer-model" id="composer-model" hidden>
-            <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" data-tip="Modèle de cette conversation">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
-              <span id="composer-model-label">modèle</span>
-              <!-- Marque « ce modèle voit les images » (lot AF) : posée seulement
-                   quand le serveur DÉCLARE la vision (syncModelUI). Appareil
-                   photo, pas l'œil : l'œil est pris (aperçu, consultation) —
-                   vocabulaire d'icônes, une métaphore = un usage. -->
-              <span class="composer-model-vision" id="composer-model-vision" data-tip="Ce modèle lit les images (déclaré par le serveur)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
-              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            <div class="model-menu" id="composer-model-menu"></div>
-          </div>
-          <div class="pill-select" id="composer-mcp" hidden>
-            <button type="button" class="pill-select-btn" id="composer-mcp-btn" onclick="toggleComposerMcpMenu()" data-tip="Serveurs MCP de cette conversation">
-              <!-- Clé à molette : même métaphore que l'outil MCP partout ailleurs
-                   (vocabulaire d'icônes). Pas de width/height : le CSS la règle
-                   comme les autres glyphes de pilule. -->
-              <svg class="mcp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-              <span id="composer-mcp-label">MCP</span>
-              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            <div class="model-menu" id="composer-mcp-menu"></div>
-          </div>
-          <div class="pill-select" id="composer-reasoning" hidden>
-            <button type="button" class="pill-select-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" data-tip="Niveau de raisonnement de cette conversation">
-              <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.2" cy="7.1" r="0.8" fill="black"/><circle cx="8" cy="7.1" r="0.8" fill="black"/><circle cx="10.8" cy="7.1" r="0.8" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
-              <span id="composer-reasoning-label">raisonnement</span>
-              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            <div class="model-menu" id="composer-reasoning-menu"></div>
-          </div>
-          <button type="button" class="ctx-counter" id="ctx-counter" onclick="openContextInspector()" data-tip="Inspecteur de contexte">
-            <!-- Glyphe de compaction (lot AE) : signale le seuil de 50 % par la
-                 FORME, la couleur restant réservée aux états de saturation
-                 (warn 80 %, over 100 %). Deux grammaires distinctes pour deux
-                 questions distinctes — cf. docs/compaction.md. -->
-            <svg class="ctx-counter-compact" id="ctx-counter-compact" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/><path d="M3 16v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M3 12h18"/></svg>
-            <span id="ctx-counter-label">≈ 0 tok</span>
-            <span class="ctx-counter-cache" id="ctx-counter-cache" hidden></span>
-          </button>
-        </div>
-
         <div class="attach-chips" id="attach-chips" hidden></div>
         <!-- Rail d'interjections (lot Q) : messages tapés PENDANT une génération,
              en attente de drain à la frontière de tour. Peuplé par
@@ -340,18 +295,62 @@ if (window.requestAnimationFrame) {
         </div>
         <div class="input-wrap" id="input-wrap">
           <!-- Autocomplétion des skills (slash-commande) — peuplée par onComposerInput.
-               Positionnée en absolu au-dessus de l'input : recouvre les pilules
-               (axe z) au lieu de les décaler. -->
+               Positionnée en absolu au-dessus de l'input : recouvre le fil
+               (axe z) au lieu de décaler le composer. -->
           <div class="skill-ac" id="skill-ac" hidden></div>
           <input type="file" id="attach-file-input" multiple hidden onchange="onAttachFilesSelected(this)">
-          <textarea id="composer-text" rows="2" placeholder="Message…"
-            onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()" onpaste="onComposerPaste(event)"></textarea>
-          <!-- Colonne des deux boutons, à droite du champ : trombone au-dessus
-               du bouton d'envoi/stop. Ordre DOM = ordre visuel et ordre de
-               tabulation. -->
-          <div class="composer-btn-col">
+          <!-- Rangée haute : le champ, le trombone à sa droite. -->
+          <div class="composer-top">
+            <textarea id="composer-text" rows="2" placeholder="Message…"
+              onkeydown="onComposerKey(event)" oninput="autoGrow(this); onComposerInput()" onpaste="onComposerPaste(event)"></textarea>
             <button class="attach-btn" id="attach-btn" onclick="onAttachClick()" data-tip="Joindre un fichier">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+          </div>
+          <!-- Sélecteurs (modèle, MCP, raisonnement — optionnels, réglables) et
+               compteur de contexte, puis le bouton d'envoi/stop : rangée basse du
+               cadre de saisie, sous un filet pleine largeur. -->
+          <div class="composer-selectors" id="composer-selectors">
+            <div class="composer-model" id="composer-model" hidden>
+              <button type="button" class="composer-model-btn" id="composer-model-btn" onclick="toggleComposerModelMenu()" data-tip="Modèle de cette conversation">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+                <span id="composer-model-label">modèle</span>
+                <!-- Marque « ce modèle voit les images » (lot AF) : posée seulement
+                     quand le serveur DÉCLARE la vision (syncModelUI). Appareil
+                     photo, pas l'œil : l'œil est pris (aperçu, consultation) —
+                     vocabulaire d'icônes, une métaphore = un usage. -->
+                <span class="composer-model-vision" id="composer-model-vision" data-tip="Ce modèle lit les images (déclaré par le serveur)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="model-menu" id="composer-model-menu"></div>
+            </div>
+            <div class="pill-select" id="composer-mcp" hidden>
+              <button type="button" class="pill-select-btn" id="composer-mcp-btn" onclick="toggleComposerMcpMenu()" data-tip="Serveurs MCP de cette conversation">
+                <!-- Clé à molette : même métaphore que l'outil MCP partout ailleurs
+                     (vocabulaire d'icônes). Pas de width/height : le CSS la règle
+                     comme les autres glyphes de pilule. -->
+                <svg class="mcp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                <span id="composer-mcp-label">MCP</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="model-menu" id="composer-mcp-menu"></div>
+            </div>
+            <div class="pill-select" id="composer-reasoning" hidden>
+              <button type="button" class="pill-select-btn" id="composer-reasoning-btn" onclick="toggleComposerReasoningMenu()" data-tip="Niveau de raisonnement de cette conversation">
+                <svg class="reasoning-icon" viewBox="0 0 16 16" fill="currentColor"><mask id="reasoning-cloud-dots"><rect width="16" height="16" fill="white"/><circle cx="5.2" cy="7.1" r="0.8" fill="black"/><circle cx="8" cy="7.1" r="0.8" fill="black"/><circle cx="10.8" cy="7.1" r="0.8" fill="black"/></mask><g mask="url(#reasoning-cloud-dots)"><circle cx="5.3" cy="6.9" r="2.9"/><circle cx="8.7" cy="5.5" r="3.2"/><circle cx="11.3" cy="7.7" r="2.6"/><circle cx="7.9" cy="8.3" r="2.8"/></g><circle cx="4.7" cy="12.3" r="1.3"/><circle cx="2.9" cy="14.7" r="0.8"/></svg>
+                <span id="composer-reasoning-label">raisonnement</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="model-menu" id="composer-reasoning-menu"></div>
+            </div>
+            <button type="button" class="ctx-counter" id="ctx-counter" onclick="openContextInspector()" data-tip="Inspecteur de contexte">
+              <!-- Glyphe de compaction (lot AE) : signale le seuil de 50 % par la
+                   FORME, la couleur restant réservée aux états de saturation
+                   (warn 80 %, over 100 %). Deux grammaires distinctes pour deux
+                   questions distinctes — cf. docs/compaction.md. -->
+              <svg class="ctx-counter-compact" id="ctx-counter-compact" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/><path d="M3 16v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M3 12h18"/></svg>
+              <span id="ctx-counter-label">≈ 0 tok</span>
+              <span class="ctx-counter-cache" id="ctx-counter-cache" hidden></span>
             </button>
             <button class="send-btn" id="send-btn" onclick="onSendBtn()" data-tip="Envoyer">
               <svg class="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>

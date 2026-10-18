@@ -364,7 +364,7 @@ nommé quand c'est lui qui décide.
 
 ## UI
 
-- **Compteur compact** : `#ctx-counter` dans `.composer-selectors` (à droite des
+- **Compteur compact** : `#ctx-counter` dans `.composer-selectors`, rangée du bas du cadre de saisie (à droite des
   pills modèle/raisonnement), `≈ N tok` (+ `%` si `contextWindowFor` connu,
   classe `.ctx-counter-warn` entre `CONTEXT_WINDOW_WARN_RATIO` et 100 %,
   `.ctx-counter-over` à 100 % ou plus, `.ctx-counter-midturn` — bordure en

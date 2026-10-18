@@ -24,6 +24,8 @@ html[data-theme="light"] {
      composant ne l'aurait pas suivi dans le keyframe. Ici et pas dans un bloc
      de palette : l'allègement tient à la LUMINOSITÉ, il vaut pour les trois. */
   --jump-shadow: 0 4px 12px rgba(0, 0, 0, .14);
+  /* Voile de la rangée basse du composer : le noir pèse bien plus sur fond clair. */
+  --composer-foot-shade: rgba(0, 0, 0, .035);
   /* Crête du halo : un halo coloré se noie davantage sur fond clair que sur
      fond sombre, il y tient donc une opacité plus haute à intensité PERÇUE
      comparable. Cf. --jump-glow-a (base.css). */

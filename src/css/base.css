@@ -87,6 +87,10 @@
      propriété — animer le halo seul effacerait la profondeur). Le thème clair
      l'allège ; sans ce token, chaque pulsation y ramènerait l'ombre sombre. */
   --jump-shadow: 0 4px 14px rgba(0, 0, 0, .28);
+  /* Voile de la rangée basse du composer (pilules + envoi). Noir translucide
+     plutôt qu'un palier : il assombrit le fond tel qu'il est, teinte .disabled
+     comprise. Token par LUMINOSITÉ : le thème clair l'allège. */
+  --composer-foot-shade: rgba(0, 0, 0, .14);
   /* Opacité crête du halo de pulsation (chat.css). Token par LUMINOSITÉ et non
      valeur de keyframe : le même halo ne se lit pas pareil sur fond sombre et
      sur fond clair — réglé à l'œil sur les deux, le clair tient une crête plus

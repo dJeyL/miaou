@@ -504,7 +504,7 @@
 .scroll-bottom-btn {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 8px + 34px);   /* remonté de sa propre hauteur (width/height ci-dessous) */
   z-index: 12;
   /* `display` déclaré ICI avec !important : la feuille du navigateur applique
      `display: none` à tout [hidden], et elle GAGNE contre une règle de classe

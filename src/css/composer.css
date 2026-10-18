@@ -18,17 +18,14 @@
   transition: max-width var(--col-resize) var(--ease); }
 .input-wrap {
   position: relative;   /* ancre du dropdown skill du composer (#skill-ac) */
+  /* Deux rangées : le champ et son trombone en haut, les pilules et le bouton
+     d'envoi en bas, séparés par le filet de .composer-selectors. */
   display: flex;
-  align-items: flex-start;   /* le champ est calé en haut ; la colonne de
-                                boutons se recale en bas par align-self. */
-  gap: 8px;
+  flex-direction: column;
   background: var(--surface-2);
   border: 1px solid var(--border-2);
   border-radius: 12px;
-  /* Padding gauche normal depuis que le trombone a quitté la gauche pour
-     rejoindre la colonne de droite : plus de blanc interne de bouton à
-     compenser, le texte se cale sur la même grille que le reste. */
-  padding: 8px 8px 8px 12px;
+  padding: 8px 6px 6px 12px;
   transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
 }
 .input-wrap:focus-within { border-color: var(--accent-bd); box-shadow: 0 0 0 3px var(--accent-dim); }
@@ -37,41 +34,33 @@
 /* survol drag&drop d'un fichier — même mécanique visuelle que .disabled (bordure
    + fond teintés), couleur accent au lieu de rouge */
 
-/* Colonne des deux boutons, ancrée en bas du champ : le bouton d'envoi reste
-   sous le curseur quand le texte grandit, plutôt que de flotter au milieu.
-   C'est elle, et non le champ, qui donne sa hauteur au composer vide. */
-.composer-btn-col {
+/* Rangée haute : le champ, et le trombone calé sur sa première ligne. */
+.composer-top {
   display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  align-self: flex-end;
+  align-items: flex-start;
+  gap: 8px;
 }
 
-/* bouton trombone : gabarit icon-btn du composer, empilé sur le send-btn.
-   32px (et non 34) parce que 16px de glyphe + 2x8px de padding reprend
-   exactement le padding du conteneur : le trombone tombe alors sur la même
-   grille que le reste du composer. */
+/* bouton trombone : gabarit icon-btn du composer, même boîte que le send-btn.
+   Les deux ont été réduits (34 → 26px, glyphes 16 → 14px) pour s'accorder
+   aux pilules logées dans le cadre : 26 = pilule de 20px + 3px de chaque côté. */
 .attach-btn {
   display: grid; place-items: center;
-  width: 34px; height: 32px;
+  width: 26px; height: 26px;
   flex-shrink: 0;
   background: none;
   border: none;
   color: var(--text-2);
   cursor: pointer;
-  border-radius: 9px;
+  border-radius: 8px;
   transition: background 140ms var(--ease), color 140ms var(--ease);
 }
 .attach-btn:hover { background: var(--surface-3); color: var(--text); }
-/* Glyphe remonté de 2px DANS sa boîte : correction optique, pas géométrique.
-   Le bouton d'envoi est un aplat plein tandis que le bord haut n'est qu'un
-   filet — à distance égale l'aplat pèse plus lourd et le trombone paraît
-   collé en bas. Le décalage porte sur le seul glyphe : la cible cliquable et
-   le bouton d'envoi ne bougent pas. */
-.attach-btn svg { width: 16px; height: 16px; transform: translateY(-2px); }
+.attach-btn svg { width: 14px; height: 14px; }
 
 #composer-text {
   flex: 1;
+  min-width: 0;
   background: transparent;
   border: none;
   outline: none;
@@ -97,19 +86,19 @@
 
 .send-btn {
   display: grid; place-items: center;
-  width: 34px; height: 34px;
+  width: 26px; height: 26px;
   flex-shrink: 0;
   background: var(--accent);
   color: var(--accent-ink);
   border: none;
-  border-radius: 9px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 140ms var(--ease), opacity 140ms var(--ease), transform 100ms var(--ease);
 }
 .send-btn:hover { background: var(--accent-2); }
 .send-btn:active { transform: scale(.94); }
 .send-btn:disabled { background: var(--surface-3); color: var(--text-3); cursor: not-allowed; }
-.send-btn svg { width: 16px; height: 16px; }
+.send-btn svg { width: 14px; height: 14px; }
 
 /* état « stop » pendant le streaming : carré sobre, accent en avant */
 .send-btn .ic-stop { display: none; }
@@ -202,8 +191,9 @@
   padding: 1px 5px;
 }
 
-/* rangée des sélecteurs du composer (modèle à gauche, raisonnement + pilule de
-   contexte à droite). Pas de justify-content: space-between : avec modèle ET
+/* rangée des sélecteurs du composer, en bas du cadre de saisie (modèle à
+   gauche, raisonnement + pilule de contexte à droite, puis le bouton
+   d'envoi). Pas de justify-content: space-between : avec modèle ET
    raisonnement masqués ([hidden], cas fréquent), la pilule serait le seul
    enfant visible du flex et se retrouverait poussée à gauche au lieu de
    rester à droite. margin-left: auto sur la pilule la colle à droite quel que
@@ -211,8 +201,20 @@
 .composer-selectors {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 6px;
+  /* Filet pleine largeur entre les deux rangées : les marges négatives
+     annulent le padding de .input-wrap, le padding les restitue au contenu.
+     6px des deux côtés (et non les 12px du champ à gauche) : la pilule de
+     modèle est alors à la même distance du bord que le bouton d'envoi, et de
+     ce bord que la pilule de contexte de l'envoi (gap).
+     La marge basse négative étend aussi la rangée jusqu'au bord bas du cadre,
+     pour que son voile le couvre ; le rayon reprend celui du cadre (12px)
+     moins sa bordure. */
+  margin: 4px -6px -6px -12px;
+  padding: 6px;
+  border-top: 1px solid var(--border-2);
+  border-radius: 0 0 11px 11px;
+  background: var(--composer-foot-shade);
 }
 
 /* sélecteur de modèle du composer (optionnel).
@@ -229,15 +231,15 @@
   display: inline-flex;
   align-items: center;
   line-height: 1;
-  min-height: 22px;
-  gap: 6px;
+  min-height: 20px;
+  gap: 5px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   color: var(--accent);
   background: var(--accent-dim);
   border: 1px solid var(--accent-bd);
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 100px;
   cursor: pointer;
   max-width: 100%;
@@ -251,14 +253,16 @@
   display: inline-flex;
   align-items: center;
   line-height: 1;
-  min-height: 22px;
+  min-height: 20px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
-  color: var(--text-3);
-  background: var(--surface-3);
+  /* Mêmes couleurs repos/survol qu'une pilule à sa valeur par défaut
+     (.pill-select-btn.is-default) : la rangée ne parle qu'un code. */
+  color: var(--text-2);
+  background: var(--surface-2);
   border: 1px solid var(--border-2);
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 100px;
   cursor: pointer;
   margin-left: auto;   /* colle la pilule à droite quand elle n'est précédée d'aucune marge auto (raisonnement masqué) */
@@ -291,7 +295,7 @@
    porteurs de marge auto reste à un. */
 .pill-select:not([hidden]) ~ .pill-select { margin-left: 0; }
 .pill-select:not([hidden]) ~ .ctx-counter { margin-left: 0; }
-.ctx-counter:hover { background: var(--surface-2); color: var(--text-2); }
+.ctx-counter:hover { background: var(--border); }
 .ctx-counter.ctx-counter-warn { color: var(--ctx-warn); border-color: var(--ctx-warn-bd); background: var(--ctx-warn-dim); }
 .ctx-counter.ctx-counter-over { color: var(--ctx-over); border-color: var(--ctx-over-bd); background: var(--ctx-over-dim); }
 /* total provisoire (recalculé en cours de boucle d'outils, pas encore la
@@ -313,8 +317,8 @@
    pilule contient aussi .ctx-counter-cache, positionné en absolu, qu'un gap ne
    toucherait pas mais qui rend la lecture de la règle ambiguë. */
 .ctx-counter-compact {
-  width: 11px;
-  height: 11px;
+  width: 10px;
+  height: 10px;
   flex: none;
   color: var(--accent);
   opacity: .9;
@@ -322,8 +326,8 @@
 }
 .ctx-counter-warn .ctx-counter-compact,
 .ctx-counter-over .ctx-counter-compact { color: currentColor; opacity: .8; }
-.composer-model-btn svg { width: 13px; height: 13px; flex-shrink: 0; margin: -1px 0; }
-.composer-model-btn .chev { width: 12px; height: 12px; opacity: .7; }
+.composer-model-btn svg { width: 12px; height: 12px; flex-shrink: 0; margin: -1px 0; }
+.composer-model-btn .chev { width: 11px; height: 11px; opacity: .7; }
 .composer-model-btn #composer-model-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -421,6 +425,13 @@
 .pill-select-btn .reasoning-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
 .pill-select-btn .mcp-icon { width: 16px; height: 16px; margin: -2px 0; flex-shrink: 0; }
 .pill-select-btn .chev { width: 12px; height: 12px; opacity: .7; }
+/* Gabarit réduit des pilules du COMPOSER seulement : la base .pill-select-btn
+   sert aussi les réglages et cfgPillSelect, qui gardent leur taille. Mêmes
+   valeurs que .composer-model-btn et .ctx-counter, pour une rangée homogène. */
+.composer-selectors .pill-select-btn { min-height: 20px; font-size: 10px; padding: 3px 5px; }
+.composer-selectors .pill-select-btn .reasoning-icon,
+.composer-selectors .pill-select-btn .mcp-icon { width: 14px; height: 14px; }
+.composer-selectors .pill-select-btn .chev { width: 11px; height: 11px; }
 #composer-reasoning-menu {
   top: auto;
   bottom: calc(100% + 4px);
@@ -764,7 +775,7 @@ body.conv-readonly .conv-retitle-btn { pointer-events: none; }
   margin-bottom: 8px;
 }
 /* Instance du composer : en absolu au-dessus de .input-wrap (son ancre), donc
-   PAR-DESSUS les pilules de sélecteurs (axe z) sans les décaler à l'ouverture.
+   PAR-DESSUS le fil (axe z) sans décaler le composer à l'ouverture.
    Sa max-height est RECALCULÉE à chaque ouverture (fitSkillAutocompleteHeight,
    ui.js) et posée en style inline : le panneau est ancré à son composer, dont
    la hauteur varie (pièces jointes, rail d'interjections, saisie multiligne),

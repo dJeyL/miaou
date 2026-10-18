@@ -6139,15 +6139,16 @@ function loadAllServerModels(force) {
 // Le sélecteur ne doit pas dépasser ~55% de la rangée : au-delà, il pousse les
 // pilules raisonnement et contexte hors de la ligne. La largeur disponible est
 // MESURÉE (pas devinée), puis convertie en caractères via la largeur d'un glyphe
-// mono à 11px (~0,6em) après déduction du chrome du bouton (icône, chevron,
-// gaps, paddings ≈ 52px). Renvoie 0 quand la mesure n'est pas exploitable
+// mono à 10px (~0,6em) après déduction du chrome du bouton (icône, chevron,
+// gaps, paddings ≈ 48px). Valeurs RECOPIÉES de .composer-model-btn
+// (composer.css) : les changer là-bas déplace le seuil d'abréviation. Renvoie 0 quand la mesure n'est pas exploitable
 // (élément absent, composer masqué, appel avant layout) : shortenModelLabel
 // laisse alors le nom intact.
 const COMPOSER_MODEL_MAX_RATIO = 0.55;
-const COMPOSER_MODEL_BTN_CHROME_PX = 52;
-// Marque de vision (lot AF) : glyphe 13px + gap 6px, retranchés quand elle est visible.
-const COMPOSER_MODEL_VISION_PX = 19;
-const COMPOSER_MODEL_CHAR_PX = 11 * 0.6;
+const COMPOSER_MODEL_BTN_CHROME_PX = 48;
+// Marque de vision (lot AF) : glyphe 12px + gap 5px, retranchés quand elle est visible.
+const COMPOSER_MODEL_VISION_PX = 17;
+const COMPOSER_MODEL_CHAR_PX = 10 * 0.6;
 
 // Budget du libellé de la pilule topbar (`.model-pill`, chat.css). Même besoin
 // que le composer — un nom long doit perdre son AUTEUR avant sa fin — mais pas

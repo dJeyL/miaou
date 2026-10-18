@@ -261,6 +261,12 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   with no delay (composer.css). Any new menu that focuses a field on opening
   needs the same override; a script checking focus right after opening one
   should first read `getComputedStyle(menu).visibility`.
+  **Real clicks fall through it too.** A `page.mouse.click` on a row right
+  after opening hits whatever is UNDER the still-hidden menu — and the app's
+  outside-click handler then closes it, so the gesture does nothing and the
+  menu is gone. Wait for the terminal state (`visibility` visible, `opacity`
+  1, `transform` none) before the first click. Paid on 2026-10-18
+  (`verify-mcp-selector.mjs`), together with the overlay case below.
 - **Waiting for a toast by its key can catch the PREVIOUS phase's toast.**
   Toast keys are stable per gesture (`proxy-restart:<name>:result` for every
   restart of that server), and a non-persistent toast outlives the phase that
@@ -340,6 +346,18 @@ await page.waitForFunction(() => {
 }, { timeout: 10000 });
 await page.waitForTimeout(900);   // couvre la transition d'opacité
 ```
+
+**The overlay also swallows REAL clicks, not only pixels.** `.boot-done` is set
+at the START of the fade, and while it fades the overlay still sits on top and
+receives pointer events: a `page.mouse.click` at a control's coordinates lands
+on `#boot-overlay`, nothing happens, and every check downstream goes red while
+accusing the handler. DOM-driven calls (`el.click()`, calling the handler in a
+`page.evaluate`) are immune, which is why most scripts never noticed. A script
+that clicks by coordinates — the right choice when the row's own handler is the
+subject — must wait for the overlay's computed `opacity === '0'` (snippet
+above) first. The tell, measured with `document.elementFromPoint` at the click
+point: `DIV#boot-overlay`. Paid on 2026-10-18 (`verify-mcp-selector.mjs`):
+eight reds on correct code, one run and a probe.
 
 Generalises to any full-surface overlay: **when a capture is empty but every DOM
 measurement agrees, the question is not "where did I frame?" but "what is painted
