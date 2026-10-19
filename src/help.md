@@ -1196,6 +1196,10 @@ Quelques repères pour te déplacer dans MIAOU :
   (langage, copier, télécharger) restant visible pendant que tu le parcours.
   Le fichier obtenu par le bouton « télécharger », lui, contient toujours le
   bloc entier, et les pages HTML exportées ne coupent rien.
+- **Messages longs que tu as envoyés** : au-delà de cinq lignes, ta bulle est
+  repliée — le bas s'estompe, et un lien « Afficher plus » la déplie en
+  entier ; « Afficher moins » la replie. Rien n'est retiré du message : le
+  modèle le reçoit en entier, et la copie, l'édition et les exports aussi.
 - **Suivi d'une réponse longue** : par défaut, le message que tu envoies se
   glisse aussitôt **en haut de l'écran**, et la réponse s'écrit dessous sans que
   la vue bouge — un espace vide sous le fil lui laisse la place, et se résorbe

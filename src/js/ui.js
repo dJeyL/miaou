@@ -2399,6 +2399,192 @@ function agentOpenButtonHtml(agentResult) {
   );
 }
 
+// ── Bulle utilisateur repliée au-delà de quelques lignes ────────────────────
+// Un long message collé (log, extrait de doc) repousse la réponse loin sous la
+// question. Le corps de la bulle est donc borné en hauteur, avec « Afficher
+// plus » pour déplier.
+//
+// La borne est posée par le CSS PAR DÉFAUT (`--user-clamp-lines`, chat.css,
+// seule source du nombre de lignes : le JS la relit), et le ResizeObserver ne
+// fait que trancher ensuite si le contenu déborde vraiment. L'ordre inverse
+// — rendre en entier, mesurer, replier — ferait sauter la bulle à chaque
+// message long qui entre dans l'écran : les messages hors écran ne sont pas
+// mis en page (`content-visibility: auto` sur `.msg`), donc la mesure arrive
+// au défilement, pas au rendu. Un observateur plutôt qu'une mesure synchrone
+// pour la même raison : mesurer tout le fil au rendu forcerait la mise en page
+// de chaque message sauté, ce que ce confinement est là pour éviter.
+//
+// L'état déplié est de la vue : jamais sur le message persisté, gardé dans un
+// Set par conversation+horodatage pour survivre à un re-rendu du fil (synchro
+// multi-onglets, bascule de coloration) — sans quoi la bulle se replierait
+// sous les yeux de qui la lit.
+const _expandedUserBubbles = new Set();
+let _userClampRO = null;
+let _userClampPending = new Set();
+let _userClampRaf = 0;
+
+// Pure : le contenu déborde-t-il de la borne ? Une demi-ligne de tolérance :
+// replier pour cacher une marge de paragraphe ou trois pixels de jambage
+// donnerait un « Afficher plus » qui ne révèle rien.
+function userBodyOverflows(contentHeight, lines, lineHeight) {
+  if (!(lines > 0) || !(lineHeight > 0)) return false;
+  return contentHeight > lines * lineHeight + lineHeight / 2;
+}
+
+function userBubbleKey(ts) {
+  return ts ? String(currentConvId) + '|' + ts : null;
+}
+
+// Corps + bascule, partagé par buildMsg et cancelEdit (qui reconstruit la
+// bulle) : la bascule est toujours rendue, son affichage suit les classes
+// posées sur la bulle par syncUserBodyClamp.
+function userBodyHtml(content) {
+  return (
+    `<div class="body">${renderUserMd(content)}</div>` +
+    `<button type="button" class="msg-clamp-toggle" aria-expanded="false" onclick="onToggleUserClamp(this)">` +
+    `<span class="msg-clamp-label">Afficher plus</span>` + ICON_CHEVRON_DOWN +
+    `</button>`
+  );
+}
+
+// Branche l'observation sur le corps d'une bulle fraîchement (re)construite.
+// Sans ResizeObserver, rien ne décidera jamais du débordement : on lève la
+// borne plutôt que de laisser un contenu coupé sans moyen de le lire.
+function wireUserBodyClamp(bubble, ts) {
+  const body = bubble && bubble.querySelector(':scope > .body');
+  if (!body) return;
+  bubble.classList.remove('clamp-over', 'clamp-fits');
+  const key = userBubbleKey(ts);
+  if (key) bubble.dataset.clampKey = key;
+  setUserClampOpen(bubble, !!key && _expandedUserBubbles.has(key));
+  if (typeof ResizeObserver === 'undefined') { bubble.classList.add('clamp-fits'); return; }
+  if (!_userClampRO) {
+    // Écriture différée d'une frame : lever la borne d'un corps qui tient
+    // change sa taille, et le faire dans le callback même relancerait
+    // l'observateur sur la même profondeur (erreur « loop completed »).
+    _userClampRO = new ResizeObserver(entries => {
+      for (const e of entries) {
+        if (!e.target.isConnected) { _userClampRO.unobserve(e.target); continue; }
+        _userClampPending.add(e.target);
+      }
+      if (!_userClampRaf && _userClampPending.size) {
+        _userClampRaf = requestAnimationFrame(() => {
+          _userClampRaf = 0;
+          const pending = _userClampPending;
+          _userClampPending = new Set();
+          pending.forEach(syncUserBodyClamp);
+        });
+      }
+    });
+  }
+  _userClampRO.observe(body);
+}
+
+// `scrollHeight` est la hauteur du CONTENU, borne posée ou non : la même
+// mesure vaut donc replié, déplié ou levé, et une fenêtre élargie qui fait
+// tenir le texte retire aussi la bascule d'une bulle dépliée.
+function syncUserBodyClamp(body) {
+  const bubble = body.parentElement;
+  if (!bubble || !body.isConnected) return;
+  const lim = userClampLimit(body);
+  const over = userBodyOverflows(body.scrollHeight, lim.lines, lim.lh);
+  bubble.classList.toggle('clamp-over', over);
+  bubble.classList.toggle('clamp-fits', !over);
+}
+
+// Borne lue sur le CSS (seule source du nombre de lignes, cf. chat.css).
+function userClampLimit(body) {
+  const cs = getComputedStyle(body);
+  const lines = parseFloat(cs.getPropertyValue('--user-clamp-lines'));
+  const lh = parseFloat(cs.lineHeight) || (parseFloat(cs.fontSize) * 1.6);
+  return { lines, lh };
+}
+
+function setUserClampOpen(bubble, open) {
+  bubble.classList.toggle('clamp-open', open);
+  const btn = bubble.querySelector(':scope > .msg-clamp-toggle');
+  if (!btn) return;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  const label = btn.querySelector('.msg-clamp-label');
+  if (label) label.textContent = open ? 'Afficher moins' : 'Afficher plus';
+}
+
+// Dépli/repli animé. La transition est portée par le CSS (max-height, et le
+// dégradé via la propriété enregistrée --clamp-fade) ; le JS ne fait que
+// donner des bornes INTERPOLABLES : entre `none` et une longueur, le
+// navigateur saute sans transition. On épingle donc la hauteur affichée en px
+// (no-op visuel), puis on vise la hauteur du contenu ou la borne, et on rend
+// la main au CSS à l'arrivée. Repartir de la hauteur AFFICHÉE et non de l'état
+// nominal permet d'inverser un geste en cours d'animation sans saut.
+//
+// Nettoyage sur transitionend ET par minuterie : une transition qui n'a pas
+// lieu (hauteurs égales, bulle retirée du DOM) n'émet aucun événement, et la
+// hauteur épinglée resterait figée. Sous animations réduites, le kill-switch
+// de base.css ramène la durée à 0.01ms : l'événement part quand même.
+const USER_CLAMP_SETTLE_MS = 500;
+const _userClampAnims = new WeakMap();
+
+function animateUserClamp(body, open) {
+  // Geste inversé en cours d'animation : on détache l'ancien nettoyage SANS
+  // lever l'épinglage — l'appelant vient de le poser à la hauteur affichée.
+  const prev = _userClampAnims.get(body);
+  if (prev) prev();
+  const from = body.offsetHeight;
+  const lim = userClampLimit(body);
+  const to = open ? body.scrollHeight : lim.lines * lim.lh;
+  body.style.maxHeight = from + 'px';
+  if (Math.abs(to - from) < 1) { body.style.maxHeight = ''; return; }
+  void body.offsetHeight;   // valide l'épinglage avant de viser la cible
+  // Repli sous l'espace de la bulle envoyée : la vue y est au fond, pile. À
+  // chaque frame le contenu raccourcit AVANT que l'observateur de l'espace ne
+  // le regonfle, et le navigateur rabote scrollTop dans l'intervalle — la
+  // bulle épinglée glissait vers le bas (mesuré : 38px). Un plancher posé pour
+  // la durée du geste, de quoi absorber tout le repli, garde le défilement
+  // possible ; levé à l'arrivée, il ne retire que du vide sous le fond.
+  const spacer = (!open && threadTailSpaceShown()) ? $('thread-tail-space') : null;
+  if (spacer) spacer.style.minHeight = (spacer.offsetHeight + from - to) + 'px';
+  body.style.maxHeight = to + 'px';
+  let timer = 0;
+  const detach = () => {
+    clearTimeout(timer);
+    body.removeEventListener('transitionend', onEnd);
+    _userClampAnims.delete(body);
+    if (spacer) spacer.style.minHeight = '';
+  };
+  const done = () => { detach(); body.style.maxHeight = ''; };
+  const onEnd = (e) => { if (e.target === body && e.propertyName === 'max-height') done(); };
+  body.addEventListener('transitionend', onEnd);
+  timer = setTimeout(done, USER_CLAMP_SETTLE_MS);
+  _userClampAnims.set(body, detach);
+}
+
+// Replier une longue bulle lue jusqu'en bas remonte la bascule d'autant : sans
+// correction, elle partirait au-dessus de l'écran et la vue tomberait sur ce
+// qui suit. Si le haut de la bulle est sorti du champ, la vue y remonte
+// PENDANT le repli, par la même descente animée que le bouton « aller tout en
+// bas » (cible relue à chaque frame, abandon sur geste), avec une marge pour
+// ne pas coller la bulle au bord.
+const USER_CLAMP_SCROLL_MARGIN = 16;
+
+function onToggleUserClamp(btn) {
+  const bubble = btn.closest('.bubble');
+  if (!bubble) return;
+  const body = bubble.querySelector(':scope > .body');
+  const open = !bubble.classList.contains('clamp-open');
+  // Hauteur affichée mesurée AVANT la bascule de classe, qui change la borne.
+  if (body) body.style.maxHeight = body.offsetHeight + 'px';
+  setUserClampOpen(bubble, open);
+  if (body) animateUserClamp(body, open);
+  const key = bubble.dataset.clampKey;
+  if (key) { if (open) _expandedUserBubbles.add(key); else _expandedUserBubbles.delete(key); }
+  if (open) return;
+  const m = $('messages');
+  const wrap = bubble.closest('.msg');
+  if (!m || !wrap) return;
+  if (wrap.getBoundingClientRect().top >= m.getBoundingClientRect().top) return;
+  scrollToBottomAnimated(m, () => Math.max(0, anchorTopInScroll(m, wrap) - USER_CLAMP_SCROLL_MARGIN));
+}
+
 // `agentResult` (X-1e) : le message user porte une réponse d'agent
 // (buildAgentResultEntry, agents.js) plutôt qu'une saisie humaine. Il n'est pas
 // éditable — son texte est le compte rendu d'un travail qui a réellement eu
@@ -2420,7 +2606,7 @@ function buildMsg(role, content, model, reasoning, ts, server, truncated, attach
       renderMsgAttachments(attachments, currentConvId) +
       (agentResult
         ? agentResultBodyHtml(content, agentResult)
-        : `<div class="body">${renderUserMd(content)}</div>`) +
+        : userBodyHtml(content)) +
       `</div>` +
       `<div class="msg-user-footer">` +
       `<div class="msg-user-actions">` +
@@ -2434,6 +2620,7 @@ function buildMsg(role, content, model, reasoning, ts, server, truncated, attach
       `</div>` +
       (ts ? `<span class="msg-ts">${escHtml(formatMessageTime(ts, Date.now()))}</span>` : '') +
       `</div>`;
+    if (!agentResult) wireUserBodyClamp(wrap.querySelector('.bubble'), ts);
   } else {
     wrap.innerHTML =
       assistantHead(model, reasoning, ts, server) +
@@ -3394,7 +3581,8 @@ function cancelEdit(wrap, original) {
   const bubble = wrap.querySelector('.bubble');
   bubble.innerHTML =
     renderMsgAttachments(m && m.attachments, currentConvId) +
-    `<div class="body">${renderUserMd(original)}</div>`;
+    userBodyHtml(original);
+  wireUserBodyClamp(bubble, m && m.ts);
   decoratePre(wrap);
   highlightUnder(wrap);
 }

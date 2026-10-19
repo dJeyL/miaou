@@ -579,6 +579,13 @@ Points à ne pas défaire :
   la vue d'une réponse courte). Il part au prochain envoi, au changement de
   conversation (`openConversation`, retour à l'accueil) et quand on décoche le
   réglage, y compris dans un autre onglet. Un rechargement repart sans lui.
+- **Replier une bulle user longue sous l'espace pose un plancher**
+  (`min-height` de `#thread-tail-space`, `animateUserClamp`, ui.js). La vue y
+  est au fond pile : à chaque frame du repli animé, le contenu raccourcit avant
+  que l'observer ne regonfle l'espace, et le navigateur rabote `scrollTop`
+  dans l'intervalle — la bulle glissait de 38px. Le plancher absorbe tout le
+  repli et se lève à l'arrivée. Le dépli n'en a pas besoin : l'espace y fond,
+  il ne manque jamais.
 
 Vérification : section 8 de `.claude/skills/run-miaou/verify-autoscroll.mjs`,
 sur le vrai chemin d'envoi et un flux SSE tenu chunk par chunk.

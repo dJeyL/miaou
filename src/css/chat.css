@@ -749,6 +749,58 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
    plus espacé que le haut (la règle ci-dessus l'emporte sur .body :last-child). */
 .msg.user .bubble .body p:last-child { margin-bottom: 0; }
 
+/* Repli des longues bulles (wireUserBodyClamp, ui.js). La borne est posée PAR
+   DÉFAUT, avant toute mesure : un message hors écran n'est mis en page qu'en
+   y entrant (content-visibility), et replier après coup le ferait sauter sous
+   les yeux. `--user-clamp-lines` est la seule source du nombre de lignes, le
+   JS la relit pour décider du débordement. `> .body` exclut d'office le corps
+   d'un compte rendu d'agent, imbriqué dans son <details> et déjà replié.
+   États portés par la bulle : `clamp-fits` (tient, borne levée), `clamp-over`
+   (déborde : dégradé + bascule), `clamp-open` (déplié à la demande). */
+/* Hauteur du dégradé, enregistrée pour être INTERPOLABLE : une propriété
+   personnalisée ordinaire bascule d'un coup, et le fondu du bas de bulle
+   sauterait au lieu de suivre le dépli. */
+@property --clamp-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+.msg.user .bubble > .body {
+  --user-clamp-lines: 5;
+  --clamp-fade: 2lh;
+  max-height: calc(var(--user-clamp-lines) * 1lh);
+  overflow: hidden;
+}
+.msg.user .bubble.clamp-fits > .body,
+.msg.user .bubble.clamp-over.clamp-open > .body { max-height: none; }
+/* Le masque reste posé déplié (dégradé ramené à zéro) : c'est ce qui laisse
+   le fondu s'effacer pendant le dépli au lieu de disparaître au clic. Les
+   bornes en px que la transition de max-height exige sont posées par
+   animateUserClamp (ui.js) le temps du geste. */
+.msg.user .bubble.clamp-over > .body {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--clamp-fade)), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--clamp-fade)), transparent);
+  transition: max-height 260ms var(--ease), --clamp-fade 260ms var(--ease);
+}
+.msg.user .bubble.clamp-over.clamp-open > .body { --clamp-fade: 0px; }
+.msg-clamp-toggle { display: none; }
+.msg.user .bubble.clamp-over > .msg-clamp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.msg.user .bubble.clamp-over > .msg-clamp-toggle:hover { text-decoration: underline; }
+.msg-clamp-toggle svg { flex: 0 0 auto; transition: transform 260ms var(--ease); }
+.msg.user .bubble.clamp-open > .msg-clamp-toggle svg { transform: rotate(180deg); }
+
 /* ── Réponse d'agent repliée (X-1e) ─────────────────────────────────────
    Une réponse d'agent est un message `user` par construction (elle rentre dans
    le fil du parent comme un tour utilisateur, cf. buildAgentResultEntry), mais

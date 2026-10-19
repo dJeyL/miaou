@@ -21,6 +21,8 @@
 //     espace qui survit à une réponse courte, interjection sans saut,
 //     réglage décoché = comportement d'avant. 8g (2026-10-11) : bouton et
 //     pulsation suivent la fin du CONTENU à l'écran, pas le fond fabriqué.
+//     8h (2026-10-19) : dépli/repli animé d'une longue bulle user, l'espace
+//     suit frame par frame et la bulle envoyée ne bouge pas.
 // Ce script assertait avant le plafond « en restant en bas, la vue est au
 // fond » : le plafond l'a rendu faux par construction (la vue s'arrête sur
 // l'énoncé), d'où l'assertion de confinement qui l'a remplacé.
@@ -520,6 +522,122 @@ t8 = await tail();
 check('8g témoin prémisse : fin de réponse revenue à l\'écran sans atteindre le fond', t8.replyBottom <= t8.viewBottom && !p8.atBottom);
 check('8g témoin : voir la fin acquitte la pulsation', !t8.unseen);
 check('8g témoin : et masque le bouton', !p8.btnShown);
+
+// 8h. Repli des longues bulles utilisateur (2026-10-19). Une bulle de plus de
+// cinq lignes naît repliée ; la déplier ou la replier anime sa hauteur, et
+// l'espace sous le fil suit À CHAQUE FRAME (son ResizeObserver observe
+// #thread) : la bulle envoyée reste en haut, l'espace rend ce que la bulle
+// prend. Échantillonnage par frame comme en 8a — un saut sec ne laisse aucune
+// position intermédiaire. Témoin : les bulles courtes d'avant ne sont pas
+// repliées et n'affichent aucune bascule.
+const longText = Array.from({ length: 12 }, (_, i) => 'Paragraphe ' + (i + 1) + ' d\'un long message collé.').join('\n\n');
+await send2(longText);
+await push2('Réponse brève.');
+await end2();
+const clampState = () => page2.evaluate(() => {
+  const users = document.querySelectorAll('#thread .msg.user');
+  const bubble = users[window.__sentOrdinal].querySelector('.bubble');
+  const body = bubble.querySelector(':scope > .body');
+  const btn = bubble.querySelector(':scope > .msg-clamp-toggle');
+  return {
+    over: bubble.classList.contains('clamp-over'),
+    open: bubble.classList.contains('clamp-open'),
+    bodyH: body.offsetHeight,
+    contentH: body.scrollHeight,
+    btnShown: !!btn && btn.getClientRects().length > 0,
+    label: btn ? btn.textContent.trim() : null,
+    expanded: btn ? btn.getAttribute('aria-expanded') : null,
+    fade: parseFloat(getComputedStyle(body).getPropertyValue('--clamp-fade')),
+    inlineMax: body.style.maxHeight,
+  };
+});
+// Bascule + échantillonnage par frame de la hauteur du corps, de l'espace et
+// de la position de la bulle, jusqu'à 700ms (transition de 260ms).
+const toggleSampled = () => page2.evaluate(() => new Promise((resolve) => {
+  const m = document.getElementById('messages');
+  const spacer = document.getElementById('thread-tail-space');
+  const bubble = document.querySelectorAll('#thread .msg.user')[window.__sentOrdinal].querySelector('.bubble');
+  const body = bubble.querySelector(':scope > .body');
+  const frames = [];
+  const sample = () => frames.push({
+    h: body.offsetHeight,
+    sp: parseFloat(spacer.style.height) || 0,
+    top: bubble.getBoundingClientRect().top - m.getBoundingClientRect().top,
+  });
+  sample();
+  bubble.querySelector(':scope > .msg-clamp-toggle').click();
+  const t0 = performance.now();
+  const tick = () => {
+    sample();
+    if (performance.now() - t0 < 700) requestAnimationFrame(tick); else resolve(frames);
+  };
+  requestAnimationFrame(tick);
+}));
+const strictlyBetween = (vals, a, b) => vals.filter(v => v > Math.min(a, b) + 2 && v < Math.max(a, b) - 2).length;
+
+let c8 = await clampState();
+p8 = await pin();
+console.log('    8h replié : corps ' + c8.bodyH + 'px pour ' + c8.contentH + 'px de contenu, espace ' + p8.spacer + 'px');
+check('8h prémisse : bulle envoyée en haut, espace présent', atTop(p8) && p8.spacer > 0);
+check('8h : une bulle de douze paragraphes naît repliée, bascule « Afficher plus » visible',
+  c8.over && !c8.open && c8.btnShown && c8.label === 'Afficher plus' && c8.expanded === 'false');
+check('8h : repliée, le corps est borné sous la hauteur de son contenu', c8.bodyH < c8.contentH - 40);
+check('8h : repliée, le dégradé est posé', c8.fade > 10);
+// Pas `clamp-fits` : une bulle restée hors écran n'est jamais mise en page
+// (content-visibility), donc jamais mesurée — par construction, pas un défaut.
+// On lit ce que l'utilisateur voit : aucune bascule, aucun repli décidé.
+check('8h témoin : les bulles courtes ne sont pas repliées et n\'ont pas de bascule', await page2.evaluate(() => {
+  const short = [...document.querySelectorAll('#thread .msg.user')].slice(0, 15);
+  return short.every(w => {
+    const b = w.querySelector('.bubble');
+    const t = b.querySelector(':scope > .msg-clamp-toggle');
+    return !b.classList.contains('clamp-over') && t.getClientRects().length === 0;
+  });
+}));
+
+// Dépli.
+const collapsedH = c8.bodyH, spBefore = p8.spacer, topBefore = p8.bubbleTop;
+let fr = await toggleSampled();
+c8 = await clampState();
+p8 = await pin();
+let hs = fr.map(f => f.h), sps = fr.map(f => f.sp);
+let drift = Math.max(...fr.map(f => Math.abs(f.top - topBefore)));
+console.log('    8h dépli : corps ' + collapsedH + ' → ' + c8.bodyH + 'px (' + strictlyBetween(hs, collapsedH, c8.bodyH)
+  + ' frame(s) intermédiaire(s)), espace ' + spBefore + ' → ' + p8.spacer + 'px (' + strictlyBetween(sps, spBefore, p8.spacer)
+  + ' intermédiaire(s)), écart max de la bulle ' + Math.round(drift) + 'px');
+check('8h dépli : état déplié, « Afficher moins », aria-expanded',
+  c8.open && c8.label === 'Afficher moins' && c8.expanded === 'true');
+check('8h dépli : le corps montre tout son contenu, hauteur rendue au CSS à l\'arrivée',
+  Math.abs(c8.bodyH - c8.contentH) <= 1 && c8.inlineMax === '');
+check('8h dépli : le dégradé est effacé', c8.fade === 0);
+check('8h dépli : la hauteur est animée (positions intermédiaires)', strictlyBetween(hs, collapsedH, c8.bodyH) >= 3);
+check('8h dépli prémisse : l\'espace suffit à absorber le dépli', p8.spacer > 0);
+check('8h dépli : l\'espace rend ce que la bulle prend (à 4px près)',
+  Math.abs((spBefore - p8.spacer) - (c8.bodyH - collapsedH)) <= 4);
+check('8h dépli : l\'espace suit l\'animation (positions intermédiaires)', strictlyBetween(sps, spBefore, p8.spacer) >= 3);
+check('8h dépli : la bulle reste en haut pendant toute l\'animation (4px près)', drift <= 4);
+
+// Repli.
+const expandedH = c8.bodyH, spOpen = p8.spacer;
+fr = await toggleSampled();
+c8 = await clampState();
+p8 = await pin();
+hs = fr.map(f => f.h); sps = fr.map(f => f.sp);
+drift = Math.max(...fr.map(f => Math.abs(f.top - topBefore)));
+console.log('    8h repli : corps ' + expandedH + ' → ' + c8.bodyH + 'px (' + strictlyBetween(hs, expandedH, c8.bodyH)
+  + ' intermédiaire(s)), espace ' + spOpen + ' → ' + p8.spacer + 'px (' + strictlyBetween(sps, spOpen, p8.spacer)
+  + ' intermédiaire(s)), écart max ' + Math.round(drift) + 'px');
+check('8h repli : état replié, « Afficher plus », aria-expanded',
+  !c8.open && c8.over && c8.label === 'Afficher plus' && c8.expanded === 'false');
+check('8h repli : le corps retrouve exactement sa hauteur repliée, hauteur rendue au CSS',
+  Math.abs(c8.bodyH - collapsedH) <= 1 && c8.inlineMax === '');
+check('8h repli : le dégradé revient', c8.fade > 10);
+check('8h repli : la hauteur est animée (positions intermédiaires)', strictlyBetween(hs, expandedH, c8.bodyH) >= 3);
+check('8h repli : l\'espace retrouve sa hauteur d\'avant le dépli (à 4px près)', Math.abs(p8.spacer - spBefore) <= 4);
+check('8h repli : l\'espace suit l\'animation (positions intermédiaires)', strictlyBetween(sps, spOpen, p8.spacer) >= 3);
+check('8h repli : la bulle reste en haut pendant toute l\'animation (4px près)', drift <= 4);
+check('8h repli : plancher de l\'espace levé à l\'arrivée, vue au fond', await page2.evaluate(() =>
+  document.getElementById('thread-tail-space').style.minHeight === '' && isAtBottom()));
 
 // 8e. Changer de conversation retire l'espace. Rang de bulle oublié : les
 // interjections de 8d passent par appendUserMessage, en DOM seul, et le fil

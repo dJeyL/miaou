@@ -1045,3 +1045,19 @@ describe('documentTitleFor', function() {
     expect(documentTitleFor('', true)).toBe('MIAOU');
   });
 });
+
+describe('userBodyOverflows (repli des bulles utilisateur)', function() {
+  it('cinq lignes pleines tiennent, sans bascule', function() {
+    expect(userBodyOverflows(5 * 21.6, 5, 21.6)).toBe(false);
+  });
+  it('une demi-ligne de dépassement (marges, jambages) ne replie pas', function() {
+    expect(userBodyOverflows(5 * 21.6 + 10, 5, 21.6)).toBe(false);
+  });
+  it('une sixième ligne replie', function() {
+    expect(userBodyOverflows(6 * 21.6, 5, 21.6)).toBe(true);
+  });
+  it('borne illisible : jamais replié (un contenu coupé sans bascule serait illisible)', function() {
+    expect(userBodyOverflows(1000, NaN, 21.6)).toBe(false);
+    expect(userBodyOverflows(1000, 5, 0)).toBe(false);
+  });
+});
