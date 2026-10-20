@@ -7642,6 +7642,24 @@ function effectiveContextManifest() {
   return _lastContextManifest || computeContextManifestNow();
 }
 
+// Les outils, skills servies et consignes d'un serveur MCP viennent de changer
+// (`connectMcpServer` réussi ou échoué, `disconnectMcpServer`, mcp.js) : point
+// d'écriture unique de `_remoteTools`/`_remoteStatus`, d'où cet appel — pas
+// chez les appelants, qui sont nombreux (boot, retour de focus, carte, proxy
+// redémarré, reconnexion après un mot de passe volatil accepté) et dont un seul
+// resynchronisait la pilule. Payé sur ce dernier : au rechargement, les outils
+// de l'upstream arrivaient par une seconde connexion, après la synchro du
+// boot, et la pilule restait sous l'inspecteur.
+//
+// Pendant une génération, le manifeste du dernier envoi réel est gardé : il
+// est recalculé au prochain tour d'outils ou en fin de tour, avec
+// `toolDefinitions()` à jour — le jeter ferait retomber la pilule sur une
+// simulation en plein échange.
+function syncContextAfterMcpChange() {
+  if (!_activeGenerations.size) _lastContextManifest = null;
+  syncContextCounter();
+}
+
 // Compteur compact du composer. Câblé aux points send-relevant (audit
 // §5b), jamais à l'oninput du textarea (draft exclu v1).
 function syncContextCounter() {

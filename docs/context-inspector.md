@@ -379,7 +379,12 @@ nommé quand c'est lui qui décide.
   Câblé à `openConversation`, `resetToEmpty` (donc `newConversation`,
   `pickSpace`), `onSaveSettings`, à CHAQUE tour d'outils (`onToolAcks` dans
   `dispatchSend`, midTurn=true) et en fin de tour (`onFinal`/`onHalt` dans
-  `dispatchSend`, midTurn=false). PAS sur `oninput` du textarea (décision d'UI : draft
+  `dispatchSend`, midTurn=false), et à chaque changement de l'outillage MCP
+  (`syncContextAfterMcpChange`, appelée en sortie de `connectMcpServer` et par
+  `disconnectMcpServer` — point d'écriture unique de `_remoteTools`, pas chez
+  les appelants : seul le boot resynchronisait, et les outils d'un upstream
+  ouverts par un mot de passe volatil renvoyé au rechargement arrivaient par une
+  seconde connexion, après lui). PAS sur `oninput` du textarea (décision d'UI : draft
   exclu v1). `openConversation`/`resetToEmpty` remettent aussi
   `_lastContextManifest` à `null` (le dernier envoi réel appartenait à
   l'ancienne conversation) — ce qui fait retomber le hint mi-échange aussi,

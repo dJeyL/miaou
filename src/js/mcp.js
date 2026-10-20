@@ -564,6 +564,10 @@ async function connectMcpServer(server) {
     // outils réellement exposés : ils n'existent qu'à partir d'ici. Garde
     // `typeof` — mcp.js est évalué seul par le runner de tests.
     if (typeof syncMcpSelectorUI === 'function') syncMcpSelectorUI();
+    // Le contexte du prochain envoi a changé (outils, skills, consignes) :
+    // pilule et inspecteur suivent. À la sortie seulement — à l'entrée, la
+    // pilule chuterait pendant chaque handshake.
+    if (typeof syncContextAfterMcpChange === 'function') syncContextAfterMcpChange();
     return true;
   } catch (e) {
     delete _remoteTools[s.name];
@@ -571,6 +575,7 @@ async function connectMcpServer(server) {
     // Un serveur en erreur n'expose aucun enfant : le sélecteur doit oublier
     // les siens (et l'état « hors ligne » de la carte).
     if (typeof syncMcpSelectorUI === 'function') syncMcpSelectorUI();
+    if (typeof syncContextAfterMcpChange === 'function') syncContextAfterMcpChange();
     return false;
   }
 }
@@ -687,6 +692,7 @@ function disconnectMcpServer(name) {
   delete _mcpLastAttempt[name];
   // La carte quitte la sélection du composer : ses enfants n'ont plus d'outils.
   if (typeof syncMcpSelectorUI === 'function') syncMcpSelectorUI();
+  if (typeof syncContextAfterMcpChange === 'function') syncContextAfterMcpChange();
 }
 
 // Pose / retire les marqueurs de refus d'autorisation sur un ack (campagne AB).

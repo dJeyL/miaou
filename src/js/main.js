@@ -6011,11 +6011,9 @@ async function init() {
   // (`prefetchModels` avale, `connectMcpServer` dégrade) — d'où le `catch`
   // défensif ici, qui ne sert qu'à garantir que le drapeau tombe.
   const modelsReady = prefetchModels();   // liste des modèles → sélecteur composer
-  // handshake + tools/list des serveurs MCP activés ; rafraîchit aussi la pilule de
-  // contexte, sous-évaluée tant que toolDefinitions() ignore les outils MCP distants.
+  // handshake + tools/list des serveurs MCP activés. La pilule de contexte suit
+  // d'elle-même : chaque `connectMcpServer` la resynchronise (syncContextAfterMcpChange).
   const mcpReady = reconnectMcpServers().then(() => {
-    _lastContextManifest = null;
-    syncContextCounter();
     syncMcpSkillApprovalToast(true);
   });
   Promise.all([

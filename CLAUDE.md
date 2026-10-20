@@ -245,8 +245,12 @@ de slugs y vont, le contenu des sections arrive en tool result à la demande.
   corps de fonctions** (exécutés au runtime, après chargement complet), jamais
   au top-level d'un autre fichier.
 - **Noms top-level uniques** entre fichiers : le script concaténé est en
-  `'use strict'` et une même portée — deux `const`/`let`/`function` homonymes au
-  niveau racine cassent le build.
+  `'use strict'` et une même portée — deux `const`/`let` homonymes au niveau
+  racine cassent le **chargement** du bundle (SyntaxError), deux `function`
+  s'écrasent en silence. `build.py` ne le vérifie PAS : le build reste vert, et
+  le runner QuickJS signale le fichier fautif par une rafale de « X is not
+  defined » sur ses fonctions, sans nommer l'homonyme. Greper un nom dans
+  `src/js/` avant de l'ajouter (les `ICON_*` sont les plus exposées).
 - `'use strict';` est la première instruction de `utils.js` (premier fichier) →
   tout le script est strict. Déclarer chaque variable, pas de global implicite.
 - Garde de test obligatoire en fin de `main.js` :

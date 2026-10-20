@@ -5971,7 +5971,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-19 16:49 UTC */
+/* miaou — built: 2026-10-20 10:56 UTC */
 
 /* ── utils.js ── */
 
@@ -11617,7 +11617,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1792428552}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1792493781}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11637,7 +11637,7 @@ const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || ''
 const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "41ea80ea6c55f63a"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "e9b0c27dc17b3b85"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -17586,12 +17586,15 @@ async function connectMcpServer(server) {
     if (secretsDeclared && typeof onProxySecretsServerConnected === 'function') onProxySecretsServerConnected(s);
 
     if (typeof syncMcpSelectorUI === 'function') syncMcpSelectorUI();
+
+    if (typeof syncContextAfterMcpChange === 'function') syncContextAfterMcpChange();
     return true;
   } catch (e) {
     delete _remoteTools[s.name];
     _remoteStatus[s.name] = { state: 'error', count: 0, error: (e && e.message) || 'échec', sessionId: null };
 
     if (typeof syncMcpSelectorUI === 'function') syncMcpSelectorUI();
+    if (typeof syncContextAfterMcpChange === 'function') syncContextAfterMcpChange();
     return false;
   }
 }
@@ -17670,6 +17673,7 @@ function disconnectMcpServer(name) {
   delete _mcpLastAttempt[name];
 
   if (typeof syncMcpSelectorUI === 'function') syncMcpSelectorUI();
+  if (typeof syncContextAfterMcpChange === 'function') syncContextAfterMcpChange();
 }
 
 function applyAuthorizationRefusal(ackEntry, errorCode, data, mcpServerName) {
@@ -26924,6 +26928,11 @@ function contextExplainFor(source, libraryForm, skillsContextForm) {
 
 function effectiveContextManifest() {
   return _lastContextManifest || computeContextManifestNow();
+}
+
+function syncContextAfterMcpChange() {
+  if (!_activeGenerations.size) _lastContextManifest = null;
+  syncContextCounter();
 }
 
 function syncContextCounter() {
@@ -39250,8 +39259,6 @@ async function init() {
   const modelsReady = prefetchModels();
 
   const mcpReady = reconnectMcpServers().then(() => {
-    _lastContextManifest = null;
-    syncContextCounter();
     syncMcpSkillApprovalToast(true);
   });
   Promise.all([
