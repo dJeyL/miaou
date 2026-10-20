@@ -1279,13 +1279,23 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
   padding: 0;
   background: none;
   border: none;
-  color: var(--accent);
+  color: var(--text-3);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+  transition: color 120ms var(--ease);
 }
-.msg.user .bubble.clamp-over > .msg-clamp-toggle:hover { text-decoration: underline; }
-.msg-clamp-toggle svg { flex: 0 0 auto; transition: transform 260ms var(--ease); }
+.msg.user .bubble.clamp-over > .msg-clamp-toggle:hover { color: var(--text); }
+
+.msg-clamp-toggle svg {
+  flex: 0 0 auto;
+
+  position: relative;
+  top: 1px;
+  color: color-mix(in srgb, var(--accent) 55%, var(--text-3));
+  transition: transform 260ms var(--ease), color 120ms var(--ease);
+}
+.msg-clamp-toggle:hover svg { color: var(--accent); }
 .msg.user .bubble.clamp-open > .msg-clamp-toggle svg { transform: rotate(180deg); }
 
 .msg.user.agent-result { align-items: stretch; }
@@ -5971,7 +5981,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-20 10:56 UTC */
+/* miaou — built: 2026-10-20 22:22 UTC */
 
 /* ── utils.js ── */
 
@@ -11617,7 +11627,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1792493781}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1792534961}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11637,7 +11647,7 @@ const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || ''
 const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "e9b0c27dc17b3b85"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "b3b024f083a6b717"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 

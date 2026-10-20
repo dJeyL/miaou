@@ -792,13 +792,25 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
   padding: 0;
   background: none;
   border: none;
-  color: var(--accent);
+  color: var(--text-3);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+  transition: color 120ms var(--ease);
 }
-.msg.user .bubble.clamp-over > .msg-clamp-toggle:hover { text-decoration: underline; }
-.msg-clamp-toggle svg { flex: 0 0 auto; transition: transform 260ms var(--ease); }
+.msg.user .bubble.clamp-over > .msg-clamp-toggle:hover { color: var(--text); }
+/* Discret au repos : texte gris, chevron d'accent éteint vers le gris ; le
+   survol rend au texte sa couleur pleine et au chevron l'accent franc. */
+.msg-clamp-toggle svg {
+  flex: 0 0 auto;
+  /* Centré, le chevron flotte au-dessus de la ligne : on le descend vers la
+     ligne de base. `top` plutôt que transform, que la rotation occupe déjà. */
+  position: relative;
+  top: 1px;
+  color: color-mix(in srgb, var(--accent) 55%, var(--text-3));
+  transition: transform 260ms var(--ease), color 120ms var(--ease);
+}
+.msg-clamp-toggle:hover svg { color: var(--accent); }
 .msg.user .bubble.clamp-open > .msg-clamp-toggle svg { transform: rotate(180deg); }
 
 /* ── Réponse d'agent repliée (X-1e) ─────────────────────────────────────
