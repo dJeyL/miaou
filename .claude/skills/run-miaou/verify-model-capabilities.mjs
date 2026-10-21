@@ -26,6 +26,11 @@
 //  13. le niveau de raisonnement de la conversation survit à un passage par un
 //      modèle déclaré sans raisonnement, puis à la réouverture de la
 //      conversation après rechargement de la page (prémisse : il est enregistré)
+//  14. sélecteurs de modèle et de raisonnement masqués par le formulaire : les
+//      choix de la conversation (mU, « low ») dorment — corps envoyé sur le
+//      défaut (mV, « high »), topbar sur mV, palette sans « Changer de modèle »,
+//      record intact ; une conversation détachée réveillée prend le défaut, pas
+//      l'override de l'écran ; réaffichés, les choix reprennent effet
 //
 // Backend stubé au schéma Mistral. VERIFY_DIST=<chemin> rejoue sur un autre
 // build (vérifier qu'il passe au rouge sur le code d'avant l'étape).
@@ -270,6 +275,68 @@ check('13. niveau « medium » conservé : passage par mN, réouverture après r
     && afterReopen.model === 'mN' && afterReopen.stored === 'medium'
     && back.effort === 'medium' && back.label === 'medium' && back.shown === true,
   JSON.stringify({ premise13, afterSwitch, afterReopen, back }));
+
+// ── 14. overrides en sommeil sous sélecteurs masqués ─────────────────────────
+// Prémisse : la conversation porte des choix DIFFÉRENTS des défauts (serveur
+// srvA → mV, réglages → « high »), sinon « suit le défaut » ne prouverait rien.
+// Bascule par le VRAI formulaire (drawer ouvert pour qu'il soit peuplé).
+const setSelectors = (on) => page.evaluate((v) => {
+  openSettings();
+  $('set-modelselector').checked = v;
+  $('set-reasoningselector').checked = v;
+  onSaveSettings();
+}, on);
+const sendAndRead = async (text) => {
+  const n = streamed.length;
+  await page.evaluate((t) => sendUserText(t), text);
+  await waitStreamed(n);
+  const b = streamed[streamed.length - 1];
+  return { model: b.model, effort: b.reasoning_effort };
+};
+const switchModelOffered = () => page.evaluate(() => {
+  const c = COMMANDS.find(x => x.id === 'switch-model');
+  return !c.enabled || c.enabled();
+});
+await page.evaluate(() => { resetToEmpty(); pickComposerModel('mU', 'srvA'); setConvReasoningEffort('low'); });
+const pre14 = await sendAndRead('Premier message, choix de conversation');
+const conv14 = await page.evaluate(() => currentConvId);
+const offered14a = await switchModelOffered();
+await setSelectors(false);
+const top14 = await page.evaluate(() => $('model-label').textContent);
+const hidden14 = await page.evaluate(() => ({ model: $('composer-model').hidden, effort: $('composer-reasoning').hidden }));
+const offered14b = await switchModelOffered();
+const off14 = await sendAndRead('Deuxième message, sélecteurs masqués');
+const rec14 = await page.evaluate((id) => {
+  const c = loadConversation(id) || {};
+  return { model: c.model, effort: c.reasoningEffort };
+}, conv14);
+// Conversation détachée (réveil de parent) : A sans override, réveillée pendant
+// que l'écran montre une conversation qui en porte — sélecteurs AFFICHÉS, pour
+// que l'override de l'écran soit en vigueur et puisse fuir.
+await setSelectors(true);
+await page.evaluate(() => resetToEmpty());
+await sendAndRead('Conversation A, sans choix propre');
+const convA = await page.evaluate(() => currentConvId);
+await page.evaluate((id) => openConversation(id, true), conv14);
+await page.waitForFunction((id) => currentConvId === id, conv14);
+const detached14 = await page.evaluate((id) => {
+  const g = runDetachedGeneration(id, projectConvMessages(loadConversation(id)));
+  return g ? { model: g.model, effort: g.reasoningEffort } : null;
+}, convA);
+await page.waitForFunction((id) => !isGenerating(id), convA, { timeout: 10000 }).catch(() => {});
+const on14 = await sendAndRead('Troisième message, sélecteurs réaffichés');
+check('14a. prémisse : la conversation envoie ses propres choix (mU, low)',
+  pre14.model === 'mU' && pre14.effort === 'low' && offered14a === true, JSON.stringify({ pre14, offered14a }));
+check('14b. masqués : corps sur les défauts (mV, high), topbar mV, pilules et commande de palette absentes',
+  off14.model === 'mV' && off14.effort === 'high' && top14 === 'mV'
+    && hidden14.model === true && hidden14.effort === true && offered14b === false,
+  JSON.stringify({ off14, top14, hidden14, offered14b }));
+check('14c. masqués : le record garde mU et low',
+  rec14.model === 'mU' && rec14.effort === 'low', JSON.stringify(rec14));
+check('14d. conversation détachée : défauts (mV, high), pas l\'override de l\'écran',
+  !!detached14 && detached14.model === 'mV' && detached14.effort === 'high', JSON.stringify(detached14));
+check('14e. réaffichés : la conversation retrouve mU et low',
+  on14.model === 'mU' && on14.effort === 'low', JSON.stringify(on14));
 
 // ── 12 ───────────────────────────────────────────────────────────────────────
 check('12. aucune erreur console sur l\'ensemble', realErrors().length === 0, realErrors().join(' | '));

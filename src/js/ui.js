@@ -5586,8 +5586,11 @@ const COMMANDS = [
   { id: 'agents', key: 'a', label: 'Agents', keywords: ['agent', 'agents', 'tâches', 'en cours'],
     enabled: () => liveAgentInventory().length > 0,
     run: () => enterCmdkSubmode('agent') },
+  // Réservée au sélecteur de modèle AFFICHÉ : masqué, l'override de conversation
+  // est en sommeil (`convModelInEffect`), donc un choix posé d'ici ne
+  // s'appliquerait pas. Un seul interrupteur gouverne les deux chemins.
   { id: 'switch-model', key: 'm', label: 'Changer de modèle', keywords: ['model', 'modèle', 'switch'],
-    enabled: () => cmdkModelItems('').length > 0,
+    enabled: () => !!loadSettings().showModelSelector && cmdkModelItems('').length > 0,
     run: () => enterCmdkSubmode('model') },
   { id: 'invoke-skill', key: 'k', label: 'Invoquer une skill', keywords: ['skill', 'slash', 'commande'],
     enabled: () => listEnabledSkills().length > 0,
@@ -6757,7 +6760,9 @@ function syncReasoningUI() {
   // s'abstient (`reasoningEffortDeclaredOk`, streamCompletion).
   let cur = activeReasoningEffort();
   if (!rejected && cur && options !== REASONING_EFFORT_OPTIONS && !options.some(o => o.value === cur)) {
-    if (currentConvReasoningEffort) { setConvReasoningEffort(''); return; }
+    // Override en sommeil (sélecteur masqué) : `cur` est alors le défaut
+    // global, qui ne dit rien du niveau de la conversation — ne pas l'effacer.
+    if (convReasoningEffortInEffect(currentConvReasoningEffort)) { setConvReasoningEffort(''); return; }
     cur = '';
   }
   const opt = options.find(o => o.value === cur);

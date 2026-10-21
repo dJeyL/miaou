@@ -539,6 +539,12 @@ passage par un modèle bloqué et à la réouverture après rechargement. Rejeu 
 sur le build d'avant l'étape, les contrôles propres à la déclaration passent
 au rouge. Sur une version qui remettait le niveau à zéro en masquant le
 sélecteur, seul ce dernier contrôle tombe, et c'est lui qui l'a attrapée.
+Son bloc 14 couvre la mise en sommeil des choix de conversation (modèle et
+niveau) sous sélecteurs masqués : corps envoyé, topbar, commande de palette,
+record intact, conversation détachée sur les défauts, réveil au réaffichage.
+Rejoué contre trois régressions injectées (garde du modèle retirée, garde de
+la palette retirée, repli `conv.model || activeModel()` du réveil de parent),
+rouge à chaque fois.
 
 Les niveaux de raisonnement sont vérifiés par `verify-reasoning-levels.mjs`.
 Le stub sert trois modèles : un qui déclare ses niveaux (forme d'OpenRouter),

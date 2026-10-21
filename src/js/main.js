@@ -1249,13 +1249,45 @@ async function recheckMcpServers() {
   renderMcpServersIfOpen();
 }
 
-// Modèle effectif pour l'échange courant : override de conversation s'il existe,
-// sinon le modèle par défaut des réglages. Ne JAMAIS mélanger les deux dans une
-// même variable d'état (override conv vs défaut global).
+// Overrides de conversation tels qu'ils S'APPLIQUENT. Le sélecteur du composer
+// masqué (`showModelSelector` / `showReasoningSelector` faux, défaut), l'override
+// est en sommeil : rien n'est effacé — le record et les variables d'écran le
+// gardent, la persistance le recopie tel quel —, mais aucune lecture ne le sert,
+// et il reprend effet au réaffichage. Sans ça, un choix fait avant le masquage
+// restait en vigueur sans qu'on puisse plus le changer. Même règle que la
+// sélection MCP (`mcpDisabledFor`).
+//
+// Tout lecteur d'un override (écran, record d'une conversation détachée,
+// description d'`agent__spawn`) passe par ces deux fonctions, jamais par le
+// champ nu : `modelForConv` / `reasoningEffortForConv` ci-dessous.
+function convModelInEffect(m) {
+  const v = (typeof m === 'string') ? m.trim() : '';
+  return (v && loadSettings().showModelSelector) ? v : '';
+}
+
+function convReasoningEffortInEffect(v) {
+  const e = (typeof v === 'string') ? v.trim() : '';
+  return (e && loadSettings().showReasoningSelector) ? e : '';
+}
+
+// Modèle effectif d'une conversation dont on tient l'override (`''` = aucun) :
+// l'override s'il s'applique, sinon le modèle par défaut.
+// activeApiConfig() (storage.js) résout : modèle du serveur actif, sinon
+// settings.model legacy — même chaîne que silentCompletion/streamCompletion.
+function modelForConv(convModel) {
+  return convModelInEffect(convModel) || activeApiConfig().model;
+}
+
+// Même chose pour reasoning_effort ; '' = défaut = pas de paramètre envoyé.
+function reasoningEffortForConv(convLevel) {
+  return convReasoningEffortInEffect(convLevel) || (loadSettings().reasoningEffort || '');
+}
+
+// Modèle effectif pour l'échange courant : override de conversation s'il existe
+// (et s'applique), sinon le modèle par défaut des réglages. Ne JAMAIS mélanger
+// les deux dans une même variable d'état (override conv vs défaut global).
 function activeModel() {
-  // activeApiConfig() (storage.js) résout : modèle du serveur actif, sinon
-  // settings.model legacy — même chaîne que silentCompletion/streamCompletion.
-  return (currentConvModel && currentConvModel.trim()) || activeApiConfig().model;
+  return modelForConv(currentConvModel);
 }
 
 // Fixe l'override de modèle de la conversation courante (choix dans le composer).
@@ -1274,10 +1306,10 @@ function setConvModel(m) {
 }
 
 // Niveau de reasoning_effort effectif pour l'échange courant : override de
-// conversation s'il existe, sinon le défaut des réglages. '' = défaut = pas de
-// paramètre envoyé à l'API (comportement natif du modèle).
+// conversation s'il existe (et s'applique), sinon le défaut des réglages.
+// '' = défaut = pas de paramètre envoyé à l'API (comportement natif du modèle).
 function activeReasoningEffort() {
-  return (currentConvReasoningEffort && currentConvReasoningEffort.trim()) || (loadSettings().reasoningEffort || '');
+  return reasoningEffortForConv(currentConvReasoningEffort);
 }
 
 // Fixe l'override de reasoning_effort de la conversation courante (choix dans
@@ -2386,12 +2418,16 @@ function onSaveSettings() {
     libraryManifestInContext: $('set-library-manifest').checked,
     exportInteractive: $('set-export-interactive').checked,
   };
-  // Masquer ou réafficher le sélecteur MCP endort ou réveille la sélection
-  // (`mcpDisabledFor`) : outils et consignes du prochain envoi changent, le
-  // manifeste du dernier envoi ne décrit plus le contexte.
-  const mcpSelectorToggled = (loadSettings().showMcpSelector !== false) !== obj.showMcpSelector;
+  // Masquer ou réafficher un sélecteur du composer endort ou réveille ce qu'il
+  // porte (`mcpDisabledFor`, `convModelInEffect`, `convReasoningEffortInEffect`) :
+  // outils, consignes, modèle ou description d'`agent__spawn` du prochain envoi
+  // changent, le manifeste du dernier envoi ne décrit plus le contexte.
+  const before = loadSettings();
+  const selectorToggled = (before.showMcpSelector !== false) !== obj.showMcpSelector
+    || !!before.showModelSelector !== obj.showModelSelector
+    || !!before.showReasoningSelector !== obj.showReasoningSelector;
   saveSettings(obj);
-  if (mcpSelectorToggled) _lastContextManifest = null;
+  if (selectorToggled) _lastContextManifest = null;
   updateSettingsDirty();   // formulaire = persisté → bouton redésactivé
   highlightEnabled = obj.highlight;
   syncConfigured();

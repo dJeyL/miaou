@@ -817,15 +817,31 @@ describe('agent__spawn : le défaut de reasoning_effort est RÉELLEMENT appliqu�
   // retombe sur '' est project_doc_promises_intent_code_never_confronted — ça
   // n'échoue jamais, et un lot suivant le fossilise. Un test dédié, pas une
   // relecture. Une seule source pour les deux (agentDefaultReasoningEffort).
+  // Le niveau propre à la conversation ne s'applique que sélecteur de
+  // raisonnement AFFICHÉ (masqué par défaut : override en sommeil).
   it('la description ANNONCE le niveau courant de la conversation', function() {
     localStorage.clear();
+    saveSettings({ showReasoningSelector: true });
     saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [], reasoningEffort: 'high' });
     var def = agentSpawnToolDef({ convId: 'p1', spaceId: 'default' });
     expect(def.inputSchema.properties.reasoning_effort.description).toContain('high');
   });
   it('le HANDLER applique exactement ce que la description annonce', function() {
     localStorage.clear();
+    saveSettings({ showReasoningSelector: true });
     saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [], reasoningEffort: 'high' });
+    expect(agentDefaultReasoningEffort({ convId: 'p1', spaceId: 'default' })).toBe('high');
+  });
+  it('sélecteur masqué : le niveau de la conversation dort, description et handler suivent le global', function() {
+    localStorage.clear();
+    saveSettings({ showReasoningSelector: false, reasoningEffort: 'low' });
+    saveConversation({ id: 'p1', title: 'p', timestamp: 1, messages: [], reasoningEffort: 'high' });
+    expect(agentDefaultReasoningEffort({ convId: 'p1', spaceId: 'default' })).toBe('low');
+    expect(agentSpawnToolDef({ convId: 'p1', spaceId: 'default' })
+      .inputSchema.properties.reasoning_effort.description).toContain('low');
+    // Rien d'effacé : réafficher le sélecteur rend le niveau de la conversation.
+    expect(loadConversation('p1').reasoningEffort).toBe('high');
+    saveSettings({ showReasoningSelector: true });
     expect(agentDefaultReasoningEffort({ convId: 'p1', spaceId: 'default' })).toBe('high');
   });
   it('sans override de conversation, retombe sur le réglage global', function() {

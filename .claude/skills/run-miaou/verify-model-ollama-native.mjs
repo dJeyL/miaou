@@ -123,6 +123,10 @@ await page.evaluate(() => {
     { id: 'srvM', name: 'Mistral', url: 'http://mistral.local/v1', key: 'x', model: 'mistral-medium' },
   ]));
   localStorage.setItem('miaou-active-api-server', 'srvO');
+  // Sélecteur de modèle AFFICHÉ : les étapes 7-8 changent de modèle par
+  // `setConvModel`, et un override de conversation est en sommeil tant que ce
+  // sélecteur est masqué (défaut) — `activeModel()` resterait sur llama3.
+  localStorage.setItem('miaou-settings', JSON.stringify({ showModelSelector: true }));
 });
 consoleErrors.length = 0;
 calls.length = 0;

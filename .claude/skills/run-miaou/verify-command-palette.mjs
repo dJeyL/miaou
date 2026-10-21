@@ -167,15 +167,34 @@ await page.waitForTimeout(100);
 // cache modèles est non vide (peut être préchargé au boot — état légitime, on
 // vérifie la cohérence, pas une valeur absolue).
 // (seed a 2 skills et 2 espaces → invoke skill + switch space présents.)
+// "Changer de modèle" exige AUSSI le sélecteur de modèle affiché (masqué par
+// défaut) : masqué, l'override de conversation est en sommeil. Contrôlé d'abord
+// masqué, avec des modèles en cache (sinon l'absence ne prouverait rien), puis
+// le sélecteur est affiché pour la suite du script (sous-mode modèle compris).
 await page.evaluate(() => resetToEmpty());
 await page.waitForTimeout(100);
+await page.waitForFunction(() => { const m = activeServerModels(); return !!(m && m.length); }, null, { timeout: 5000 }).catch(() => {});
+await page.evaluate(() => saveSettings({ showModelSelector: false }));
+await openPalette();
+await page.fill('#cmdk-input', '');
+await page.waitForTimeout(120);
+check('sélecteur de modèle masqué : "Changer de modèle" absent malgré des modèles en cache',
+  await page.evaluate(() => {
+    const m = activeServerModels();
+    const hasCmd = Array.from(document.querySelectorAll('#cmdk-list .cmdk-item-label'))
+      .some(e => e.textContent === 'Changer de modèle');
+    return !!(m && m.length) && !hasCmd;
+  }));
+await page.keyboard.press('Escape');
+await page.waitForTimeout(100);
+await page.evaluate(() => saveSettings({ showModelSelector: true }));
 await openPalette();
 await page.fill('#cmdk-input', '');
 await page.waitForTimeout(120);
 const rootLabels = await page.evaluate(() =>
   Array.from(document.querySelectorAll('#cmdk-list .cmdk-item-label')).map(e => e.textContent));
 check('sans conversation : "Exporter …" absent', !rootLabels.some(l => l.startsWith('Exporter')));
-check('cohérence : "Changer de modèle" présent SSI le cache modèles est non vide',
+check('cohérence (sélecteur affiché) : "Changer de modèle" présent SSI le cache modèles est non vide',
   await page.evaluate(() => {
     const hasCmd = Array.from(document.querySelectorAll('#cmdk-list .cmdk-item-label'))
       .some(e => e.textContent === 'Changer de modèle');

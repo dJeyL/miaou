@@ -417,6 +417,14 @@ function applySyncedSettings(keys) {
   // chaque rendu, et la lecture d'une skill la relit à chaque appel — seul
   // l'affichage est à rafraîchir.
   if (set.has('mcp-skill-approvals') && typeof renderMcpServers === 'function') renderMcpServers();
+  // Sélecteurs de modèle et de raisonnement basculés chez un pair : visibilité,
+  // et l'override de la conversation affichée s'endort ou se réveille
+  // (`convModelInEffect`) — libellés, fenêtre de contexte et manifeste suivent.
+  if (set.has('showModelSelector') || set.has('showReasoningSelector')) {
+    _lastContextManifest = null;
+    syncModelUI();
+    syncReasoningUI();
+  }
   // Réglages généraux : ré-appliquer thème + surlignage + sélecteurs, sans
   // toucher au draft ni au thread. On relit l'état persisté à la source.
   const s = loadSettings();

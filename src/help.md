@@ -1353,7 +1353,11 @@ Quelques repères pour te déplacer dans MIAOU :
   si tous les niveaux ont été refusés. Si le message de refus énumère les
   niveaux acceptés, le sélecteur ne propose plus qu'eux, et l'inspecteur les
   montre comme « appris d'un refus ». Les niveaux déclarés apparaissent
-  aussi dans l'inspecteur de contexte, sur la ligne des capacités.
+  aussi dans l'inspecteur de contexte, sur la ligne des capacités. Masquer
+  l'un de ces deux sélecteurs met en sommeil le choix fait pour chaque
+  conversation : tant qu'il est masqué, toutes suivent le modèle par défaut du
+  serveur actif, ou le niveau par défaut des Paramètres ; les choix reprennent
+  effet quand on le réaffiche.
 - **Sélecteur de serveurs MCP** (affiché dès qu'un serveur compagnon est
   configuré ; se masque dans Paramètres › Outils & extensions) : la pilule à
   la clé à molette, à gauche du niveau de raisonnement, indique combien de
@@ -1397,7 +1401,8 @@ Quelques repères pour te déplacer dans MIAOU :
   nouvelle conversation, réglages, souvenirs, résumés, skills, serveurs MCP,
   inspecteur de contexte, statistiques d'usage, bascule de thème et de
   coloration, export de la conversation. Certaines entrées ouvrent un **sous-mode** où la palette filtre
-  une liste dédiée : choisir un modèle, invoquer une skill, changer d'espace, ou
+  une liste dédiée : choisir un modèle (seulement quand le sélecteur de modèle
+  du composer est affiché), invoquer une skill, changer d'espace, ou
   rechercher une conversation — seule exception à l'étanchéité des Espaces
   (sujet `espaces`), cette recherche porte sur tous tes espaces (Échap revient en
   arrière).

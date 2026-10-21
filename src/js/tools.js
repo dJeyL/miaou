@@ -3147,9 +3147,8 @@ function agentDelegatableToolNames(ctx) {
 function agentDefaultReasoningEffort(ctx) {
   const c = toolCtx(ctx);
   const conv = c.convId ? loadConversation(c.convId) : null;
-  const convLevel = conv && conv.reasoningEffort;
-  if (convLevel) return String(convLevel);
-  try { return loadSettings().reasoningEffort || ''; } catch (e) { return ''; }
+  // Même prédicat que l'envoi : override en sommeil si le sélecteur est masqué.
+  return reasoningEffortForConv(conv && conv.reasoningEffort);
 }
 
 // Description dynamique d'agent__spawn. Appelée par toolDefinitions() : la

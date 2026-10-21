@@ -92,7 +92,10 @@ fermer. `cmdkModeItems(query)` route selon `_cmdkMode` et renvoie des items
   correspondance (`modelFilterMatches` : chaque mot dans le nom du modèle OU du
   serveur). Sur tous les serveurs non désactivés déjà en cache
   (`_modelsById`) ; la palette **ne déclenche aucun fetch**, elle liste ce qui
-  est connu (peut être vide → l'entrée racine est `enabled`-gated). Le nom du
+  est connu (peut être vide → l'entrée racine est `enabled`-gated). L'entrée
+  racine exige AUSSI `showModelSelector` : masqué, l'override de conversation
+  est en sommeil (`convModelInEffect`, cf. piège 15), un choix posé d'ici ne
+  s'appliquerait pas. Le nom du
   serveur apparaît en `note` dès qu'il y a plus d'un serveur sélectionnable.
   Pick → `pickComposerModel(m, serverId)` (bascule le serveur actif si besoin
   puis override conversation, même chemin que le sélecteur composer). `current`

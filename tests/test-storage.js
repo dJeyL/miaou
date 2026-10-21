@@ -77,6 +77,56 @@ describe('activeReasoningEffort (override conv vs niveau par défaut)', function
   });
 });
 
+// Overrides de conversation en sommeil quand leur sélecteur est masqué : la
+// variable d'écran garde la valeur (rien d'effacé), la lecture ne la sert plus.
+describe('overrides de conversation : en sommeil sous sélecteur masqué', function() {
+  it('modèle : masqué → défaut des réglages ; affiché → override', function() {
+    var save = currentConvModel;
+    localStorage.clear();
+    try {
+      currentConvModel = 'autre-modele';
+      saveSettings({ model: 'defaut', showModelSelector: false });
+      expect(activeModel()).toBe('defaut');
+      expect(modelForConv('autre-modele')).toBe('defaut');
+      expect(currentConvModel).toBe('autre-modele');
+      saveSettings({ showModelSelector: true });
+      expect(activeModel()).toBe('autre-modele');
+      expect(modelForConv('autre-modele')).toBe('autre-modele');
+      expect(modelForConv('')).toBe('defaut');
+    } finally {
+      currentConvModel = save;
+      localStorage.clear();
+    }
+  });
+  it('raisonnement : masqué → défaut des réglages ; affiché → override', function() {
+    var save = currentConvReasoningEffort;
+    localStorage.clear();
+    try {
+      currentConvReasoningEffort = 'high';
+      saveSettings({ reasoningEffort: 'low', showReasoningSelector: false });
+      expect(activeReasoningEffort()).toBe('low');
+      expect(reasoningEffortForConv('high')).toBe('low');
+      expect(currentConvReasoningEffort).toBe('high');
+      saveSettings({ showReasoningSelector: true });
+      expect(activeReasoningEffort()).toBe('high');
+      expect(reasoningEffortForConv('')).toBe('low');
+    } finally {
+      currentConvReasoningEffort = save;
+      localStorage.clear();
+    }
+  });
+  it('les deux réglages sont indépendants', function() {
+    localStorage.clear();
+    try {
+      saveSettings({ model: 'defaut', reasoningEffort: 'low', showModelSelector: true, showReasoningSelector: false });
+      expect(modelForConv('autre')).toBe('autre');
+      expect(reasoningEffortForConv('high')).toBe('low');
+    } finally {
+      localStorage.clear();
+    }
+  });
+});
+
 describe('flag vision manuel par (serveur, modèle) — D5 brief A2', function() {
   it('normalizeApiServer : map vision par défaut vide, ne garde que les false', function() {
     var s = normalizeApiServer({ name: 'S', url: 'u', model: 'm',

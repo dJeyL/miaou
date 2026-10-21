@@ -16,20 +16,27 @@
   la migration silencieuse (une fois) et de filet dans `activeModel()` si
   jamais aucun serveur n'existe encore.
   `summaryInjectionMode` ∈ `auto | propose | never`, défaut `propose`. `model` est
-  le **modèle par défaut** (global). `showModelSelector` (défaut `false`) n'affecte
-  que la visibilité du **sélecteur serveur/modèle** dans le composer (libellé du
+  le **modèle par défaut** (global). `showModelSelector` (défaut `false`) gouverne
+  le **sélecteur serveur/modèle** du composer — masqué, l'override `conv.model`
+  est en sommeil (`convModelInEffect`, main.js : gardé, jamais servi, réveillé
+  au réaffichage) (libellé du
   réglage depuis 2026-08-21 : le sélecteur liste les modèles de tous les serveurs
   non désactivés, pas seulement de l'actif — cf. `docs/pitfalls-detail.md` §15). `reasoningEffort` (défaut `''`)
   est le **niveau de raisonnement par défaut** (global) ∈ `'' | none | low | medium
   | high` — `''` (défaut) n'ajoute **aucun** paramètre `reasoning_effort` à la
   requête API (comportement natif du modèle) ; toute autre valeur est posée telle
-  quelle. `showReasoningSelector` (défaut `false`) n'affecte que la visibilité du
-  sélecteur dans le composer, symétrique à `showModelSelector` : même composant
+  quelle. `showReasoningSelector` (défaut `false`) gouverne le sélecteur du composer,
+  symétrique à `showModelSelector` (masqué : `conv.reasoningEffort` en sommeil,
+  `convReasoningEffortInEffect`) : même composant
   pilule + `.model-menu`, mais liste statique de 5 valeurs (pas de fetch). La
   valeur « défaut » grise la pilule (classe `.effort-default`, composer ET
   settings) — l'accent orange signale un niveau explicitement choisi. Résolution par
   `activeReasoningEffort()` (main.js), même pattern que `activeModel()` :
-  `conv.reasoningEffort` (override) sinon `settings.reasoningEffort` (défaut).
+  `conv.reasoningEffort` (override, s'il s'applique) sinon
+  `settings.reasoningEffort` (défaut). Un lecteur qui tient un RECORD (parent
+  réveillé, description d'`agent__spawn`) passe par `reasoningEffortForConv` /
+  `modelForConv`, jamais par le champ nu ni par `activeModel()` en repli (qui
+  lirait l'override de la conversation affichée).
   Si l'API rejette `reasoning_effort` pour un (endpoint, modèle) donné (vLLM
   renvoie 400 sur les paramètres inconnus ; seul un 4xx hors 408/429 vaut
   rejet, cf. `httpStatusIsVerdict`), le rejet est mémorisé en session

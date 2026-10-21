@@ -472,9 +472,14 @@ HTML, ou à la synchro multi-onglets.
     sur la fiche du serveur en retire (`isModelShown`, cf. `docs/model-props.md`) ; **pas de retry/fallback** à l'envoi en cas d'erreur — l'erreur
     s'affiche dans la bulle (catch existant de `dispatchSend`). Changer de modèle
     **ne touche jamais** l'historique ; passer le réglage à masqué **ne réinit-
-    ialise pas** les overrides déjà posés (`syncModelUI` masque, l'override
-    persiste et reste actif). La pastille topbar reflète aussi `activeModel()`
-    (identique au défaut quand pas d'override).
+    ialise pas** les overrides déjà posés, mais les **met en sommeil** :
+    `convModelInEffect` (main.js) rend `''` tant que `showModelSelector` est
+    faux, l'override reste persisté et reprend effet au réaffichage (renverse
+    l'ancien « persiste et reste actif », qui laissait une conversation sur un
+    modèle qu'on ne pouvait plus changer ; même règle que le raisonnement et la
+    sélection MCP). Tout lecteur d'un override passe par `modelForConv`, jamais
+    `conv.model || activeModel()`. La pastille topbar reflète aussi
+    `activeModel()` (identique au défaut quand pas d'override en vigueur).
 <a id="p16"></a>
 
 16. **Préservation du KV cache (Ollama).** `buildSystemMessage()` ne contient

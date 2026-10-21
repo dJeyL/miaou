@@ -1244,10 +1244,14 @@ function runDetachedGeneration(convId, thread) {
   if (!conv) return null;
   if (isGenerating(convId)) return null;   // une seule génération par conversation (registre clé par convId)
   const gen = createGeneration(convId, thread, {
-    model: conv.model || activeModel(),
+    // Overrides lus sur le RECORD, par les mêmes prédicats que l'écran (en
+    // sommeil si le sélecteur est masqué) — jamais `activeModel()` /
+    // `activeReasoningEffort()` en repli : ils lisent l'override de la
+    // conversation AFFICHÉE, qui n'est pas forcément celle-ci (piège 28).
+    model: modelForConv(conv.model),
     serverName: (activeApiServer() || {}).name || '',
     serverId: (activeApiServer() || {}).id || '',
-    reasoningEffort: conv.reasoningEffort || activeReasoningEffort(),
+    reasoningEffort: reasoningEffortForConv(conv.reasoningEffort),
   });
   // Champs figés depuis le RECORD, jamais depuis l'écran (piège 28) : l'écran
   // affiche une autre conversation, ses overrides ne sont pas ceux-ci.
