@@ -404,6 +404,9 @@ function applySyncedSettings(keys) {
   // une écriture d'un pair (serveurs, défauts, visibilité), et le menu s'il est
   // ouvert — sans quoi il montrerait encore l'état d'avant.
   if (set.has('mcp-disabled-defaults') || set.has('mcp-servers') || set.has('showMcpSelector')) {
+    // Visibilité basculée : la sélection s'endort ou se réveille
+    // (`mcpDisabledFor`), le manifeste du dernier envoi est périmé.
+    if (set.has('showMcpSelector')) _lastContextManifest = null;
     if (typeof syncMcpSelectorUI === 'function') syncMcpSelectorUI();
     const mcpMenu = $('composer-mcp-menu');
     if (mcpMenu && mcpMenu.classList.contains('show') && typeof renderComposerMcpOptions === 'function') {

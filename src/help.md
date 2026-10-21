@@ -662,7 +662,10 @@ conversations ; fait dans une conversation déjà commencée, il ne vaut que pou
 elle, à partir du message suivant. Chaque conversation garde le choix qu'elle
 avait à son premier message. Un serveur nouvellement ajouté est coché
 d'office. Un agent lancé par le modèle reçoit les mêmes serveurs que sa
-conversation.
+conversation. Masquer la pilule (Paramètres › Outils & extensions) met ces
+choix en sommeil : tant qu'elle est masquée, tous les serveurs activés restent
+à la disposition du modèle, et les cases décochées reprennent effet quand on
+la réaffiche.
 
 **Quand un serveur ne répond pas.** Une pastille rouge apparaît en haut à droite
 (« 1 serveur injoignable ») et t'emmène sur la liste des serveurs compagnons.
@@ -1357,8 +1360,10 @@ Quelques repères pour te déplacer dans MIAOU :
   serveurs sont actifs (« 3 MCP ») et permet de cocher ou décocher chacun. Les
   serveurs regroupés derrière un proxy sont listés en retrait sous lui, et se
   cochent un par un ; décocher le proxy les coupe tous, en gardant leurs cases
-  telles quelles pour quand tu le recocheras. Voir le sujet `mcp` pour ce que
-  change un serveur décoché.
+  telles quelles pour quand tu le recocheras. Masquer le sélecteur suspend
+  tous ces choix : tant qu'il est masqué, aucun serveur n'est coupé, dans
+  aucune conversation ; les cases reprennent effet quand on le réaffiche.
+  Voir le sujet `mcp` pour ce que change un serveur décoché.
 - **Modèles d'un serveur** (Paramètres › Connexion › Gérer les serveurs API,
   sur chaque fiche) : un
   tableau repliable « Modèles » liste tous les modèles du serveur, avec ce que

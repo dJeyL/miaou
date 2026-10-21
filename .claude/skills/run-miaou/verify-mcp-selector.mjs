@@ -30,7 +30,12 @@
 //      rend la sienne (« 4 MCP »)
 //  10. appel du modèle à un outil coupé : refusé, rien ne part au réseau ;
 //      témoin : un outil autorisé, lui, part
-//  11. aucune erreur console
+//  11. sélecteur masqué par le formulaire des réglages : pilule absente,
+//      manifeste du dernier envoi invalidé (l'inspecteur regagne solo et bench),
+//      la conversation qui les coupe les envoie, sa sélection et les défauts
+//      sont intacts, un appel à bench part au réseau ; réaffiché, la
+//      conversation retrouve « 4 MCP » et recoupe solo__x
+//  12. aucune erreur console
 //
 // VERIFY_DIST=<chemin> rejoue sur un autre build (rouge attendu sur le code
 // d'avant : la pilule n'existe pas).
@@ -334,7 +339,65 @@ check('10. appel à un outil coupé refusé sans réseau ; témoin : l\'outil au
   JSON.stringify({ refus: lastToolText(b10).slice(0, 80), calls10, temoin: lastToolText(b10w).slice(0, 80), calls10w }));
 
 // ── 11 ───────────────────────────────────────────────────────────────────────
-check('11. aucune erreur console', realErrors().length === 0, realErrors().join(' | '));
+// Sélection en sommeil quand le sélecteur est masqué. Prémisse : conv8 coupe
+// bench ET solo, les défauts coupent bench — sinon « tout est envoyé » ne
+// prouverait rien. Bascule par le VRAI formulaire (`onSaveSettings`, drawer
+// ouvert pour qu'il soit peuplé) : c'est lui qui doit invalider le manifeste.
+const setSelector = async (on) => {
+  await page.evaluate((v) => { openSettings(); $('set-mcpselector').checked = v; onSaveSettings(); }, on);
+};
+const toolDefChars = () => page.evaluate(() => {
+  const e = (effectiveContextManifest().entries || []).find(x => x.source === 'tool_definitions');
+  return e ? e.chars : -1;
+});
+await page.evaluate((id) => openConversation(id, true), conv8Id);
+await page.waitForFunction((id) => currentConvId === id, conv8Id);
+await send('Troisième message');
+const t11pre = toolNames(streamed[streamed.length - 1]);
+const chars11a = await toolDefChars();
+await setSelector(false);
+const chars11b = await toolDefChars();
+const hidden11 = await page.evaluate(() => {
+  const el = $('composer-mcp');
+  return !el || el.hidden || el.getClientRects().length === 0;
+});
+await send('Quatrième message');
+const b11 = streamed[streamed.length - 1];
+const t11 = toolNames(b11);
+const s11 = systemOf(b11);
+const conv11 = await convSel();
+const def11 = await defaults();
+await page.evaluate(() => resetToEmpty());
+const callsBefore11 = await page.evaluate(() => window.__remoteCalls.length);
+await send('APPEL proxy__bench__echo');
+const calls11 = await page.evaluate((n) => window.__remoteCalls.slice(n), callsBefore11);
+const fresh11 = await convSel();
+check('11a. prémisse : conv8 coupe bench et solo avant masquage',
+  !t11pre.includes('solo__x') && !t11pre.includes('proxy__bench__echo') && t11pre.includes('proxy__web__search'),
+  JSON.stringify(t11pre.filter(n => !n.startsWith('miaou__'))));
+check('11b. masqué : pilule absente, inspecteur recalculé (plus lourd)',
+  hidden11 && chars11a > 0 && chars11b > chars11a, JSON.stringify({ hidden11, chars11a, chars11b }));
+check('11c. masqué : bench et solo envoyés (outils et consignes), sélection et défauts intacts',
+  t11.includes('solo__x') && t11.includes('proxy__bench__echo') && t11.includes('proxy__web__search')
+    && s11.includes('BENCHX') && s11.includes('SOLOX')
+    && conv11 === '["proxy__bench","solo"]' && def11 === '["proxy__bench"]',
+  JSON.stringify({ tools: t11.filter(n => !n.startsWith('miaou__')), bench: s11.includes('BENCHX'),
+    solo: s11.includes('SOLOX'), conv11, def11 }));
+check('11d. masqué : un appel à bench (coupé par les défauts) part au réseau ; la conversation fige []',
+  JSON.stringify(calls11) === '["proxy__bench__echo"]' && fresh11 === '[]',
+  JSON.stringify({ calls11, fresh11 }));
+await setSelector(true);
+await page.evaluate((id) => openConversation(id, true), conv8Id);
+await page.waitForFunction((id) => currentConvId === id, conv8Id);
+const pill11 = await pill();
+await send('Cinquième message');
+const t11e = toolNames(streamed[streamed.length - 1]);
+check('11e. réaffiché : conv8 retrouve « 4 MCP » et recoupe solo__x',
+  pill11 === '4 MCP' && !t11e.includes('solo__x') && !t11e.includes('proxy__bench__echo'),
+  JSON.stringify({ pill11, tools: t11e.filter(n => !n.startsWith('miaou__')) }));
+
+// ── 12 ───────────────────────────────────────────────────────────────────────
+check('12. aucune erreur console', realErrors().length === 0, realErrors().join(' | '));
 
 await browser.close();
 let failed = 0;

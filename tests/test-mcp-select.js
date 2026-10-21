@@ -447,6 +447,35 @@ describe('mcpDisabledFor — génération en vol, puis écran, puis record/défa
       currentConvMcpDisabled = saveScreen;
     }
   });
+  // Sélecteur masqué : aucune coupure, sur les TROIS branches — puis la même
+  // sélection revient au réaffichage (endormie, pas effacée). Chaque branche
+  // porte une sélection non vide, sinon le vide rendu ne prouverait rien.
+  it('sélecteur masqué : la sélection dort sur les trois branches, et se réveille', function() {
+    var saveConv = currentConvId, saveScreen = currentConvMcpDisabled;
+    localStorage.clear();
+    try {
+      saveConversation({ id: 'c-record', messages: [], mcpDisabled: ['rec'] });
+      saveMcpDisabledDefaults(['def']);
+      _activeGenerations.set('c-gen', { mcpDisabled: ['gen'] });
+      currentConvId = 'c-ecran';
+      currentConvMcpDisabled = ['screen'];
+      saveSettings({ showMcpSelector: false });
+      expect(mcpDisabledFor({ convId: 'c-gen' })).toEqual([]);
+      expect(mcpDisabledFor({ convId: 'c-ecran' })).toEqual([]);
+      expect(mcpDisabledFor({ convId: 'c-record' })).toEqual([]);
+      expect(mcpDisabledFor({ convId: 'c-inconnue' })).toEqual([]);
+      saveSettings({ showMcpSelector: true });
+      expect(mcpDisabledFor({ convId: 'c-gen' })).toEqual(['gen']);
+      expect(mcpDisabledFor({ convId: 'c-ecran' })).toEqual(['screen']);
+      expect(mcpDisabledFor({ convId: 'c-record' })).toEqual(['rec']);
+      expect(mcpDisabledFor({ convId: 'c-inconnue' })).toEqual(['def']);
+    } finally {
+      _activeGenerations.delete('c-gen');
+      localStorage.clear();
+      currentConvId = saveConv;
+      currentConvMcpDisabled = saveScreen;
+    }
+  });
 });
 
 describe('loadMcpDisabledDefaults — absent, illisible, mal normalisé', function() {

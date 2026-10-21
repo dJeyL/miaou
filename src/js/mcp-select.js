@@ -308,7 +308,8 @@ function mcpSelectorLabel(count) {
    dépendent jamais : c'est ce qui les rend testables, et ce qui garantit qu'une
    génération ne lit pas l'écran.
 
-   Une seule lecture impure de l'état, `mcpDisabledFor`, et deux écrivains
+   Une seule lecture impure de l'état, `mcpDisabledFor` (qui rend vide tant que
+   le sélecteur est masqué), et deux écrivains
    seulement (le sélecteur pour la conversation affichée, la génération qui
    copie au PREMIER enregistrement).
    ───────────────────────────────────────────────────────────────────────── */
@@ -324,10 +325,18 @@ function mcpSelectorLabel(count) {
 //      variable d'écran posée à l'ouverture) ;
 //   3. le record de la conversation, sinon les défauts globaux.
 //
+// Avant les trois : sélecteur MASQUÉ (`showMcpSelector` à false) → aucune
+// coupure. La sélection n'est pas effacée, elle dort : réafficher le sélecteur
+// la remet en vigueur telle quelle. Sans ça, des serveurs décochés avant le
+// masquage restaient coupés sans qu'aucune surface ne le montre. La garde passe
+// AVANT la génération en vol, pour que générations, agents et parents réveillés
+// suivent la même règle que l'écran.
+//
 // Gardes `typeof` : les tests chargent les fichiers un par un, et mcp-select.js
 // précède main.js (où vivent `generationFor`, `currentConvId` et
 // `currentConvMcpDisabled`). Au runtime, tout est chargé.
 function mcpDisabledFor(ctx) {
+  if (loadSettings().showMcpSelector === false) return [];
   const c = (typeof toolCtx === 'function') ? toolCtx(ctx) : (ctx || {});
   const convId = (c && c.convId !== undefined) ? c.convId : null;
   if (typeof generationFor === 'function') {

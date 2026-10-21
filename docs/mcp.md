@@ -1494,8 +1494,18 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       prochain envoi, pas l'échange en cours. Rafraîchi à la fin de
       `connectMcpServer`/`disconnectMcpServer` (là où les outils changent) et,
       chez les pairs, par `apply-settings` (`mcp-disabled-defaults`, relu aussi
-      sur l'événement `storage`). Réglage d'affichage `showMcpSelector`, vrai
-      par défaut : la pilule est de toute façon masquée sans carte activée.
+      sur l'événement `storage`). Réglage `showMcpSelector`, vrai par défaut :
+      la pilule est de toute façon masquée sans carte activée.
+    - **Sélecteur masqué = sélection en sommeil** : `mcpDisabledFor` rend `[]`
+      tant que `showMcpSelector` est faux, AVANT ses trois branches (génération
+      en vol comprise, donc agents et parents réveillés aussi). Rien n'est
+      effacé : défauts et `conv.mcpDisabled` reprennent effet au réaffichage.
+      Motif : sans cette garde, des serveurs décochés avant le masquage
+      restaient coupés sans aucune surface pour le montrer. Une conversation
+      commencée pendant le masquage fige `[]` à son premier enregistrement,
+      comme toute conversation garde la sélection de son premier message. La
+      bascule invalide `_lastContextManifest` (`onSaveSettings`, et chez les
+      pairs `apply-settings`).
     - **Cache KV** : la sélection change le message système et `tools` d'une
       conversation au geste seulement — invalidation ponctuelle (piège 16).
     - Les défauts ne sont pas dans `EXPORT_KEYS` : une sauvegarde `.zip` ne les
@@ -1504,7 +1514,8 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       cliqué (ordre, retrait, enfants figés, teinte à « 0 MCP »), enregistrement
       vierge contre non vierge, corps envoyé (outils, consignes), inspecteur, et
       refus d'un appel à un outil coupé sans appel réseau, avec un outil autorisé
-      pour témoin. Rejoué contre six régressions injectées, rouge à chaque fois.
+      pour témoin, et sélection en sommeil sous sélecteur masqué (bloc 11).
+      Rejoué contre huit régressions injectées, rouge à chaque fois.
 
 ## `mcp_docs` : un fallback offline, pas un serveur de base (lot V-4)
 

@@ -2386,7 +2386,12 @@ function onSaveSettings() {
     libraryManifestInContext: $('set-library-manifest').checked,
     exportInteractive: $('set-export-interactive').checked,
   };
+  // Masquer ou réafficher le sélecteur MCP endort ou réveille la sélection
+  // (`mcpDisabledFor`) : outils et consignes du prochain envoi changent, le
+  // manifeste du dernier envoi ne décrit plus le contexte.
+  const mcpSelectorToggled = (loadSettings().showMcpSelector !== false) !== obj.showMcpSelector;
   saveSettings(obj);
+  if (mcpSelectorToggled) _lastContextManifest = null;
   updateSettingsDirty();   // formulaire = persisté → bouton redésactivé
   highlightEnabled = obj.highlight;
   syncConfigured();

@@ -803,8 +803,10 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
    survol rend au texte sa couleur pleine et au chevron l'accent franc. */
 .msg-clamp-toggle svg {
   flex: 0 0 auto;
-  /* Centré, le chevron flotte au-dessus de la ligne : on le descend vers la
-     ligne de base. `top` plutôt que transform, que la rotation occupe déjà. */
+  /* Centré par align-items, le chevron paraît flotter un peu haut : 1px de
+     décalage le recentre à l'œil sur le texte (2px l'amèneraient sur la
+     ligne de base). `top` plutôt que transform, que la rotation occupe
+     déjà. */
   position: relative;
   top: 1px;
   color: color-mix(in srgb, var(--accent) 55%, var(--text-3));
