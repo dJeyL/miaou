@@ -319,12 +319,34 @@ await page.keyboard.press('Enter');   // sous-mode skill
 await page.waitForTimeout(120);
 const skillLabels = await page.evaluate(() =>
   Array.from(document.querySelectorAll('#cmdk-list .cmdk-item-label')).map(e => e.textContent));
-// 2 skills seedées (`revue`, `cr`) + les skills SYSTÈME upsertées au
-// démarrage (ensureSystemSkills) : la palette liste les skills invocables,
-// système comprises. Compte LU depuis SYSTEM_SKILLS_CONTENT, jamais en dur.
-const sysSkillCount = await page.evaluate(() => Object.keys(SYSTEM_SKILLS_CONTENT).length);
-check(`sous-mode skill : 2 seedées + ${sysSkillCount} système listées`,
-  skillLabels.length === 2 + sysSkillCount);
+// La palette puise dans listEnabledSkills() comme l'autocomplétion du `/`, et
+// applique le même filtre : skills utilisateur (seedées : `revue`, `cr`) + les
+// seules skills SYSTÈME dont le cartouche porte `metadata.user-invocable: true`
+// (skillOfferedForCompletion, cf. docs/skills.md). Une version antérieure
+// attendait toutes les skills système (compte de SYSTEM_SKILLS_CONTENT) :
+// périmée depuis que les skills adressées au modèle sont masquées du `/`.
+// Ensemble de NOMS attendus, recomposé depuis les données (records IDB et
+// contenu injecté au build) et non en rappelant le filtre testé — un compte nu
+// ne dirait pas laquelle manque ou est en trop.
+const skillExpect = await page.evaluate(() => {
+  const user = listEnabledSkills().filter(s => !s.system).map(s => s.name || s.slug);
+  const sys = Object.entries(SYSTEM_SKILLS_CONTENT);
+  return {
+    names: user.concat(sys.filter(([, v]) => v.userInvocable === true).map(([slug, v]) => v.name || slug)),
+    userCount: user.length,
+    hiddenSys: sys.filter(([, v]) => v.userInvocable !== true).length,
+  };
+});
+// Prémisses : sans skill seedée ni skill système masquée, l'égalité d'ensembles
+// ne distinguerait pas un filtre absent d'un filtre correct.
+check(`sous-mode skill (prémisse) : 2 skills seedées, ${skillExpect.userCount} trouvées`,
+  skillExpect.userCount === 2);
+check(`sous-mode skill (prémisse) : au moins une skill système non invocable (${skillExpect.hiddenSys})`,
+  skillExpect.hiddenSys > 0);
+const sameSet = (a, b) => a.length === b.length && [...a].sort().every((x, i) => x === [...b].sort()[i]);
+check(`sous-mode skill : listées = seedées + système invocables `
+  + `(attendu ${JSON.stringify([...skillExpect.names].sort())}, vu ${JSON.stringify([...skillLabels].sort())})`,
+  sameSet(skillLabels, skillExpect.names));
 await shot('05-submode-skill.png');
 await page.fill('#cmdk-input', 'revue');
 await page.waitForTimeout(120);

@@ -783,6 +783,13 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
   transition: max-height 260ms var(--ease), --clamp-fade 260ms var(--ease);
 }
 .msg.user .bubble.clamp-over.clamp-open > .body { --clamp-fade: 0px; }
+/* Une bulle prend la largeur de sa plus longue ligne : un long message fait
+   de lignes courtes (liste, log, identifiants) donnait une colonne étroite,
+   dégradé et bascule compris. Plancher réservé aux bulles qui débordent — une
+   bulle courte garde sa largeur naturelle. Sans effet sur le repli : en deçà
+   de max-width rien n'est coupé à la ligne, élargir ne retire donc aucune
+   ligne et ne peut pas faire basculer `clamp-over`. */
+.msg.user .bubble.clamp-over { min-width: 50%; }
 .msg-clamp-toggle { display: none; }
 .msg.user .bubble.clamp-over > .msg-clamp-toggle {
   display: inline-flex;
