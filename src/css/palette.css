@@ -216,6 +216,16 @@
   font-family: var(--float-font);
 }
 .stall-dialog::backdrop { background: rgba(0, 0, 0, .5); }
+
+/* Même centrage que la palette : sur desktop, sidebar ouverte, la modale se
+   centre sur la colonne de contenu. Un dialog modal est fixed à inset 0 et
+   se centre par son margin auto ; reculer son bord gauche de la largeur de
+   la sidebar ramène la zone de centrage à la colonne. Le ::backdrop, lui,
+   reste plein écran. */
+.app.sidebar-open .stall-dialog { left: var(--sidebar-w); }
+@media (max-width: 767px) {
+  .app.sidebar-open .stall-dialog { left: 0; }
+}
 .stall-dialog-title {
   margin: 0 0 6px;
   font-size: 15px;

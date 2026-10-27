@@ -4514,6 +4514,11 @@ textarea.skill-content {
   font-family: var(--float-font);
 }
 .stall-dialog::backdrop { background: rgba(0, 0, 0, .5); }
+
+.app.sidebar-open .stall-dialog { left: var(--sidebar-w); }
+@media (max-width: 767px) {
+  .app.sidebar-open .stall-dialog { left: 0; }
+}
 .stall-dialog-title {
   margin: 0 0 6px;
   font-size: 15px;
@@ -5983,7 +5988,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-22 20:36 UTC */
+/* miaou — built: 2026-10-27 17:02 UTC */
 
 /* ── utils.js ── */
 
@@ -11629,7 +11634,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1792701406}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1793120562}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11649,7 +11654,7 @@ const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || ''
 const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "239a885a96c8fc95"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "20431e3fd54c0a25"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -21473,6 +21478,10 @@ const TITLE_MAX_WORDS = 12;
 
 function normalizeTitle(raw) {
   let t = String(raw || '');
+
+  const thinkEnd = t.toLowerCase().lastIndexOf('</think>');
+  if (thinkEnd !== -1) t = t.slice(thinkEnd + '</think>'.length);
+  else if (/^\s*<think>/i.test(t)) return '';
 
   if (/^\s*(\{\s*("|\}|$)|\[\s*([{\["\]\d-]|$))/.test(t)) return '';
 

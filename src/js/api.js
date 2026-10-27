@@ -1594,6 +1594,14 @@ const TITLE_MAX_WORDS = 12;
 
 function normalizeTitle(raw) {
   let t = String(raw || '');
+  // Raisonnement laissé dans `content` (DeepSeek : « <think> </think> Titre »,
+  // bloc vide compris ; certains gabarits omettent la balise ouvrante et ne
+  // rendent que la fermante). Seul ce qui suit la DERNIÈRE fermeture est la
+  // réponse. Une ouverture jamais fermée : tout est raisonnement, pas de titre.
+  // AVANT le rejet JSON, qui lirait sinon la balise et pas ce qui la suit.
+  const thinkEnd = t.toLowerCase().lastIndexOf('</think>');
+  if (thinkEnd !== -1) t = t.slice(thinkEnd + '</think>'.length);
+  else if (/^\s*<think>/i.test(t)) return '';
   // Une sortie qui commence en JSON (objet ou tableau) est un appel d'outil
   // ou une structure inventée, jamais un titre : rejet, le titre provisoire
   // reste et le titrage suivant sert de filet. Le motif vise l'ouverture d'un

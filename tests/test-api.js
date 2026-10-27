@@ -226,6 +226,21 @@ describe('normalizeTitle (nettoyage du titre généré)', function() {
     // Ordre des passes : le formatage part avant le rognage des guillemets.
     expect(normalizeTitle('**"Sujet"**')).toBe('Sujet');
   });
+  it('escamote un bloc <think> en tête, vide ou non (symptôme DeepSeek)', function() {
+    expect(normalizeTitle('<think> </think> Migration vers PostgreSQL')).toBe('Migration vers PostgreSQL');
+    expect(normalizeTitle('<think>\nL\'utilisateur parle de BDD.\n</think>\n\nMigration vers PostgreSQL')).toBe('Migration vers PostgreSQL');
+    expect(normalizeTitle('<THINK></THINK>Sujet')).toBe('Sujet');
+  });
+  it('escamote un raisonnement dont seule la balise fermante est rendue', function() {
+    expect(normalizeTitle('Il faut un titre court.</think>Sujet du jour')).toBe('Sujet du jour');
+  });
+  it('rejette un raisonnement jamais fermé : rien n\'y est un titre', function() {
+    expect(normalizeTitle('<think> Il faut un titre')).toBe('');
+  });
+  it('applique les autres nettoyages à ce qui suit le bloc <think>', function() {
+    expect(normalizeTitle('<think></think> **"Sujet"**')).toBe('Sujet');
+    expect(normalizeTitle('<think></think> {"name": "x"}')).toBe('');
+  });
   it('retire un préfixe de titre Markdown', function() {
     expect(normalizeTitle('## Sujet du jour')).toBe('Sujet du jour');
   });

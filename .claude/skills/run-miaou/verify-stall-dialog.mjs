@@ -187,12 +187,35 @@ check('1. la modale s\'ouvre quand le flux se tait', await dialogOpen(page));
 // écrase sans bruit (modale collée en haut à gauche, vue le 2026-10-13).
 // Containment des DEUX côtés, sur les deux axes : écart entre la marge gauche
 // et la droite, entre la haute et la basse.
-const geo = await page.evaluate(() => {
+// Horizontalement, la référence est la colonne de contenu et non la fenêtre :
+// sidebar ouverte sur desktop, la modale se centre à droite d'elle, comme la
+// palette (le centrage sur la fenêtre la faisait paraître décalée sous la
+// sidebar). Le bord gauche de la colonne est lu sur la sidebar rendue, pas sur
+// --sidebar-w, pour ne pas mesurer la règle avec ce qu'elle lit.
+// Mesuré sidebar fermée (colonne = fenêtre) PUIS ouverte : seul le second
+// état distingue le centrage sur la colonne de celui sur la fenêtre.
+const measureGeo = () => page.evaluate(() => {
   const r = document.getElementById('stall-dialog').getBoundingClientRect();
-  return { l: r.left, r: innerWidth - r.right, t: r.top, b: innerHeight - r.bottom, w: r.width, h: r.height };
+  const open = document.getElementById('app').classList.contains('sidebar-open');
+  const col = open ? document.querySelector('.sidebar').getBoundingClientRect().right : 0;
+  return { open, col, l: r.left - col, r: innerWidth - r.right, t: r.top, b: innerHeight - r.bottom, w: r.width, h: r.height };
 });
-check('1. la modale est centrée dans la fenêtre', geo.w > 0 && geo.h > 0
-  && Math.abs(geo.l - geo.r) <= 2 && Math.abs(geo.t - geo.b) <= 2 && geo.l > 0 && geo.t > 0, JSON.stringify(geo));
+const centered = (g) => g.w > 0 && g.h > 0
+  && Math.abs(g.l - g.r) <= 2 && Math.abs(g.t - g.b) <= 2 && g.l > 0 && g.t > 0;
+const geoClosed = await measureGeo();
+check('1. prémisse : sidebar fermée pour la première mesure', !geoClosed.open, JSON.stringify(geoClosed));
+check('1. sidebar fermée, la modale est centrée dans la fenêtre', centered(geoClosed), JSON.stringify(geoClosed));
+// Ouverture par la classe (la page est inerte sous la modale) ; attente de la
+// fin de la transition de largeur de la sidebar avant de mesurer.
+await page.evaluate(() => document.getElementById('app').classList.add('sidebar-open'));
+await page.waitForFunction(() => {
+  const want = parseFloat(getComputedStyle(document.getElementById('app')).getPropertyValue('--sidebar-w'));
+  return Math.abs(document.querySelector('.sidebar').getBoundingClientRect().width - want) < 0.5;
+});
+const geoOpen = await measureGeo();
+check('1. prémisse : sidebar ouverte pour la seconde mesure', geoOpen.open && geoOpen.col > 0, JSON.stringify(geoOpen));
+check('1. sidebar ouverte, la modale est centrée sur la colonne de contenu', centered(geoOpen), JSON.stringify(geoOpen));
+await page.evaluate(() => document.getElementById('app').classList.remove('sidebar-open'));
 let rows = await rowsOf(page);
 check('1. une ligne, au titre de la conversation, sans mention d\'Espace', rows.length === 1 && rows[0].title === 'Conv c1' && !rows[0].space, JSON.stringify(rows));
 check('1. compte à rebours affiché', rows[0] && /abandon automatique dans \d+:\d\d/.test(rows[0].status), rows[0] && rows[0].status);
