@@ -969,6 +969,78 @@ describe('contextBlockParts / buildAgentApiMessages : modèle de la génération
   });
 });
 
+// Mode bare (setBareMode, main.js) : instrument console qui retire tout ce que
+// MIAOU injecte. Fixture qui peuple CHAQUE source d'injection, pour qu'une part
+// oubliée par la garde se voie dans le message système.
+describe('mode bare (setBareMode)', function() {
+  function withIntl(fn) {
+    var had = typeof Intl !== 'undefined';
+    var prev = had ? Intl : undefined;
+    globalThis.Intl = { DateTimeFormat: function() { return { resolvedOptions: function() { return { timeZone: 'UTC' }; } }; } };
+    try { return fn(); } finally { if (had) globalThis.Intl = prev; else delete globalThis.Intl; }
+  }
+  function seed() {
+    localStorage.clear();
+    saveSettings({ systemPrompt: 'PROMPT-GLOBAL-UTILISATEUR', model: 'MODELE-X' });
+    currentConvModel = '';
+    upsertSpace({ id: 'sp-bare', name: 'Nu', description: 'DESC-BARE' });
+    saveMemory({ id: 'm-bare', content: 'SOUVENIR-BARE', scope: 'sp-bare' });
+    saveMemory({ id: 'm-prof', content: 'SOUVENIR-PROFIL', scope: 'profile' });
+    setSkillsCache([{ slug: 'docs', name: 'Docs', autotrigger: true }]);
+    activeSpaceId = 'sp-bare';
+  }
+  it('message système = description brute de l\'Espace, rien d\'autre', function() {
+    seed();
+    setBareMode(true);
+    try {
+      expect(buildSystemMessage().content).toBe('DESC-BARE');
+    } finally { setBareMode(false); activeSpaceId = DEFAULT_SPACE_ID; }
+  });
+  it('sans description d\'Espace : message système vide, donc omis par dispatchSend', function() {
+    seed();
+    activeSpaceId = DEFAULT_SPACE_ID;
+    setBareMode(true);
+    try {
+      expect(buildSystemMessage().content).toBe('');
+      expect(String(dispatchSend)).toContain('sys.content ? [sys] : []');
+    } finally { setBareMode(false); }
+  });
+  it('désactivé : le contexte complet revient', function() {
+    seed();
+    setBareMode(true);
+    setBareMode(false);
+    var c = buildSystemMessage().content;
+    expect(c.indexOf(IDENTITY_BLURB)).toBe(0);
+    expect(c).toContain('PROMPT-GLOBAL-UTILISATEUR');
+    expect(c).toContain('SOUVENIR-BARE');
+    activeSpaceId = DEFAULT_SPACE_ID;
+  });
+  it('préfixe éphémère : rien par défaut, date et modèle sur demande, jamais de résumés', function() {
+    seed();
+    var matches = [{ convId: 'c1', title: 'T', summary: 'RESUME-INJECTE' }];
+    try {
+      setBareMode(true);
+      withIntl(function() {
+        expect(buildContextBlock(matches, 'MODELE-X')).toBe('');
+      });
+      setBareMode({ dateModel: true });
+      withIntl(function() {
+        var b = buildContextBlock(matches, 'MODELE-X');
+        expect(b).toContain('Modèle : MODELE-X');
+        expect(b.indexOf('RESUME-INJECTE')).toBe(-1);
+      });
+    } finally { setBareMode(false); activeSpaceId = DEFAULT_SPACE_ID; }
+  });
+  it('aucune définition d\'outil : payload (runConversation) et manifeste', function() {
+    setBareMode(true);
+    try {
+      expect(payloadToolDefsJson()).toBe('');
+      expect(String(runConversation)).toContain('bareModeActive()');
+    } finally { setBareMode(false); }
+    expect(payloadToolDefsJson().length > 0).toBe(true);
+  });
+});
+
 describe('contextWindowFor (lot AF : par serveur et modèle)', function() {
   it('rien de connu → null (inconnu)', function() {
     localStorage.clear();

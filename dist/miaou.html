@@ -6005,7 +6005,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-30 20:33 UTC */
+/* miaou — built: 2026-10-30 21:13 UTC */
 
 /* ── utils.js ── */
 
@@ -11656,7 +11656,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1793392387}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1793394793}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11676,7 +11676,7 @@ const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || ''
 const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "6129b672ac9412f0"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "f8685b8c30b2edae"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -14745,7 +14745,9 @@ function buildAgentApiMessages(sys, gen) {
   const lastUserIdx = threadMsgs.reduce((acc, m, i) => (m.role === 'user' && !m._synthetic) ? i : acc, -1);
   if (lastUserIdx >= 0) {
 
-    const prefix = buildContextBlock([], gen.model) + '\n\n---\n\n';
+    const ctxBlock = buildContextBlock([], gen.model);
+
+    const prefix = ctxBlock ? ctxBlock + '\n\n---\n\n' : '';
     const lastContent = threadMsgs[lastUserIdx].content;
     threadMsgs[lastUserIdx] = {
       role: 'user',
@@ -14754,7 +14756,7 @@ function buildAgentApiMessages(sys, gen) {
         : prefix + lastContent,
     };
   }
-  return [sys].concat(threadMsgs.map(m =>
+  return (sys.content ? [sys] : []).concat(threadMsgs.map(m =>
     m && m._synthetic ? { role: m.role, content: m.content } : m
   )).filter(Boolean);
 }
@@ -21334,7 +21336,8 @@ async function runConversation(messages, hooks) {
 
       visionDisabled: h.visionDisabled,
 
-      tools: h.noTools ? undefined : toolDefinitions(h.agentTools, toolExecContext),
+      tools: (h.noTools || (typeof bareModeActive === 'function' && bareModeActive()))
+        ? undefined : toolDefinitions(h.agentTools, toolExecContext),
       onDelta: h.onDelta,
       onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,
 
@@ -36777,6 +36780,31 @@ function buildSpaceMemoriesBlock(spaceId) {
   return buildMemoryEntriesBlock(scopes);
 }
 
+let _bareMode = null;
+
+function setBareMode(on) {
+  if (!on) {
+    _bareMode = null;
+    console.log('[miaou] mode bare : désactivé (contexte complet aux prochains envois)');
+  } else {
+    const dateModel = !!(on && typeof on === 'object' && on.dateModel);
+    _bareMode = { dateModel };
+    console.log('[miaou] mode bare : activé — description d\'Espace seule' +
+      (dateModel ? ', plus date et modèle' : '') + ' (prochains envois)');
+  }
+
+  if (typeof _activeGenerations !== 'undefined' && !_activeGenerations.size) _lastContextManifest = null;
+  if (typeof syncContextCounter === 'function' && typeof document !== 'undefined') syncContextCounter();
+}
+
+function bareModeActive() {
+  return _bareMode != null;
+}
+
+function payloadToolDefsJson() {
+  return bareModeActive() ? '' : JSON.stringify(toolDefinitions());
+}
+
 function contextBlockParts(matches, model) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
@@ -36785,6 +36813,9 @@ function contextBlockParts(matches, model) {
   const lines = ['Date et heure : ' + dateStr + ' (' + tz + ')'];
   if (model) lines.push('Modèle : ' + model);
 
+  if (bareModeActive()) {
+    return { contextDateModel: _bareMode.dateModel ? lines.join('\n') : '', summaries: '' };
+  }
   return {
     contextDateModel: lines.join('\n'),
     summaries: buildSummaryBlock(matches || []),
@@ -36793,8 +36824,9 @@ function contextBlockParts(matches, model) {
 
 function buildContextBlock(matches, model) {
   const dp = contextBlockParts(matches, model);
-  const parts = [dp.contextDateModel];
-  if (dp.summaries) parts.push(dp.summaries);
+  const parts = [dp.contextDateModel, dp.summaries].filter(Boolean);
+
+  if (!parts.length) return '';
   const inner = parts.join('\n\n');
   return '<miaou_context>\nCe bloc est injecté automatiquement par l\'application.' +
     ' Utilise ces informations si elles sont pertinentes,' +
@@ -36881,6 +36913,12 @@ function systemMessageParts(ctx) {
     userPromptForm: '',
   };
 
+  if (bareModeActive()) {
+    const bareSpace = getSpace(toolCtx(ctx).spaceId);
+    out.space = (bareSpace && bareSpace.description || '').trim();
+    return out;
+  }
+
   out.identity = IDENTITY_BLURB;
   out.root = ROOT_SYSTEM_PROMPT;
   out.intent = intentDoctrinePrompt();
@@ -36933,14 +36971,14 @@ function computeContextManifestNow() {
   const sysParts = systemMessageParts();
   const dynParts = contextBlockParts([]);
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
-  return buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null, activePromptOrder());
+  return buildContextManifest(sysParts, dynParts, threadMsgs, payloadToolDefsJson(), null, activePromptOrder());
 }
 
 function recomputeLastContextManifest(matches, midTurn) {
   const sysParts = systemMessageParts();
   const dynParts = contextBlockParts(matches);
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
-  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null, activePromptOrder());
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, payloadToolDefsJson(), null, activePromptOrder());
   _lastContextManifestMidTurn = !!midTurn;
 }
 
@@ -38375,7 +38413,8 @@ function runGenerationFromCurrentThread() {
 
   const settings = loadSettings();
   let matches = [];
-  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text, currentConvId, activeSpaceId);
+
+  if (settings.summaryInjectionMode !== 'never' && !bareModeActive()) matches = searchSummaries(text, currentConvId, activeSpaceId);
 
   if (settings.summaryInjectionMode === 'propose' && matches.length) {
     showSummaryBanner(matches, {
@@ -38512,10 +38551,11 @@ async function dispatchSend(matches, continuation) {
   const dynParts = contextBlockParts(matches, gen.model);
 
   const manifestThreadMsgs = threadMsgs.slice();
-  if (lastUserIdx >= 0) {
 
-    const ctx = buildContextBlock(matches, gen.model);
-    const prefix = ctx + '\n\n---\n\n';
+  const ctxBlock = buildContextBlock(matches, gen.model);
+  if (lastUserIdx >= 0 && ctxBlock) {
+
+    const prefix = ctxBlock + '\n\n---\n\n';
     const lastContent = threadMsgs[lastUserIdx].content;
 
     threadMsgs[lastUserIdx] = {
@@ -38526,11 +38566,11 @@ async function dispatchSend(matches, continuation) {
     };
   }
 
-  const apiMessages = [sys].concat(threadMsgs.map(m =>
+  const apiMessages = (sys.content ? [sys] : []).concat(threadMsgs.map(m =>
     m && m._synthetic ? { role: m.role, content: m.content } : m
   )).filter(Boolean);
 
-  _lastContextManifest = buildContextManifest(sysParts, dynParts, manifestThreadMsgs, JSON.stringify(toolDefinitions()), null, activePromptOrder());
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, manifestThreadMsgs, payloadToolDefsJson(), null, activePromptOrder());
   syncContextCounter();
 
   let imageDescriptors;

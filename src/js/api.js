@@ -1229,7 +1229,10 @@ async function runConversation(messages, hooks) {
       // body.tools, pas « appelables et refusés ». Recalculé à chaque tour comme
       // pour une conversation ordinaire, donc la restriction tient sur toute la
       // boucle et pas seulement au premier appel.
-      tools: h.noTools ? undefined : toolDefinitions(h.agentTools, toolExecContext),
+      // Mode bare (setBareMode, main.js) : aucune définition d'outil envoyée.
+      // Garde typeof : main.js n'est pas chargé par tous les tests QuickJS.
+      tools: (h.noTools || (typeof bareModeActive === 'function' && bareModeActive()))
+        ? undefined : toolDefinitions(h.agentTools, toolExecContext),
       onDelta: h.onDelta,
       onReasoning: h.onReasoning ? (full) => h.onReasoning(joinReasoning(reasoningAcc, full)) : undefined,
       // Question posée à l'expiration du chien de garde (stall.js) : ses

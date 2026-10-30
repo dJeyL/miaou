@@ -831,7 +831,9 @@ function buildAgentApiMessages(sys, gen) {
     // préfixe KV partagé entre parent et agent.
     // `gen.model` : le modèle de CETTE génération (agent, parent réveillé),
     // pas celui de la conversation affichée.
-    const prefix = buildContextBlock([], gen.model) + '\n\n---\n\n';
+    const ctxBlock = buildContextBlock([], gen.model);
+    // Bloc vide en mode bare sans date/modèle (setBareMode) : rien à préfixer.
+    const prefix = ctxBlock ? ctxBlock + '\n\n---\n\n' : '';
     const lastContent = threadMsgs[lastUserIdx].content;
     threadMsgs[lastUserIdx] = {
       role: 'user',
@@ -840,7 +842,7 @@ function buildAgentApiMessages(sys, gen) {
         : prefix + lastContent,
     };
   }
-  return [sys].concat(threadMsgs.map(m =>
+  return (sys.content ? [sys] : []).concat(threadMsgs.map(m =>
     m && m._synthetic ? { role: m.role, content: m.content } : m
   )).filter(Boolean);
 }

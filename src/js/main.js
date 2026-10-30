@@ -1396,6 +1396,47 @@ function buildSpaceMemoriesBlock(spaceId) {
   return buildMemoryEntriesBlock(scopes);
 }
 
+// ── Mode bare : override console ──────────────────────────────────────────
+// Instrument de mesure, au même titre que setChatTemperature (api.js) : aucune
+// surface UI, non persisté, non broadcasté. Sert à interroger un modèle local
+// en pur question/réponse sans lui faire relire à chaque envoi les ~12 000
+// tokens du contexte fixe. Actif, il retire TOUT ce que MIAOU injecte :
+// définitions d'outils, identité, doctrines, consignes MCP, souvenirs, skills,
+// bibliothèque, prompt système utilisateur, résumés injectés. Seule reste la
+// description de l'Espace, envoyée brute comme message système (absente → pas
+// de message système du tout), plus, sur demande, la ligne date/modèle.
+// Lu aux points de composition (systemMessageParts, contextBlockParts,
+// runConversation, manifeste) : l'inspecteur décrit donc le payload réduit.
+let _bareMode = null;   // null = inactif ; sinon { dateModel: bool }
+
+function setBareMode(on) {
+  if (!on) {
+    _bareMode = null;
+    console.log('[miaou] mode bare : désactivé (contexte complet aux prochains envois)');
+  } else {
+    const dateModel = !!(on && typeof on === 'object' && on.dateModel);
+    _bareMode = { dateModel };
+    console.log('[miaou] mode bare : activé — description d\'Espace seule' +
+      (dateModel ? ', plus date et modèle' : '') + ' (prochains envois)');
+  }
+  // L'inspecteur suit tout de suite : le manifeste du dernier envoi décrit
+  // l'autre mode, on retombe sur la simulation du prochain envoi. Gardé
+  // pendant une génération, comme syncContextAfterMcpChange (ui.js) : il sera
+  // recalculé au prochain tour, et le jeter ferait simuler en plein échange.
+  if (typeof _activeGenerations !== 'undefined' && !_activeGenerations.size) _lastContextManifest = null;
+  if (typeof syncContextCounter === 'function' && typeof document !== 'undefined') syncContextCounter();
+}
+
+function bareModeActive() {
+  return _bareMode != null;
+}
+
+// Définitions d'outils telles que le payload les porte, pour le manifeste :
+// '' quand le mode bare les retire (convention de buildContextManifest).
+function payloadToolDefsJson() {
+  return bareModeActive() ? '' : JSON.stringify(toolDefinitions());
+}
+
 // Sous-blocs du contexte dynamique, AVANT concaténation (brief B) — même
 // principe que systemMessageParts() : source unique pour buildContextBlock()
 // ET pour le manifeste de contexte. Réduit par la campagne cache à ce qui
@@ -1418,6 +1459,10 @@ function contextBlockParts(matches, model) {
   // l'en-tête du bloc Espace (message système, `buildSpaceBlock`), qui établit
   // le référentiel une fois pour toutes. Le redire à chaque tour le faisait
   // payer deux fois pour la même information.
+  // Mode bare : jamais de résumés ; date/modèle seulement si demandés.
+  if (bareModeActive()) {
+    return { contextDateModel: _bareMode.dateModel ? lines.join('\n') : '', summaries: '' };
+  }
   return {
     contextDateModel: lines.join('\n'),
     summaries: buildSummaryBlock(matches || []),
@@ -1437,8 +1482,9 @@ function contextBlockParts(matches, model) {
 // message envoyé.
 function buildContextBlock(matches, model) {
   const dp = contextBlockParts(matches, model);
-  const parts = [dp.contextDateModel];
-  if (dp.summaries) parts.push(dp.summaries);
+  const parts = [dp.contextDateModel, dp.summaries].filter(Boolean);
+  // Vide seulement en mode bare sans date/modèle : pas de bloc du tout.
+  if (!parts.length) return '';
   const inner = parts.join('\n\n');
   return '<miaou_context>\nCe bloc est injecté automatiquement par l\'application.' +
     ' Utilise ces informations si elles sont pertinentes,' +
@@ -1628,6 +1674,14 @@ function systemMessageParts(ctx) {
     // utilisateur non vide (la part est alors ''), '' sinon.
     userPromptForm: '',
   };
+  // Mode bare (setBareMode) : la description BRUTE de l'Espace de la
+  // génération, sans l'en-tête de buildSpaceBlock, tient lieu de prompt
+  // système ; toutes les autres parts restent ''. Avant toute affectation.
+  if (bareModeActive()) {
+    const bareSpace = getSpace(toolCtx(ctx).spaceId);
+    out.space = (bareSpace && bareSpace.description || '').trim();
+    return out;
+  }
   // identity, root, codeblock : INCONDITIONNELLES (TOOLS est une const build-time
   // non vide — l'ancien gate `if (TOOLS.length)` était une branche morte, retirée).
   // Les gardes RÉELLES restent internes à chaque helper : intentTracing (intent),
@@ -1779,7 +1833,7 @@ function computeContextManifestNow() {
   const sysParts = systemMessageParts();
   const dynParts = contextBlockParts([]);
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
-  return buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null, activePromptOrder());
+  return buildContextManifest(sysParts, dynParts, threadMsgs, payloadToolDefsJson(), null, activePromptOrder());
 }
 
 // Rejoue le manifeste du DERNIER ENVOI RÉEL, à la fin du tour (onFinal/onHalt,
@@ -1800,7 +1854,7 @@ function recomputeLastContextManifest(matches, midTurn) {
   const sysParts = systemMessageParts();
   const dynParts = contextBlockParts(matches);
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(currentThread)));
-  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, JSON.stringify(toolDefinitions()), null, activePromptOrder());
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, threadMsgs, payloadToolDefsJson(), null, activePromptOrder());
   _lastContextManifestMidTurn = !!midTurn;
 }
 
@@ -4112,7 +4166,8 @@ function runGenerationFromCurrentThread() {
 
   const settings = loadSettings();
   let matches = [];
-  if (settings.summaryInjectionMode !== 'never') matches = searchSummaries(text, currentConvId, activeSpaceId);
+  // Mode bare : aucune recherche, donc ni injection ni bandeau de proposition.
+  if (settings.summaryInjectionMode !== 'never' && !bareModeActive()) matches = searchSummaries(text, currentConvId, activeSpaceId);
 
   if (settings.summaryInjectionMode === 'propose' && matches.length) {
     showSummaryBanner(matches, {
@@ -4385,7 +4440,9 @@ async function dispatchSend(matches, continuation) {
   // autres call-sites (computeContextManifestNow, recomputeLastContextManifest)
   // passent naturellement un thread sans préfixe : même convention ici.
   const manifestThreadMsgs = threadMsgs.slice();
-  if (lastUserIdx >= 0) {
+  // Bloc vide en mode bare sans date/modèle : rien à préfixer.
+  const ctxBlock = buildContextBlock(matches, gen.model);
+  if (lastUserIdx >= 0 && ctxBlock) {
     // Le préfixe éphémère ne porte plus que ce qui bouge VRAIMENT d'un tour à
     // l'autre : date/heure, résumés injectés (fonction du message envoyé),
     // souvenirs du Space, et le manifeste de bibliothèque quand l'utilisateur
@@ -4393,8 +4450,7 @@ async function dispatchSend(matches, continuation) {
     // remontés dans le message système (systemMessageParts) — ils ne changeaient
     // qu'à un geste explicite, et les garder ici les faisait glisser derrière
     // chaque nouveau message user sans jamais être servis du cache.
-    const ctx = buildContextBlock(matches, gen.model);
-    const prefix = ctx + '\n\n---\n\n';
+    const prefix = ctxBlock + '\n\n---\n\n';
     const lastContent = threadMsgs[lastUserIdx].content;
     // Tour d'attache (brief A lot 2) : `content` peut être un tableau de
     // content parts OpenAI (image jointe) — le préfixe dynamique s'insère alors
@@ -4410,7 +4466,9 @@ async function dispatchSend(matches, continuation) {
 
   // `_synthetic` est un marqueur interne : on le retire du payload
   // réseau — chaque message ne porte que {role, content} comme le reste.
-  const apiMessages = [sys].concat(threadMsgs.map(m =>
+  // Message système vide (mode bare sans description d'Espace) : omis plutôt
+  // qu'envoyé à content '' — certains backends stricts le refusent.
+  const apiMessages = (sys.content ? [sys] : []).concat(threadMsgs.map(m =>
     m && m._synthetic ? { role: m.role, content: m.content } : m
   )).filter(Boolean);
 
@@ -4426,7 +4484,7 @@ async function dispatchSend(matches, continuation) {
   // sans ce syncContextCounter(), la pilule restait au total du tour précédent
   // tant que le tour en cours n'était pas terminé, alors que le drawer (ouvert
   // au clic, recalculé à l'instant) affichait déjà le nouveau total.
-  _lastContextManifest = buildContextManifest(sysParts, dynParts, manifestThreadMsgs, JSON.stringify(toolDefinitions()), null, activePromptOrder());
+  _lastContextManifest = buildContextManifest(sysParts, dynParts, manifestThreadMsgs, payloadToolDefsJson(), null, activePromptOrder());
   syncContextCounter();
 
   // Descripteurs byte-stables des images du TOUR COURANT (brief A lot 2) :

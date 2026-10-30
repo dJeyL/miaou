@@ -617,6 +617,25 @@ Deux conditions d'affichage, et non plus une :
   `cachedTokens` est dans l'unité de l'API : superposer deux barres d'unités
   différentes produirait une comparaison muette et fausse. On masque plutôt.
 
+## Mode bare (instrument console)
+
+`setBareMode(true)` dans la console retire tout ce que MIAOU injecte : définitions
+d'outils, identité, doctrines, consignes MCP, souvenirs, skills, bibliothèque,
+prompt système utilisateur et résumés (la recherche de résumés n'est même pas
+lancée, donc pas de bandeau de proposition). Reste la description de l'Espace,
+brute, comme unique contenu du message système — absent s'il n'y en a pas.
+`setBareMode({ dateModel: true })` garde en plus la ligne date/modèle du préfixe
+éphémère ; `setBareMode(false)` rétablit le contexte complet. Même statut que
+`setChatTemperature` (api.js) : sans UI, non persisté, non broadcasté — un
+reload le perd. Usage visé : question/réponse sur un modèle local, sans lui
+faire relire le contexte fixe à chaque envoi.
+
+La garde est posée aux points de composition (`systemMessageParts`,
+`contextBlockParts`, `runConversation`, `payloadToolDefsJson` pour le
+manifeste), pas dans `dispatchSend` seul : l'inspecteur décrit donc le payload
+réduit, et le basculement jette le manifeste du dernier envoi pour que la
+pilule et le drawer suivent sans attendre le prochain envoi.
+
 ## État
 
 Intégralement livré : noyau pur (estimation, manifeste, accesseur de fenêtre),
