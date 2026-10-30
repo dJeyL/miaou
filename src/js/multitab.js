@@ -214,6 +214,11 @@ function applySyncDecision(d) {
       // limite assumé V1 (pas de réconciliation forcée du Space actif).
       syncSpaceUI();
       renderConvList();
+      // L'inclusion du prompt utilisateur a pu changer pour le Space actif :
+      // pilule et inspecteur à jour, mention des Paramètres aussi. Manifeste du
+      // dernier envoi gardé pendant une génération (syncContextAfterMcpChange).
+      syncContextAfterMcpChange();
+      syncUserPromptSpacesHint();
       return;
 
     case 'apply-settings':

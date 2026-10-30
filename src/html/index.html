@@ -486,8 +486,9 @@ if (window.requestAnimationFrame) {
       </div>
       <div class="field">
         <label>Prompt système utilisateur</label>
-        <textarea id="set-system" rows="4" spellcheck="false" placeholder="Optionnel"></textarea>
+        <textarea id="set-system" rows="10" spellcheck="false" placeholder="Optionnel"></textarea>
         <span class="hint">Persona et préférences. Injecté après le prompt racine.</span>
+        <span class="hint" id="set-system-spaces-hint"></span>
       </div>
           </div>
         </div>
@@ -874,7 +875,20 @@ if (window.requestAnimationFrame) {
       </div>
       <div class="cfg-field">
         <label>Description</label>
-        <textarea id="space-description-input" rows="4" placeholder="Contexte propre à cet espace, ajouté après le prompt système." oninput="onSpaceFormInput()"></textarea>
+        <textarea id="space-description-input" rows="10" placeholder="Contexte propre à cet espace, ajouté après le prompt système." oninput="onSpaceFormInput()"></textarea>
+      </div>
+      <div class="cfg-check">
+        <div class="check-row">
+          <div class="label-col">
+            <label>Inclure le prompt système utilisateur</label>
+            <span class="hint" id="space-user-prompt-hint"></span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="space-user-prompt-input" checked onchange="onSpaceFormInput()">
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
       </div>
       <button class="drawer-btn primary" id="space-save-btn" onclick="onSaveSpaceScreen()" disabled>Enregistrer</button>
       <div class="cfg-err" id="space-err" hidden></div>

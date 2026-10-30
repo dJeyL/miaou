@@ -20,6 +20,8 @@ décisions reprises ici) :
 - `miaou-spaces` : `[{ id, name, description?, createdAt }]`. `description`
   (texte libre) est **ajoutée après** le prompt système utilisateur global —
   ce n'est PAS un system prompt de substitution.
+- `includeUserPrompt` (booléen, absent = `true`) : l'Espace inclut-il le
+  prompt système utilisateur des Paramètres ? Cf. § dédié plus bas.
 - `miaou-active-space` : string brute, id du Space actif.
 - Conversations : `spaceId?` (absent = `DEFAULT_SPACE_ID`).
 - Souvenirs (`miaou-memories`) : `scope?` (`'profile'` ou un `spaceId`, absent
@@ -76,6 +78,28 @@ branchés avec l'herméticité :
   c'est l'en-tête qui établit désormais, une fois, que ce qui suit décrit
   l'Espace COURANT. Ne pas retirer cet en-tête en croyant supprimer du
   décorum : sans lui le bloc ne dit plus de quel Espace il parle.
+
+**Inclusion du prompt système utilisateur, par Espace.** Par défaut chaque
+Espace reçoit le prompt utilisateur des Paramètres (part `user`) ; un Espace
+peut s'en passer (`includeUserPrompt: false`, interrupteur de l'écran Espace).
+Prédicat UNIQUE `spaceIncludesUserPrompt(space)` (storage.js, pur), lu par
+`systemMessageParts` (sur le MÊME `space` que le bloc Espace), l'écran Espace et
+la mention des Paramètres (`spacesExcludingUserPrompt` → `userPromptSpacesHint`,
+sous le champ du prompt) — jamais `space.includeUserPrompt` relu à côté, qui
+oublierait le défaut (champ absent sur les Espaces antérieurs) ou l'exception.
+**Le default Space l'inclut toujours** : interrupteur coché, figé, ligne grisée
+(`.check-row.is-locked`) et raison dans le hint ; forcé à `true` aussi à
+l'écriture (`normalizeSpace`), pour qu'un import ou un pair n'y écrive pas
+`false`. La description reste envoyée dans tous les cas : l'exclusion ne touche
+que la part `user`. Côté inspecteur, l'exclusion d'un prompt NON VIDE produit
+une ligne `user_prompt` à zéro, libellée « exclu par l'Espace », plutôt qu'une
+absence indiscernable d'un prompt vide (`userPromptForm`, cf.
+`docs/context-inspector.md`). Basculer le réglage de l'Espace actif invalide le
+manifeste du dernier envoi (hors génération en vol), comme un changement MCP ;
+un pair qui modifie le registre fait de même (`space-list`, multitab.js).
+Coût KV : une bascule change le message système une fois (piège 16, assumé).
+Couvert en navigateur par `verify-spaces-batch.mjs` (bloc 12), et en QuickJS
+par `test-context.js`/`test-storage.js`/`test-ui.js`.
 
 **Exception cross-Space assumée n°1 (lot F).** Le sous-mode « recherche de
 conversation » de la palette de commandes (`cmdkConvItems`, ui.js) perce

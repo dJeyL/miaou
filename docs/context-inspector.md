@@ -138,6 +138,15 @@ décrirait sinon un bloc que les chiffres affichés ne mesurent pas.
 
 Le bloc `skills_context` suit le même montage, pour la même raison : il porte
 les skills autotrigger, les skills MCP approuvées, ou les deux.
+
+La part `user_prompt` a elle aussi un état, mais c'est une **absence** qu'il
+faut montrer : un Espace peut se passer du prompt utilisateur
+(`spaceIncludesUserPrompt`, cf. `docs/spaces.md`). La part est alors vide, et
+`pushEntry` la tairait — indiscernable d'un prompt jamais saisi. D'où
+`systemMessageParts().userPromptForm` (`'excluded'` seulement si le prompt est
+non vide ET exclu), reporté sur le manifeste comme `libraryForm`, et une entrée
+`user_prompt` poussée à zéro (« Prompt utilisateur (exclu par l'Espace) ») à
+sa place dans l'ordre. C'est la seule entrée émise vide.
 `systemMessageParts().skillsContextForm` (`local`, `mcp`, `both`, calculé par
 `skillsContextFormFor` sur les MÊMES listes que celles passées à
 `buildSkillsContextBlock`) est reporté sur le manifeste. Ici c'est aussi le
@@ -427,11 +436,12 @@ Trois décisions à ne pas défaire :
   deviendrait dynamique.
 
 Une explication peut avoir **plusieurs états**, quand le bloc qu'elle décrit en
-a. `contextExplainFor(source, libraryForm, skillsContextForm)` résout `space`
+a. `contextExplainFor(source, libraryForm, skillsContextForm, userPromptForm)` résout `space`
 contre `CTX_EXPLAIN_SPACE_VARIANTS` — cardinal, liste complète, ou bibliothèque
 vide —, `skills_context` contre `CTX_EXPLAIN_SKILLS_CONTEXT_VARIANTS` (skills
 MCP seules, ou avec les autotrigger ; la valeur de table couvre les autotrigger
-seules), et rend la valeur de table pour toute autre source. Deux règles s'y attachent.
+seules), `user_prompt` contre `CTX_EXPLAIN_USER_PROMPT_EXCLUDED` quand
+l'Espace s'en passe, et rend la valeur de table pour toute autre source. Deux règles s'y attachent.
 La variante est une **phrase entière**, jamais un fragment recollé à la valeur
 de table : une substitution partielle redevient muette au premier reword de
 `CTX_EXPLAIN.space`, sans que rien ne le signale. Et le test d'alignement

@@ -4639,6 +4639,14 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   // la description de l'Espace a migré dans `sp.space` (bloc unifié), elle
   // n'est plus concaténée ici. Le libellé la promettait encore.
   pushEntry('user_prompt', 'Prompt utilisateur', sp.user);
+  // Prompt utilisateur non vide mais exclu par l'Espace actif : ligne à ZÉRO,
+  // à sa place dans l'ordre, plutôt qu'une absence. Une entrée qui disparaît
+  // se lit comme un prompt vide ; celle-ci dit que le texte existe et n'est
+  // pas envoyé ici. Seule entrée poussée à vide, d'où le contournement de
+  // `pushEntry` (qui tait les parts vides).
+  if (sp.userPromptForm === 'excluded') {
+    entries.push({ source: 'user_prompt', label: 'Prompt utilisateur (exclu par l\'Espace)', chars: 0, tokens: 0 });
+  }
   // `space` EN DERNIER, après `user` : le prompt utilisateur est général, la
   // description d'Espace en est un complément — même ordre de lecture que quand
   // elle lui était concaténée. C'est aussi sa place par cachabilité (un geste
@@ -4742,6 +4750,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     entries, totalChars, totalTokens, imageCount,
     libraryForm: sp.libraryForm || '',
     skillsContextForm: sp.skillsContextForm || '',
+    userPromptForm: sp.userPromptForm || '',
     apiUsage: apiUsage || null,
   };
 }

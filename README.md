@@ -186,6 +186,8 @@ Figtree/Fira Code).
   les souvenirs qui doivent rester valables partout.
 - Chaque Space peut porter une **description** libre, qui vient compléter le
   prompt système sans le remplacer.
+- Chaque Space inclut par défaut le prompt système utilisateur des réglages, et
+  peut s'en passer (sauf « Général »).
 - Suppression d'un Space : cascade explicite à double confirmation.
 - **Bibliothèque de fichiers par Space** : fichiers persistants et hermétiques,
   accessibles au modèle en lecture seule. On l'alimente par upload direct,

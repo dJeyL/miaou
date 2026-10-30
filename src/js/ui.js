@@ -6995,8 +6995,30 @@ function refreshStorageReport() {
   });
 }
 
+// Mention sous le prompt système utilisateur (Paramètres) : quels Espaces
+// s'en passent. Pure ; les noms viennent de `spacesExcludingUserPrompt`.
+function userPromptSpacesHint(excludedNames) {
+  const names = (excludedNames || []).map(n => '«\u00a0' + n + '\u00a0»');
+  if (!names.length) {
+    return 'Inclus dans tous les espaces. Chacun, sauf Général, peut s\'en passer depuis ses propriétés.';
+  }
+  const list = names.length === 1
+    ? names[0]
+    : names.slice(0, -1).join(', ') + ' et ' + names[names.length - 1];
+  const tail = names.length === 1
+    ? ', qui s\'en passe (réglage de ses propriétés).'
+    : ', qui s\'en passent (réglage de leurs propriétés).';
+  return 'Inclus dans tous les espaces sauf ' + list + tail;
+}
+
+function syncUserPromptSpacesHint() {
+  const el = $('set-system-spaces-hint');
+  if (el) el.textContent = userPromptSpacesHint(spacesExcludingUserPrompt(loadSpaces()));
+}
+
 function openSettings() {
   const s = loadSettings();
+  syncUserPromptSpacesHint();
   setSummaryInjectionModeUI(s.summaryInjectionMode);   // valeur courante (peut changer via la bannière)
   setThemeUI(s.theme || 'system');
   setPaletteUI(s.palette || 'ambre');
@@ -7622,13 +7644,20 @@ const CTX_EXPLAIN_SKILLS_CONTEXT_VARIANTS = {
   both: 'La liste des skills à déclenchement automatique et des skills servies par un serveur MCP et approuvées, avec leur description — pas leur contenu.',
 };
 
+// L'état « exclu » du prompt utilisateur (`userPromptForm`) : l'Espace actif
+// s'en passe, la ligne pèse zéro. Phrase entière, même règle que plus haut.
+const CTX_EXPLAIN_USER_PROMPT_EXCLUDED = 'Les instructions système saisies dans les Paramètres ne sont pas envoyées : l\'Espace actif s\'en passe (réglage de ses propriétés).';
+
 // Explication affichée pour une source, résolue contre l'état courant.
-// Pure : `libraryForm` et `skillsContextForm` sont passés, pas lus — le seul
+// Pure : `libraryForm`, `skillsContextForm` et `userPromptForm` sont passés, pas lus — le seul
 // appelant (le rendu du drawer) fait la lecture impure. Toute source sans variante, et tout état sans
 // entrée dans la table des variantes, retombe sur la valeur de table : le
 // contrat du test d'alignement (une string non vide par source produite) vaut
 // donc dans tous les états.
-function contextExplainFor(source, libraryForm, skillsContextForm) {
+function contextExplainFor(source, libraryForm, skillsContextForm, userPromptForm) {
+  if (source === 'user_prompt' && userPromptForm === 'excluded') {
+    return CTX_EXPLAIN_USER_PROMPT_EXCLUDED;
+  }
   if (source === 'space' && CTX_EXPLAIN_SPACE_VARIANTS[libraryForm]) {
     return CTX_EXPLAIN_SPACE_VARIANTS[libraryForm];
   }
@@ -8132,6 +8161,7 @@ function renderContextInspector() {
     // pas.
     const libraryForm = m.libraryForm || '';
     const skillsContextForm = m.skillsContextForm || '';
+    const userPromptForm = m.userPromptForm || '';
     const rows = m.entries.map(e => {
       const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
       const color = CTX_PALETTE[e.source] || '#888';
@@ -8142,7 +8172,7 @@ function renderContextInspector() {
       // apostrophes. L'échappement reste inconditionnel pour qu'un jour où
       // cette valeur deviendrait dynamique, le point d'injection ne soit pas
       // déjà ouvert.
-      const why = contextExplainFor(e.source, libraryForm, skillsContextForm);
+      const why = contextExplainFor(e.source, libraryForm, skillsContextForm, userPromptForm);
       const tipAttr = why ? tipAttrs(why, { text: e.label }) : '';
       const labelCls = why ? ' class="ctx-label-explained"' : '';
       return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>` +
@@ -8898,6 +8928,7 @@ function openSpaceScreen(id) {
   $('space-save-btn').disabled = true;
   $('space-err').setAttribute('hidden', '');
   const isDefault = id === DEFAULT_SPACE_ID;
+  syncSpaceUserPromptToggle(space);
   $('space-name-input').disabled = isDefault;
   $('space-delete-btn').hidden = isDefault;
   $('space-delete-title').hidden = isDefault;
@@ -8917,8 +8948,40 @@ function closeSpaceScreen() {
   discardSpaceDraftIfAny();
 }
 
+const SPACE_USER_PROMPT_HINT = 'Les instructions saisies dans Paramètres\u00a0› Prompts système. Désactivé, cet espace s\'en passe\u00a0: seule sa description complète le prompt racine.';
+const SPACE_USER_PROMPT_HINT_DEFAULT = 'Toujours inclus dans Général, l\'espace par défaut\u00a0: pour s\'en passer ici, vider le prompt dans les Paramètres.';
+
+// Interrupteur « prompt système utilisateur » de l'écran Espace. Lu par le
+// prédicat unique (`spaceIncludesUserPrompt`) : coché pour un Espace sans le
+// champ, et pour le default Space, où il est figé (ligne entière grisée, cf.
+// .check-row.is-locked) avec la raison dans le hint plutôt qu'une absence.
+function syncSpaceUserPromptToggle(space) {
+  const cb = $('space-user-prompt-input');
+  if (!cb) return;
+  const isDefault = !!space && space.id === DEFAULT_SPACE_ID;
+  cb.checked = spaceIncludesUserPrompt(space);
+  cb.disabled = isDefault;
+  const row = cb.closest('.check-row');
+  if (row) row.classList.toggle('is-locked', isDefault);
+  const hint = $('space-user-prompt-hint');
+  if (hint) hint.textContent = isDefault ? SPACE_USER_PROMPT_HINT_DEFAULT : SPACE_USER_PROMPT_HINT;
+}
+
+// Vrai si le formulaire de l'écran Espace diverge de l'Espace enregistré —
+// même contrat que `settingsFormDirty` : revenir à l'état d'origine (double
+// clic sur l'interrupteur, texte retapé à l'identique) regrise Enregistrer.
+// Comparé sur ce que `onSaveSpaceScreen` écrirait : nom rogné, description
+// brute, inclusion lue par le prédicat unique (champ absent = inclus).
+function spaceFormDirty() {
+  const space = _spaceScreenId ? getSpace(_spaceScreenId) : null;
+  if (!space) return false;
+  return $('space-name-input').value.trim() !== (space.name || '')
+    || $('space-description-input').value !== (space.description || '')
+    || $('space-user-prompt-input').checked !== spaceIncludesUserPrompt(space);
+}
+
 function onSpaceFormInput() {
-  $('space-save-btn').disabled = false;
+  $('space-save-btn').disabled = !spaceFormDirty();
   $('space-err').setAttribute('hidden', '');
 }
 
@@ -8935,12 +8998,21 @@ function onSaveSpaceScreen() {
   // Enregistrement réussi : le brouillon devient un Space réel. Consommé AVANT
   // closeSpaceScreen (qui rollbacke tout brouillon encore marqué).
   if (_spaceDraftId === _spaceScreenId) { _spaceDraftId = null; _spaceDraftPrevSpaceId = null; }
+  const wasIncluding = spaceIncludesUserPrompt(space);
   upsertSpace(Object.assign({}, space, {
     name: _spaceScreenId === DEFAULT_SPACE_ID ? (space.name || 'Général') : name,
     description: $('space-description-input').value,
+    includeUserPrompt: $('space-user-prompt-input').checked,
   }));
   renderSpaceMenu();
   syncSpaceUI();
+  // L'inclusion du prompt change ce que l'inspecteur doit montrer pour
+  // l'Espace actif : le manifeste du dernier envoi ne le décrit plus. Gardé
+  // pendant une génération, comme syncContextAfterMcpChange.
+  if (_spaceScreenId === activeSpaceId && wasIncluding !== spaceIncludesUserPrompt(getSpace(_spaceScreenId))) {
+    if (!_activeGenerations.size) _lastContextManifest = null;
+    syncContextCounter();
+  }
   closeSpaceScreen();
 }
 

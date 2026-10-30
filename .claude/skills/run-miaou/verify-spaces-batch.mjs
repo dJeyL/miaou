@@ -5,7 +5,11 @@
 //   - création d'un Space → bascule immédiate + écran ouvert (retour utilisateur),
 //   - description ajoutée après le prompt système global (jamais substituée),
 //   - mémoire scopée + promotion vers profil,
-//   - suppression D6 avec cascade et comptes.
+//   - suppression D6 avec cascade et comptes,
+//   - inclusion du prompt système utilisateur par Espace : interrupteur figé
+//     dans Général, exclusion effective au message système, ligne « exclu »
+//     dans l'inspecteur (manifeste d'un envoi antérieur invalidé), mention des
+//     Paramètres.
 // Usage : node verify-spaces-batch.mjs <dossier-captures> [--headed]
 import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
@@ -202,6 +206,101 @@ check('default Space : bouton suppression absent (hidden)', await page.evaluate(
 check('default Space : champ nom désactivé', await page.evaluate(() =>
   document.getElementById('space-name-input').disabled === true));
 await shot('08-default-space-no-delete.png');
+
+// ── 12. Prompt système utilisateur : inclus par défaut, exclu par Espace ─────
+// Général : interrupteur coché ET figé, ligne entière grisée (style calculé,
+// pas la seule classe), raison dans le hint.
+check('Général : interrupteur prompt utilisateur coché', await page.evaluate(() =>
+  document.getElementById('space-user-prompt-input').checked === true));
+check('Général : interrupteur figé (disabled)', await page.evaluate(() =>
+  document.getElementById('space-user-prompt-input').disabled === true));
+check('Général : libellé grisé (opacité calculée < 1)', await page.evaluate(() => {
+  const col = document.getElementById('space-user-prompt-input').closest('.check-row').querySelector('.label-col');
+  return parseFloat(getComputedStyle(col).opacity) < 1;
+}));
+check('Général : le hint explique le figement', await page.evaluate(() =>
+  document.getElementById('space-user-prompt-hint').textContent.includes('Général')));
+// Clic réel sur la colonne de texte : refusé sur une ligne figée.
+await page.locator('#space-user-prompt-hint').click();
+check('Général : cliquer le libellé ne décoche rien', await page.evaluate(() =>
+  document.getElementById('space-user-prompt-input').checked === true));
+await page.evaluate(() => closeSpaceScreen());
+await page.waitForTimeout(250);
+
+const proId = await page.evaluate(() => loadSpaces().find(s => s.name === 'Pro').id);
+await page.evaluate(() => saveSettings(Object.assign({}, loadSettings(), { systemPrompt: 'PROMPT-VERIFY-ESPACE' })));
+await page.evaluate((id) => pickSpace(id), proId);
+await page.waitForTimeout(400);   // loadSpaceLibrary (async) remet le manifeste à null : le laisser passer
+check('prémisse : Pro actif et prompt utilisateur envoyé', await page.evaluate(() =>
+  buildSystemMessage().content.includes('PROMPT-VERIFY-ESPACE')));
+// Manifeste d'un « envoi » antérieur figé, comme après un vrai envoi : la
+// sauvegarde de l'Espace doit l'invalider, sinon l'inspecteur montrerait encore
+// le prompt.
+await page.evaluate(() => { _lastContextManifest = computeContextManifestNow(); });
+check('prémisse : le manifeste figé porte le prompt utilisateur', await page.evaluate(() =>
+  _lastContextManifest.entries.some(e => e.source === 'user_prompt' && e.chars > 0)));
+
+await page.evaluate((id) => openSpaceScreen(id), proId);
+await page.waitForSelector('#space-drawer.show');
+await page.waitForTimeout(300);
+check('Pro : interrupteur coché et actif par défaut', await page.evaluate(() => {
+  const cb = document.getElementById('space-user-prompt-input');
+  return cb.checked === true && cb.disabled === false;
+}));
+// Aller-retour sur l'interrupteur : revenir à l'état enregistré regrise
+// Enregistrer, comme dans les Paramètres.
+await page.locator('#space-user-prompt-hint').click();
+await page.locator('#space-user-prompt-hint').click();
+check('Pro : deux clics sur l\'interrupteur → Enregistrer regrisé', await page.evaluate(() =>
+  document.getElementById('space-user-prompt-input').checked === true &&
+  document.getElementById('space-save-btn').disabled === true));
+await page.locator('#space-user-prompt-hint').click();
+check('Pro : clic sur le libellé décoche, Enregistrer activé', await page.evaluate(() =>
+  document.getElementById('space-user-prompt-input').checked === false &&
+  document.getElementById('space-save-btn').disabled === false));
+await page.click('#space-save-btn');
+await page.waitForTimeout(200);
+check('Pro : exclusion persistée', await page.evaluate((id) => getSpace(id).includeUserPrompt === false, proId));
+check('Pro : prompt utilisateur absent du message système', await page.evaluate(() =>
+  !buildSystemMessage().content.includes('PROMPT-VERIFY-ESPACE')));
+check('Pro : description de l\'Espace toujours présente', await page.evaluate(() =>
+  buildSystemMessage().content.includes('Contexte de test Playwright pour la description.')));
+await page.evaluate(() => openContextInspector());
+await page.waitForTimeout(300);
+const ctxRow = await page.evaluate(() => {
+  const tr = [...document.querySelectorAll('#ctx-table-body tr')].find(r => r.textContent.includes('Prompt utilisateur'));
+  return tr ? { text: tr.textContent, tip: getTip(tr.querySelector('.ctx-label-explained')) || '' } : null;
+});
+check('inspecteur : ligne « Prompt utilisateur (exclu par l\'Espace) » à 0', !!ctxRow &&
+  ctxRow.text.includes('exclu par l\'Espace') && /\)0≈0/.test(ctxRow.text));
+check('inspecteur : la tooltip dit que le prompt n\'est pas envoyé', !!ctxRow && ctxRow.tip.includes('pas envoyées'));
+await page.evaluate(() => closeContextInspector());
+await page.waitForTimeout(250);
+
+await page.evaluate(() => openSettings());
+await page.waitForTimeout(300);
+check('Paramètres : la mention nomme l\'Espace qui s\'en passe', await page.evaluate(() =>
+  document.getElementById('set-system-spaces-hint').textContent.includes('«\u00a0Pro\u00a0»')));
+await page.evaluate(() => closeSettings());
+await page.waitForTimeout(250);
+
+// Retour : réactiver rend la ligne pleine, la mention revient au cas général.
+await page.evaluate((id) => openSpaceScreen(id), proId);
+await page.waitForSelector('#space-drawer.show');
+await page.waitForTimeout(300);
+await page.locator('#space-user-prompt-hint').click();
+await page.click('#space-save-btn');
+await page.waitForTimeout(200);
+check('Pro réactivé : prompt utilisateur de retour, inspecteur sans « exclu »', await page.evaluate(() => {
+  const m = effectiveContextManifest();
+  return buildSystemMessage().content.includes('PROMPT-VERIFY-ESPACE') &&
+    m.entries.some(e => e.source === 'user_prompt' && e.chars > 0) &&
+    !m.entries.some(e => e.label.includes('exclu'));
+}));
+await page.evaluate(() => openSettings());
+await page.waitForTimeout(300);
+check('Pro réactivé : la mention ne nomme plus d\'Espace', await page.evaluate(() =>
+  !document.getElementById('set-system-spaces-hint').textContent.includes('Pro')));
 
 await browser.close();
 

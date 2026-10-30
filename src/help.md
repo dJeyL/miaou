@@ -278,12 +278,24 @@ résultat d'un autre Espace bascule automatiquement dessus (détails : sujet
 `interface`).
 
 Le sélecteur d'Espace est en haut de la barre latérale. L'historique « hors
-Espace » est lui-même un Espace, appelé « Général » — il n'a rien de spécial.
+Espace » est lui-même un Espace, appelé « Général » : il fonctionne comme les
+autres, sauf qu'il ne peut être ni supprimé ni renommé, et qu'il inclut
+toujours ton prompt système utilisateur.
 
 Chaque Espace peut porter une **description** libre : un contexte propre à
 l'Espace, ajouté à tes instructions habituelles quand tu y travailles (il ne
 les remplace pas). Pratique pour cadrer un projet sans redéfinir tes réglages à
 chaque fois.
+
+Le **prompt système utilisateur** (Paramètres › Prompts système) s'applique par
+défaut dans chaque Espace. Les propriétés d'un Espace (crayon à côté de son nom
+dans le sélecteur) permettent de s'en passer : le modèle n'y reçoit alors plus
+ces instructions, seulement la description de l'Espace. Utile quand ta persona
+habituelle ne convient pas à un usage particulier. Ce réglage n'existe pas pour
+Général, qui l'inclut toujours — pour s'en passer là, vide le prompt dans les
+Paramètres. Les Paramètres rappellent, sous le prompt, quels Espaces s'en
+passent, et l'inspecteur de contexte affiche le prompt comme exclu (à zéro)
+dans un tel Espace.
 
 Chaque Espace dispose aussi d'une **bibliothèque de fichiers** (onglet
 « Fichiers » de la barre latérale) : des fichiers persistants que le modèle peut

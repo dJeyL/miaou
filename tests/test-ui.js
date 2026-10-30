@@ -1061,3 +1061,23 @@ describe('userBodyOverflows (repli des bulles utilisateur)', function() {
     expect(userBodyOverflows(1000, 5, 0)).toBe(false);
   });
 });
+
+describe('userPromptSpacesHint (mention sous le prompt système utilisateur)', function() {
+  it('aucun Espace exclu : inclus partout, possibilité annoncée', function() {
+    var h = userPromptSpacesHint([]);
+    expect(h).toContain('tous les espaces');
+    expect(h).toContain('sauf Général');
+  });
+  it('un Espace exclu : nommé, accord au singulier', function() {
+    var h = userPromptSpacesHint(['Perso']);
+    expect(h).toContain('« Perso »');
+    expect(h).toContain('qui s\'en passe (');
+    expect(h).toContain('ses propriétés');
+  });
+  it('plusieurs Espaces exclus : liste en « et », accord au pluriel', function() {
+    var h = userPromptSpacesHint(['A', 'B', 'C']);
+    expect(h).toContain('« A », « B » et « C »');
+    expect(h).toContain('qui s\'en passent');
+    expect(h).toContain('leurs propriétés');
+  });
+});

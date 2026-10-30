@@ -765,6 +765,31 @@ describe('Spaces : CRUD (miaou-spaces)', function() {
     expect(s.description).toBe('');
     expect(typeof s.createdAt).toBe('number');
   });
+  it('includeUserPrompt : absent = inclus, false conservé, forcé à true sur le default Space', function() {
+    localStorage.clear();
+    upsertSpace({ id: 'sp1', name: 'a' });
+    upsertSpace({ id: 'sp2', name: 'b', includeUserPrompt: false });
+    upsertSpace({ id: DEFAULT_SPACE_ID, name: 'Général', includeUserPrompt: false });
+    expect(getSpace('sp1').includeUserPrompt).toBe(true);
+    expect(getSpace('sp2').includeUserPrompt).toBe(false);
+    expect(getSpace(DEFAULT_SPACE_ID).includeUserPrompt).toBe(true);
+  });
+  it('spaceIncludesUserPrompt : défaut inclus, Général toujours, null inclus', function() {
+    expect(spaceIncludesUserPrompt({ id: 'x' })).toBe(true);
+    expect(spaceIncludesUserPrompt({ id: 'x', includeUserPrompt: false })).toBe(false);
+    expect(spaceIncludesUserPrompt({ id: DEFAULT_SPACE_ID, includeUserPrompt: false })).toBe(true);
+    expect(spaceIncludesUserPrompt(null)).toBe(true);
+  });
+  it('spacesExcludingUserPrompt liste les noms des seuls Espaces qui s\'en passent', function() {
+    var names = spacesExcludingUserPrompt([
+      { id: DEFAULT_SPACE_ID, name: 'Général', includeUserPrompt: false },
+      { id: 'a', name: 'Pro' },
+      { id: 'b', name: 'Perso', includeUserPrompt: false },
+      { id: 'c', name: '  ', includeUserPrompt: false },
+    ]);
+    expect(names.join('|')).toBe('Perso|Sans nom');
+    expect(spacesExcludingUserPrompt(null).length).toBe(0);
+  });
   it('getSpace retrouve par id, null sinon', function() {
     localStorage.clear();
     upsertSpace({ id: 'sp1', name: 'a' });

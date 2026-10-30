@@ -481,6 +481,47 @@ describe('systemMessageParts / buildSystemMessage (brief B, refactor)', function
     expect(iUser >= 0).toBe(true);
     expect(iSpace > iUser).toBe(true);
   });
+  // Un Espace peut se passer du prompt utilisateur ; Général jamais. Lu sur le
+  // join réel ET sur le manifeste : l'inspecteur doit dire « exclu », pas taire
+  // la ligne comme pour un prompt vide.
+  it('un Espace qui exclut le prompt utilisateur le retire du message, l\'inspecteur le dit', function() {
+    localStorage.clear();
+    saveSettings({ systemPrompt: 'PROMPT-GLOBAL-UTILISATEUR' });
+    upsertSpace({ id: 'sp-sans', name: 'Sans', includeUserPrompt: false });
+    activeSpaceId = 'sp-sans';
+    var sp = systemMessageParts();
+    expect(sp.user).toBe('');
+    expect(sp.userPromptForm).toBe('excluded');
+    expect(buildSystemMessage(sp).content.indexOf('PROMPT-GLOBAL-UTILISATEUR')).toBe(-1);
+    var m = buildContextManifest(sp, {}, [], '', null);
+    var rows = m.entries.filter(function(e) { return e.source === 'user_prompt'; });
+    expect(rows.length).toBe(1);
+    expect(rows[0].chars).toBe(0);
+    expect(rows[0].label).toContain('exclu');
+    expect(m.userPromptForm).toBe('excluded');
+    expect(contextExplainFor('user_prompt', '', '', m.userPromptForm)).toBe(CTX_EXPLAIN_USER_PROMPT_EXCLUDED);
+    activeSpaceId = DEFAULT_SPACE_ID;
+  });
+  it('prompt utilisateur vide dans un Espace qui l\'exclut : rien à dire, aucune ligne', function() {
+    localStorage.clear();
+    saveSettings({ systemPrompt: '' });
+    upsertSpace({ id: 'sp-sans', name: 'Sans', includeUserPrompt: false });
+    activeSpaceId = 'sp-sans';
+    var sp = systemMessageParts();
+    expect(sp.userPromptForm).toBe('');
+    var m = buildContextManifest(sp, {}, [], '', null);
+    expect(m.entries.filter(function(e) { return e.source === 'user_prompt'; }).length).toBe(0);
+    activeSpaceId = DEFAULT_SPACE_ID;
+  });
+  it('Général inclut toujours le prompt utilisateur, même marqué exclu', function() {
+    localStorage.clear();
+    saveSettings({ systemPrompt: 'PROMPT-GLOBAL-UTILISATEUR' });
+    saveSpaces([{ id: DEFAULT_SPACE_ID, name: 'Général', includeUserPrompt: false }]);
+    activeSpaceId = DEFAULT_SPACE_ID;
+    var sp = systemMessageParts();
+    expect(sp.user).toBe('PROMPT-GLOBAL-UTILISATEUR');
+    expect(sp.userPromptForm).toBe('');
+  });
   it('la part identity est présente, inconditionnelle et EN TÊTE (lot I)', function() {
     var sp = systemMessageParts();
     expect(sp.identity).toBe(IDENTITY_BLURB);

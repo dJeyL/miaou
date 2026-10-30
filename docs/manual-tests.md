@@ -695,7 +695,11 @@ multimodaux) pour les tests 50-51 ; 52-53 ne nécessitent qu'un texte quelconque
     `system`) : le prompt global ET la description du Space doivent tous les
     deux être présents (concaténés, séparateur `---`), jamais l'un à la place
     de l'autre. Basculer vers un Space sans description → seul le prompt
-    global apparaît.
+    global apparaît. Décocher ensuite « Prompt système utilisateur » dans
+    l'écran du Space, Enregistrer : le payload ne porte plus que la
+    description, l'inspecteur affiche « Prompt utilisateur (exclu par
+    l'Espace) » à 0, et Paramètres › Prompts système nomme le Space sous le
+    champ. Dans Général, l'interrupteur est coché, grisé, non cliquable.
 61. **Spaces — suppression avec cascade.** Créer un Space de test avec
     au moins une conversation et un souvenir. Ouvrir son écran → bouton
     « Supprimer cet espace » affiche les comptes (ex. « Supprimer (1 conv.,

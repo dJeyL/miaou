@@ -725,8 +725,9 @@ tous les champs sauf `messages`. Détail : `docs/agents.md`.
   n'en est que le miroir. Diffusé par `unread-updated` et relu sur l'événement
   `storage`. Élagué au démarrage des conversations disparues et des agents
   (`pruneUnreadConvIds`, pure).
-- `miaou-spaces` : tableau `[{ id, name, description?, createdAt }]` (feature
-  Spaces, lot C). `description` (texte libre) est **ajoutée après** le prompt
+- `miaou-spaces` : tableau `[{ id, name, description?, includeUserPrompt?, createdAt }]` (feature
+  Spaces, lot C). `includeUserPrompt` (absent = `true`, forcé à `true` sur le
+  default Space par `normalizeSpace`) : cf. `docs/spaces.md`. `description` (texte libre) est **ajoutée après** le prompt
   système utilisateur global dans `buildSystemMessage()` — ce n'est PAS un
   system prompt de substitution (le brief C d'origine proposait un
   remplacement ; décision inversée, cf. `docs/pitfalls-detail.md` piège 18).

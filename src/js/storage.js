@@ -2555,8 +2555,35 @@ function normalizeSpace(s) {
     id: o.id || genSpaceId(),
     name: String(o.name || '').trim(),
     description: o.description ? String(o.description) : '',
+    // Absent = inclus : les Espaces antérieurs au réglage n'ont pas le champ, et
+    // l'inclusion est le défaut. Le default Space est forcé à `true` ici, au
+    // point d'écriture unique, en plus d'être lu comme inclus par
+    // `spaceIncludesUserPrompt` — un import ou un pair qui écrirait `false`
+    // dessus ne doit pas le faire taire.
+    includeUserPrompt: o.id === DEFAULT_SPACE_ID ? true : o.includeUserPrompt !== false,
     createdAt: o.createdAt || Date.now(),
   };
+}
+
+// L'Espace inclut-il le prompt système utilisateur (Paramètres) dans son
+// message système ? Prédicat UNIQUE, lu par la composition du message système
+// (`systemMessageParts`), par l'écran Espace et par la mention des Paramètres
+// (`spacesExcludingUserPrompt`) — jamais un `space.includeUserPrompt` relu à
+// côté, qui oublierait le défaut (champ absent) ou l'exception du default
+// Space. Le default Space l'inclut toujours : c'est la référence des
+// Paramètres, s'en passer là revient à vider le prompt. `null` (Espace
+// introuvable) = inclus, comme avant l'existence du réglage.
+function spaceIncludesUserPrompt(space) {
+  if (!space || space.id === DEFAULT_SPACE_ID) return true;
+  return space.includeUserPrompt !== false;
+}
+
+// Noms des Espaces qui se passent du prompt système utilisateur, dans l'ordre
+// du registre (pure). Alimente la mention sous le prompt dans les Paramètres.
+function spacesExcludingUserPrompt(spaces) {
+  return (Array.isArray(spaces) ? spaces : [])
+    .filter(s => !spaceIncludesUserPrompt(s))
+    .map(s => String(s.name || '').trim() || 'Sans nom');
 }
 
 // Insère ou remplace un Space par `id`. Retourne le tableau.

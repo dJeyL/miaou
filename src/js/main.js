@@ -1613,6 +1613,9 @@ function systemMessageParts(ctx) {
     // les deux (`skillsContextFormFor`). Le libellé et la tooltip de
     // l'inspecteur n'annoncent les skills MCP que si le bloc en porte.
     skillsContextForm: '',
+    // Idem pour `user` : 'excluded' quand l'Espace actif se passe d'un prompt
+    // utilisateur non vide (la part est alors ''), '' sinon.
+    userPromptForm: '',
   };
   // identity, root, codeblock : INCONDITIONNELLES (TOOLS est une const build-time
   // non vide — l'ancien gate `if (TOOLS.length)` était une branche morte, retirée).
@@ -1669,7 +1672,17 @@ function systemMessageParts(ctx) {
   // composition « prompt global + description d'Espace » et un test l'assert
   // encore telle quelle ; c'est le CALL-SITE qui a changé d'avis, pas la règle
   // (la description reste concaténée au prompt, jamais substituée — lot C).
-  out.user = resolveUserSystemPrompt(settings.systemPrompt);
+  //
+  // Un Espace peut se passer du prompt utilisateur (`spaceIncludesUserPrompt`,
+  // prédicat unique ; jamais le default Space). Lu sur le MÊME `space` que le
+  // bloc Espace ci-dessus : les deux parts décrivent le même référentiel. La
+  // part est alors vide, et `userPromptForm` le dit à l'inspecteur — sans quoi
+  // l'entrée disparaîtrait sans explication, indiscernable d'un prompt vide.
+  // '' quand rien n'est exclu (prompt inclus, ou vide de toute façon).
+  const userPrompt = resolveUserSystemPrompt(settings.systemPrompt);
+  const includeUser = spaceIncludesUserPrompt(space);
+  out.user = includeUser ? userPrompt : '';
+  out.userPromptForm = (!includeUser && userPrompt) ? 'excluded' : '';
   return out;
 }
 
