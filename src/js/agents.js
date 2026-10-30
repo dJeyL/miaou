@@ -781,8 +781,13 @@ function createAgentGeneration(convId, thread, opts) {
   const parentGen = o.parentConvId ? generationFor(o.parentConvId) : null;
   // Modèle et serveur HÉRITÉS du parent (décision 3, X-f) : de la génération
   // parente si elle tourne encore (source la plus fidèle : elle les a figés au
-  // même titre), sinon de l'état résolu au moment du spawn.
-  const model = (parentGen && parentGen.model) || activeModel();
+  // même titre), sinon du RECORD du parent, résolu par le même prédicat que
+  // l'écran et que `runDetachedGeneration` (`modelForConv`, override en sommeil
+  // si le sélecteur est masqué). Jamais `activeModel()` : il lit l'override de
+  // la conversation AFFICHÉE, qui n'est pas forcément le parent (piège 28). Le
+  // serveur reste le serveur actif — il n'a pas d'override par conversation.
+  const model = (parentGen && parentGen.model)
+    || (parent ? modelForConv(parent.model) : activeModel());
   const serverName = (parentGen && parentGen.serverName) || ((activeApiServer() || {}).name || '');
   const serverId = (parentGen && parentGen.serverName) ? (parentGen.serverId || '') : ((activeApiServer() || {}).id || '');
   const gen = createGeneration(convId, thread, {
@@ -824,7 +829,9 @@ function buildAgentApiMessages(sys, gen) {
     // reconstruire ici, et
     // les rajouter au préfixe les écrirait DEUX FOIS tout en rouvrant le
     // préfixe KV partagé entre parent et agent.
-    const prefix = buildContextBlock([]) + '\n\n---\n\n';
+    // `gen.model` : le modèle de CETTE génération (agent, parent réveillé),
+    // pas celui de la conversation affichée.
+    const prefix = buildContextBlock([], gen.model) + '\n\n---\n\n';
     const lastContent = threadMsgs[lastUserIdx].content;
     threadMsgs[lastUserIdx] = {
       role: 'user',

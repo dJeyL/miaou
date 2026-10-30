@@ -513,6 +513,32 @@ describe('systemMessageParts / buildSystemMessage (brief B, refactor)', function
     expect(m.entries.filter(function(e) { return e.source === 'user_prompt'; }).length).toBe(0);
     activeSpaceId = DEFAULT_SPACE_ID;
   });
+  // Piège 28 : le message système d'une génération décrit SON Espace, pas
+  // celui de l'écran. Fixture où les deux divergent sur chaque élément du
+  // bloc Espace ET sur l'inclusion du prompt — un `activeSpaceId` relu
+  // quelque part donne une réponse différente.
+  it('ctx.spaceId gouverne le bloc Espace et l\'inclusion du prompt, pas l\'écran', function() {
+    localStorage.clear();
+    saveSettings({ systemPrompt: 'PROMPT-GLOBAL-UTILISATEUR' });
+    upsertSpace({ id: 'sp-gen', name: 'DeLaGeneration', description: 'DESC-GEN', includeUserPrompt: false });
+    upsertSpace({ id: 'sp-ecran', name: 'DeLEcran', description: 'DESC-ECRAN' });
+    saveMemory({ id: 'm-gen', content: 'SOUVENIR-GEN', scope: 'sp-gen' });
+    saveMemory({ id: 'm-ecran', content: 'SOUVENIR-ECRAN', scope: 'sp-ecran' });
+    activeSpaceId = 'sp-ecran';
+    var sp = systemMessageParts({ convId: null, spaceId: 'sp-gen' });
+    expect(sp.space).toContain('DeLaGeneration');
+    expect(sp.space).toContain('DESC-GEN');
+    expect(sp.space).toContain('SOUVENIR-GEN');
+    expect(sp.space.indexOf('DESC-ECRAN')).toBe(-1);
+    expect(sp.space.indexOf('SOUVENIR-ECRAN')).toBe(-1);
+    expect(sp.user).toBe('');
+    expect(sp.userPromptForm).toBe('excluded');
+    // Et l'inverse : l'écran n'hérite pas de l'exclusion de la génération.
+    var screen = systemMessageParts();
+    expect(screen.space).toContain('DESC-ECRAN');
+    expect(screen.user).toBe('PROMPT-GLOBAL-UTILISATEUR');
+    activeSpaceId = DEFAULT_SPACE_ID;
+  });
   it('Général inclut toujours le prompt utilisateur, même marqué exclu', function() {
     localStorage.clear();
     saveSettings({ systemPrompt: 'PROMPT-GLOBAL-UTILISATEUR' });
@@ -901,6 +927,47 @@ describe('buildSkillsContextBlock (skills autotrigger, stage 2)', function() {
 // donc non testables ici tels quels. Couverts indirectement via leurs
 // sous-blocs purs ci-dessus (buildSummaryBlock/buildMemoryEntriesBlock/
 // buildSkillsContextBlock).
+
+// Piège 28 sur la ligne « Modèle : » du préfixe éphémère : celui de la
+// génération, pas celui de l'écran. Intl est stubé LE TEMPS du test (absent
+// sous QuickJS, cf. la note ci-dessus) pour exécuter le vrai producteur ; écran
+// et génération portent des modèles contradictoires.
+describe('contextBlockParts / buildAgentApiMessages : modèle de la génération', function() {
+  function withIntl(fn) {
+    var had = typeof Intl !== 'undefined';
+    var prev = had ? Intl : undefined;
+    globalThis.Intl = { DateTimeFormat: function() { return { resolvedOptions: function() { return { timeZone: 'UTC' }; } }; } };
+    try { return fn(); } finally { if (had) globalThis.Intl = prev; else delete globalThis.Intl; }
+  }
+  it('le modèle passé l\'emporte sur l\'écran ; omis, repli sur l\'écran', function() {
+    localStorage.clear();
+    saveSettings({ model: 'MODELE-ECRAN' });
+    currentConvModel = '';
+    withIntl(function() {
+      expect(contextBlockParts([], 'MODELE-GEN').contextDateModel).toContain('Modèle : MODELE-GEN');
+      expect(contextBlockParts([], 'MODELE-GEN').contextDateModel.indexOf('MODELE-ECRAN')).toBe(-1);
+      expect(contextBlockParts([]).contextDateModel).toContain('Modèle : MODELE-ECRAN');
+    });
+  });
+  it('un agent annonce SON modèle, pas celui de la conversation affichée', function() {
+    localStorage.clear();
+    saveSettings({ model: 'MODELE-ECRAN' });
+    currentConvModel = '';
+    var gen = { thread: [{ role: 'user', content: 'bonjour' }], model: 'MODELE-AGENT' };
+    var msgs = withIntl(function() { return buildAgentApiMessages({ role: 'system', content: 'S' }, gen); });
+    var last = msgs.filter(function(m) { return m.role === 'user'; }).pop();
+    expect(last.content).toContain('Modèle : MODELE-AGENT');
+    expect(last.content.indexOf('MODELE-ECRAN')).toBe(-1);
+  });
+  // dispatchSend n'est pas exécutable ici (réseau, DOM) : garde sur la SOURCE,
+  // même procédé que le test de bibliothèque plus haut. Ses deux producteurs du
+  // préfixe (manifeste et payload) reçoivent le modèle de la génération.
+  it('dispatchSend passe gen.model aux deux producteurs du préfixe', function() {
+    var src = String(dispatchSend);
+    expect(src).toContain('contextBlockParts(matches, gen.model)');
+    expect(src).toContain('buildContextBlock(matches, gen.model)');
+  });
+});
 
 describe('contextWindowFor (lot AF : par serveur et modèle)', function() {
   it('rien de connu → null (inconnu)', function() {

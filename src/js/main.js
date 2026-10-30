@@ -1384,11 +1384,15 @@ function buildProfileMemoriesBlock() {
   return buildMemoryEntriesBlock(['profile']);
 }
 
-function buildSpaceMemoriesBlock() {
-  // Le scope du Space actif = la portée complète MOINS 'profile'. Dérivé de
-  // `memoryScopesForSpace` et non réécrit en `[activeSpaceId]` : le jour où la
+// `spaceId` : l'Espace de la génération pour laquelle le message est construit
+// (`systemMessageParts`, via `toolCtx`) ; repli sur l'Espace affiché pour les
+// appels sans argument (tests, simulation d'écran).
+function buildSpaceMemoriesBlock(spaceId) {
+  // Le scope du Space = la portée complète MOINS 'profile'. Dérivé de
+  // `memoryScopesForSpace` et non réécrit en `[spaceId]` : le jour où la
   // portée gagne un scope, ce filtre le suit au lieu de l'ignorer en silence.
-  const scopes = memoryScopesForSpace(activeSpaceId).filter(sc => sc !== 'profile');
+  const sid = spaceId !== undefined ? spaceId : activeSpaceId;
+  const scopes = memoryScopesForSpace(sid).filter(sc => sc !== 'profile');
   return buildMemoryEntriesBlock(scopes);
 }
 
@@ -1396,11 +1400,18 @@ function buildSpaceMemoriesBlock() {
 // principe que systemMessageParts() : source unique pour buildContextBlock()
 // ET pour le manifeste de contexte. Réduit par la campagne cache à ce qui
 // change vraiment d'un tour à l'autre (cf. buildContextBlock).
-function contextBlockParts(matches) {
+//
+// `model` : celui de la GÉNÉRATION qui envoie (`gen.model`), jamais relu sur
+// l'écran par l'appelant qui en a une (piège 28) — un agent ou un parent
+// réveillé tourne pendant qu'une autre conversation est affichée, avec son
+// propre override, et la ligne « Modèle : » lui annonçait sinon le modèle de
+// l'écran. Omis (simulation et rejeu du manifeste, qui décrivent l'écran) :
+// repli sur `activeModel()`.
+function contextBlockParts(matches, model) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const model = activeModel().trim();
+  model = String(model !== undefined ? model : activeModel()).trim();
   const lines = ['Date et heure : ' + dateStr + ' (' + tz + ')'];
   if (model) lines.push('Modèle : ' + model);
   // Pas de ligne « Espace : <nom> » ici : le nom de l'Espace est porté par
@@ -1424,8 +1435,8 @@ function contextBlockParts(matches) {
 // garder ici le faisait repayer à chaque envoi. Ce bloc-ci ne garde que ce qui
 // change d'un TOUR à l'autre — l'heure, et les résumés, qui dépendent du
 // message envoyé.
-function buildContextBlock(matches) {
-  const dp = contextBlockParts(matches);
+function buildContextBlock(matches, model) {
+  const dp = contextBlockParts(matches, model);
   const parts = [dp.contextDateModel];
   if (dp.summaries) parts.push(dp.summaries);
   const inner = parts.join('\n\n');
@@ -1637,14 +1648,27 @@ function systemMessageParts(ctx) {
   // `buildSystemMessage()` pour l'ordre du join.
   out.mcpInstructions = buildMcpInstructionsBlock(mcpInstructionSources(), mcpDisabled);
   out.memoriesProfile = buildProfileMemoriesBlock();
-  const space = getSpace(activeSpaceId);
+  // L'Espace de la conversation POUR LAQUELLE ce message est construit, pas
+  // celui de l'écran (piège 28, « dans quel référentiel je réponds ? ») : un
+  // agent, un parent réveillé ou une conversation détachée tournent pendant
+  // qu'un autre Espace est affiché, et recevaient sinon la description, la
+  // bibliothèque, les souvenirs et l'inclusion du prompt utilisateur de cet
+  // autre Espace — pendant que leurs outils, eux, agissaient déjà sur le leur
+  // (`toolCtx`). Même normalisation que les handlers : sans ctx, l'écran.
+  //
+  // La bibliothèque est lue dans le cache session, peuplé à l'activation d'un
+  // Espace (`loadSpaceLibrary`) et jamais purgé au switch : une génération ne
+  // naît que dans un Espace activé pendant cette session (les générations ne
+  // survivent pas au rechargement), donc le sien y est déjà.
+  const spaceId = toolCtx(ctx).spaceId;
+  const space = getSpace(spaceId);
   // Bibliothèque : les deux formes sont EXCLUSIVES et vivent au même endroit,
   // ici. Le manifeste complet quand l'utilisateur l'a demandé, la note courte
   // (cardinal + renvoi à files__list) sinon. Toutes deux ne changent qu'à un
   // geste explicite, donc toutes deux sont cachables — cf. le commentaire de
   // `libraryManifestInContext` (storage.js) pour le motif du déplacement depuis
   // le préfixe éphémère.
-  const libraryEntries = getCachedLibraryEntriesBySpace(activeSpaceId);
+  const libraryEntries = getCachedLibraryEntriesBySpace(spaceId);
   const libraryNote = settings.libraryManifestInContext
     ? buildLibraryManifestBlock(libraryEntries, space && space.name)
     : buildLibraryNoteBlock(libraryEntries, space && space.name);
@@ -1658,7 +1682,7 @@ function systemMessageParts(ctx) {
   out.libraryForm = !libraryNote
     ? ''
     : (settings.libraryManifestInContext ? 'manifest' : 'note');
-  out.space = buildSpaceBlock(space, libraryNote, buildSpaceMemoriesBlock());
+  out.space = buildSpaceBlock(space, libraryNote, buildSpaceMemoriesBlock(spaceId));
   const localSkills = getAutotriggerSkillsMeta();
   const servedSkills = filterMcpSkillEntries(approvedMcpSkillsForContext(), mcpDisabled);
   out.skillsContext = buildSkillsContextBlock(localSkills, servedSkills);
@@ -4352,7 +4376,7 @@ async function dispatchSend(matches, continuation) {
   // même endroit pour l'inspecteur de contexte : le réécrire ici ferait décrire
   // à la barre un découpage que le payload ne suit pas.
   const lastUserIdx = lastAuthenticUserIndex(threadMsgs);
-  const dynParts = contextBlockParts(matches);
+  const dynParts = contextBlockParts(matches, gen.model);
   // Photo du thread AVANT injection du préfixe dynamique, pour le manifeste de
   // contexte (plus bas) : buildContextManifest compte déjà `dynParts` en entrées
   // séparées — lui passer le thread préfixé recompterait les blocs dynamiques
@@ -4369,7 +4393,7 @@ async function dispatchSend(matches, continuation) {
     // remontés dans le message système (systemMessageParts) — ils ne changeaient
     // qu'à un geste explicite, et les garder ici les faisait glisser derrière
     // chaque nouveau message user sans jamais être servis du cache.
-    const ctx = buildContextBlock(matches);
+    const ctx = buildContextBlock(matches, gen.model);
     const prefix = ctx + '\n\n---\n\n';
     const lastContent = threadMsgs[lastUserIdx].content;
     // Tour d'attache (brief A lot 2) : `content` peut être un tableau de

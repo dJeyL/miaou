@@ -2128,3 +2128,18 @@ describe('syncAppBadge (pwa)', function() {
     expect(true).toBe(true);
   });
 });
+
+// Piège 28 sur le modèle hérité : parent qui ne génère plus, écran sur une
+// AUTRE conversation à override contradictoire. L'agent doit hériter du record
+// du parent, jamais de l'override affiché.
+describe('createAgentGeneration : modèle hérité sans génération parente', function() {
+  it('repli sur le record du parent, pas sur l\'override de l\'écran', function() {
+    localStorage.clear();
+    saveSettings({ model: 'MODELE-DEFAUT', showModelSelector: true });
+    saveConversation({ id: 'p-agent-model', title: 'P', timestamp: 1, messages: [], model: 'MODELE-PARENT' });
+    currentConvModel = 'MODELE-ECRAN';
+    var gen = createAgentGeneration('a-agent-model', [], { parentConvId: 'p-agent-model' });
+    expect(gen.model).toBe('MODELE-PARENT');
+    currentConvModel = '';
+  });
+});

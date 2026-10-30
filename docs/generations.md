@@ -801,6 +801,29 @@ sont désormais couvrables par les tests purs — ce qu'ils n'étaient pas. Les
 tests T-1c posent délibérément une globale d'écran **contradictoire** ; ils
 échouent si un handler relit la globale (vérifié en injectant la régression).
 
+### Le message système suit la même règle
+
+`systemMessageParts(ctx)` (main.js) lit l'Espace par `toolCtx(ctx).spaceId`,
+pas `activeSpaceId` : bloc Espace (description, bibliothèque, souvenirs de
+l'Espace) et inclusion du prompt utilisateur (`spaceIncludesUserPrompt`). Il
+lisait l'écran jusqu'au 2026-10-30, alors que la sélection MCP passait déjà par
+`ctx` : un agent, un parent réveillé ou une conversation détachée de l'Espace A,
+tournant pendant que l'écran affiche B, recevaient la description et les
+souvenirs de B pendant que leurs outils agissaient sur A. Les appelants qui
+servent l'écran (simulation et rejeu du manifeste) appellent sans argument et
+retombent sur l'écran, ce qui est leur sujet. La bibliothèque est lue dans le
+cache session, jamais purgé au switch : une génération ne naît que dans un
+Espace activé pendant la session, donc le sien y est. Test QuickJS à écran
+contradictoire dans `test-context.js`.
+
+Même règle pour la ligne « Modèle : » du préfixe éphémère : `contextBlockParts`
+/ `buildContextBlock` reçoivent `gen.model` de `dispatchSend` et de
+`buildAgentApiMessages` (agents, parents réveillés), et ne retombent sur
+`activeModel()` (le modèle de l'écran) que sans argument — simulation et rejeu
+du manifeste. Corrigé le même jour : un agent ou une conversation détachée
+s'annonçait sinon le modèle de la conversation affichée. Testé sous QuickJS en
+stubant `Intl` le temps du test, `dispatchSend` par lecture de sa source.
+
 ## Titrage et résumé
 
 - **`maybeTitle(gen)`** prend la génération : le besoin de titrage et le thread

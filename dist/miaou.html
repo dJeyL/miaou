@@ -6005,7 +6005,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-10-30 20:32 UTC */
+/* miaou — built: 2026-10-30 20:33 UTC */
 
 /* ── utils.js ── */
 
@@ -11656,7 +11656,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1793392340}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1793392387}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11676,7 +11676,7 @@ const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || ''
 const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "e926ad9c706cf8f3"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "6129b672ac9412f0"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -14717,7 +14717,8 @@ function createAgentGeneration(convId, thread, opts) {
   const parent = o.parentConvId ? loadConversation(o.parentConvId) : null;
   const parentGen = o.parentConvId ? generationFor(o.parentConvId) : null;
 
-  const model = (parentGen && parentGen.model) || activeModel();
+  const model = (parentGen && parentGen.model)
+    || (parent ? modelForConv(parent.model) : activeModel());
   const serverName = (parentGen && parentGen.serverName) || ((activeApiServer() || {}).name || '');
   const serverId = (parentGen && parentGen.serverName) ? (parentGen.serverId || '') : ((activeApiServer() || {}).id || '');
   const gen = createGeneration(convId, thread, {
@@ -14744,7 +14745,7 @@ function buildAgentApiMessages(sys, gen) {
   const lastUserIdx = threadMsgs.reduce((acc, m, i) => (m.role === 'user' && !m._synthetic) ? i : acc, -1);
   if (lastUserIdx >= 0) {
 
-    const prefix = buildContextBlock([]) + '\n\n---\n\n';
+    const prefix = buildContextBlock([], gen.model) + '\n\n---\n\n';
     const lastContent = threadMsgs[lastUserIdx].content;
     threadMsgs[lastUserIdx] = {
       role: 'user',
@@ -36769,17 +36770,18 @@ function buildProfileMemoriesBlock() {
   return buildMemoryEntriesBlock(['profile']);
 }
 
-function buildSpaceMemoriesBlock() {
+function buildSpaceMemoriesBlock(spaceId) {
 
-  const scopes = memoryScopesForSpace(activeSpaceId).filter(sc => sc !== 'profile');
+  const sid = spaceId !== undefined ? spaceId : activeSpaceId;
+  const scopes = memoryScopesForSpace(sid).filter(sc => sc !== 'profile');
   return buildMemoryEntriesBlock(scopes);
 }
 
-function contextBlockParts(matches) {
+function contextBlockParts(matches, model) {
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const model = activeModel().trim();
+  model = String(model !== undefined ? model : activeModel()).trim();
   const lines = ['Date et heure : ' + dateStr + ' (' + tz + ')'];
   if (model) lines.push('Modèle : ' + model);
 
@@ -36789,8 +36791,8 @@ function contextBlockParts(matches) {
   };
 }
 
-function buildContextBlock(matches) {
-  const dp = contextBlockParts(matches);
+function buildContextBlock(matches, model) {
+  const dp = contextBlockParts(matches, model);
   const parts = [dp.contextDateModel];
   if (dp.summaries) parts.push(dp.summaries);
   const inner = parts.join('\n\n');
@@ -36885,9 +36887,11 @@ function systemMessageParts(ctx) {
 
   out.mcpInstructions = buildMcpInstructionsBlock(mcpInstructionSources(), mcpDisabled);
   out.memoriesProfile = buildProfileMemoriesBlock();
-  const space = getSpace(activeSpaceId);
 
-  const libraryEntries = getCachedLibraryEntriesBySpace(activeSpaceId);
+  const spaceId = toolCtx(ctx).spaceId;
+  const space = getSpace(spaceId);
+
+  const libraryEntries = getCachedLibraryEntriesBySpace(spaceId);
   const libraryNote = settings.libraryManifestInContext
     ? buildLibraryManifestBlock(libraryEntries, space && space.name)
     : buildLibraryNoteBlock(libraryEntries, space && space.name);
@@ -36895,7 +36899,7 @@ function systemMessageParts(ctx) {
   out.libraryForm = !libraryNote
     ? ''
     : (settings.libraryManifestInContext ? 'manifest' : 'note');
-  out.space = buildSpaceBlock(space, libraryNote, buildSpaceMemoriesBlock());
+  out.space = buildSpaceBlock(space, libraryNote, buildSpaceMemoriesBlock(spaceId));
   const localSkills = getAutotriggerSkillsMeta();
   const servedSkills = filterMcpSkillEntries(approvedMcpSkillsForContext(), mcpDisabled);
   out.skillsContext = buildSkillsContextBlock(localSkills, servedSkills);
@@ -38505,12 +38509,12 @@ async function dispatchSend(matches, continuation) {
   const threadMsgs = expandThread(resolveRecallImages(resolveResourceRefs(gen.thread)));
 
   const lastUserIdx = lastAuthenticUserIndex(threadMsgs);
-  const dynParts = contextBlockParts(matches);
+  const dynParts = contextBlockParts(matches, gen.model);
 
   const manifestThreadMsgs = threadMsgs.slice();
   if (lastUserIdx >= 0) {
 
-    const ctx = buildContextBlock(matches);
+    const ctx = buildContextBlock(matches, gen.model);
     const prefix = ctx + '\n\n---\n\n';
     const lastContent = threadMsgs[lastUserIdx].content;
 

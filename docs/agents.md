@@ -422,9 +422,13 @@ ne serait pas relisible comme une conversation.
   lancé par une génération détachée naît dans le Space de **sa** génération.
   Herméticité héritée et figée (X-a), sans exception.
 - `model` / `serverName` sont **hérités du parent** (décision 3, X-f) : de la
-  génération parente si elle tourne encore, sinon de l'état résolu au spawn.
+  génération parente si elle tourne encore, sinon du **record** du parent
+  (`modelForConv(parent.model)`, même prédicat que `runDetachedGeneration`).
   **Jamais relus** d'`activeModel()` — un agent lancé pendant que l'utilisateur
-  change l'override du composer reproduirait le bug payé le 2026-08-29.
+  change l'override du composer reproduirait le bug payé le 2026-08-29. Le repli
+  le lisait encore jusqu'au 2026-10-30 (l'override de la conversation
+  affichée) ; seul un appel sans parent y retombe désormais. Le serveur reste
+  le serveur actif, faute d'override par conversation.
 
 ### Prompt système : celui du parent, à la lettre
 
