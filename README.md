@@ -149,6 +149,8 @@ Figtree/Fira Code).
 
 - Conversations persistantes (IndexedDB), sidebar à sections temporelles et
   redimensionnable, titres auto-générés et éditables.
+- **Rail de navigation** le long du fil : une marque par message envoyé, allumée
+  quand l'échange est à l'écran, avec un aperçu au survol et un saut au clic.
 - **Libellé disponible dès l'envoi** : un extrait du premier message tient lieu
   de titre (en italique) le temps que le titrage aboutisse, et le titre est
   généré dès l'envoi plutôt qu'en fin d'échange — désactivable

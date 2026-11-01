@@ -35,6 +35,7 @@ JS_ORDER = [
     'ui.js',
     'toasts.js',
     'tooltips.js',
+    'nav-rail.js',
     'acks.js',
     'export.js',
     'multitab.js',

@@ -166,3 +166,13 @@ html[data-theme="light"] .token.important,
 html[data-theme="light"] .token.variable                  { color: #b5440e; }
 html[data-theme="light"] .token.tag,
 html[data-theme="light"] .token.deleted                   { color: #b53030; }
+
+/* Rail de navigation du fil : le survol d'une entrée ÉCLAIRCIT son fond, au-
+   dessus du fond du panneau (--surface-2) — en clair, --surface-4 l'assombrit
+   et vaut --surface-3, celui des entrées allumées (cf. chat.css). Mélange vers
+   le blanc plutôt qu'une luminosité poussée sur la teinte de palette : à 96 %,
+   la saturation de --sat-s1 y laissait une dominante colorée (verdâtre) que le
+   fond du panneau, plus sombre, ne montre pas. */
+html[data-theme="light"] .nav-rail {
+  --nav-item-hover-bg: color-mix(in srgb, var(--float-bg) 30%, #fff);
+}

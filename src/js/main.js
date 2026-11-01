@@ -6121,6 +6121,8 @@ async function init() {
   // quand l'utilisateur redescend au fond à la main (ui.js). Passif : le
   // handler ne fait que lire des mesures et basculer un attribut.
   $('messages').addEventListener('scroll', onMessagesScroll, { passive: true });
+  // Rail de navigation du fil (nav-rail.js) : écoute ses propres événements.
+  initNavRail();
   // Gestes de défilement de l'utilisateur. Ils servent à deux choses, toutes
   // deux impossibles à déduire de l'événement `scroll` lui-même (identique
   // qu'il vienne d'un geste ou d'un autoscroll) : abandonner la descente animée

@@ -1230,6 +1230,16 @@ Quelques repères pour te déplacer dans MIAOU :
   ne pulse pas, tu n'as rien manqué. L'utiliser (ou redescendre
   toi-même jusqu'en bas) relance le suivi jusqu'au bout pour cette réponse-là ;
   le tour suivant repart du comportement normal.
+- **Rail de navigation** : contre le bord droit du fil, centrées en hauteur,
+  de petites marques horizontales représentent chacun de tes messages, dans
+  l'ordre de la conversation. Celles des échanges que tu as à l'écran (ton
+  message et la réponse qui le suit) sont plus longues et plus claires, et
+  suivent le défilement. Au survol du rail, un panneau liste le début de chacun
+  de tes messages, ceux à l'écran mis en avant ; un clic sur une entrée ou sur
+  une marque amène ce message en haut de l'écran. Le rail n'apparaît qu'à
+  partir de deux messages, et seulement s'il reste assez de place à droite du
+  fil pour ne pas empiéter sur les messages. Sur
+  une conversation très longue, les marques se resserrent pour tenir.
 - **Encadrés** : une citation Markdown dont la première ligne est `[!NOTE]`,
   `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` ou `[!CAUTION]`, seule sur sa ligne
   (majuscules ou minuscules), s'affiche comme sur GitHub : une bordure, un

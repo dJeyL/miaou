@@ -658,6 +658,124 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
   color: var(--accent);
 }
 
+/* Rail de navigation du fil (nav-rail.js). Enfant de .main, hors de .messages :
+   `top`/`height` recopient la zone du fil en JS, la colonne de marques s'y
+   centre. Posé contre la scrollbar, dans la gouttière droite (le JS le masque
+   quand elle est trop étroite). Seuls les marques et le panneau captent le
+   pointeur : le rail est aussi haut que la zone, et une boîte étirée qui
+   capterait le survol sur toute cette hauteur ouvrirait le panneau en
+   longeant simplement le bord. z-index sous le survol de drop (50). */
+.nav-rail {
+  position: absolute;
+  right: 10px;
+  width: 26px;
+  display: flex;
+  /* Haut de la colonne posé en JS (margin-top calé sur un pixel physique) :
+     un centrage flex le rendrait fractionnaire. */
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 12;
+  pointer-events: none;
+}
+/* Marques en position absolue, top posé une à une par syncNavRailLayout
+   (calage sur les pixels physiques, sans cumul d'arrondi) ; la hauteur du
+   conteneur aussi. */
+.nav-rail-marks {
+  position: relative;
+  width: 100%;
+  pointer-events: auto;
+  cursor: pointer;
+}
+/* La marque est une bande de la hauteur du pas, le trait est dessiné dedans :
+   la zone de clic couvre tout l'intervalle, pas les 2px du trait. */
+/* Pas, épaisseur et retrait calés sur les pixels physiques (navRailSnap,
+   nav-rail.js) : jamais de centrage flex du trait dans sa bande, qui
+   réintroduirait une demi-différence fractionnaire. */
+.nav-rail-mark {
+  position: absolute;
+  left: 0;
+  height: var(--nav-rail-pitch, 12px);
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+/* Largeur = base (repos ou allumée) + élargissement de survol : la marque
+   désignée gagne 8px, ses voisines directes la moitié (classes posées par
+   setNavRailHover, nav-rail.js — le survol peut venir du panneau). */
+.nav-rail-mark { --mark-w: 12px; --mark-grow: 0px; }
+.nav-rail-mark.lit   { --mark-w: 18px; }
+.nav-rail-mark.near  { --mark-grow: 4px; }
+.nav-rail-mark.hover { --mark-grow: 8px; }
+.nav-rail-mark::before {
+  content: '';
+  width: calc(var(--mark-w) + var(--mark-grow));
+  height: var(--nav-rail-thick, 2px);
+  margin-top: var(--nav-rail-inset, 5px);
+  border-radius: 1px;
+  background: var(--text-3);
+  opacity: .55;
+  transition: width 160ms var(--ease), opacity 160ms var(--ease), background 160ms var(--ease);
+}
+.nav-rail-mark.lit::before { background: var(--text); opacity: .9; }
+.nav-rail-mark.hover::before { background: var(--accent); opacity: 1; }
+
+/* Panneau d'aperçus, à gauche du rail. Masqué par opacité + visibility (même
+   motif que .scroll-bottom-btn) pour que l'apparition se fonde. */
+.nav-rail-panel {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 300px;
+  max-height: 70%;
+  overflow-y: auto;
+  margin-right: 6px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--float-bg);
+  border: 1px solid var(--float-bd);
+  border-radius: var(--float-r);
+  box-shadow: var(--float-shadow);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(4px, -50%);
+  transition: opacity 160ms var(--ease), transform 160ms var(--ease), visibility 160ms var(--ease);
+}
+.nav-rail.open .nav-rail-panel {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
+.nav-rail-item {
+  flex: none;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+  cursor: pointer;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.nav-rail-item.lit { color: var(--text); background: var(--nav-item-lit-bg); }
+/* `.hover` et non `:hover` : l'entrée s'éclaircit aussi quand c'est sa marque
+   qu'on pointe. Jetons propres plutôt que --surface-3/--surface-4 : en thème
+   clair ces deux paliers ont la même luminosité, le survol d'une entrée
+   allumée n'y changeait rien. theme-light.css redéfinit le survol. */
+.nav-rail {
+  --nav-item-lit-bg:   var(--surface-3);
+  --nav-item-hover-bg: var(--surface-4);
+}
+.nav-rail-item { transition: background 120ms var(--ease), color 120ms var(--ease); }
+.nav-rail-item.hover { color: var(--text); background: var(--nav-item-hover-bg); }
+
 .msg {
   display: flex;
   flex-direction: column;

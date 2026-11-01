@@ -23,10 +23,12 @@ uv run --with quickjs python tests/runner.py   # tests des fonctions pures
 **Avant chaque commit :** build si du code a changé, puis tests. Ne jamais
 commit ni push sans avoir demandé l'accord explicite de l'utilisateur au préalable.
 **La publication est une question à part** : le push sur `origin` (qui déploie)
-et la synchro GitHub se demandent chacun par une question dédiée,
-posée APRÈS que l'utilisateur a pu tester — jamais déduits de l'approbation du
-travail, même quand la liste approuvée mentionne le push. S'arrêter après les
-commits.
+et la synchro GitHub ne se **déduisent** jamais de l'approbation du travail — ni
+d'un « ok » sur un lot, ni d'une liste d'étapes que j'ai rédigée moi-même et qui
+mentionnait le push. Faute d'instruction explicite, s'arrêter après les commits
+et poser une question dédiée, après que l'utilisateur a pu tester. **Quand
+l'utilisateur nomme lui-même ces étapes** (« commit, push, sync github »), la
+question est déjà posée et répondue : dérouler d'un trait.
 
 **Nouvelle feature utilisateur → se poser la question « faut-il mettre à jour
 `src/help.md` ? »** `src/help.md` est l'aide utilisateur final servie au modèle
@@ -168,7 +170,9 @@ substitution de placeholders. Ossature à garder en tête ; le **raisonnement fi
   l'inspecteur d'appel, cf. `docs/tools.md` ; `multitab.js` porte la couche
   APPLICATIVE de la synchro multi-onglets — réception, soft-lock, relais
   readonly —, là où `sync.js` garde le noyau pur et l'adaptateur, cf.
-  `docs/multitab-sync.md` ; `stall.js` porte la modale de silence du chien de
+  `docs/multitab-sync.md` ; `nav-rail.js` porte le rail de navigation du fil
+  — lecteur pur du DOM de `#thread`, reconstruit par observation, jamais
+  appelé depuis les points de rendu — ; `stall.js` porte la modale de silence du chien de
   garde du stream — la question « attendre ou abandonner » et son plafond —,
   cf. piège 10 et `docs/pitfalls-detail.md` ; `pwa.js` porte ce qui ne s'active qu'en page
   servie — enregistrement du service worker, cf. `docs/pwa.md` ; `mcp-update.js` porte la

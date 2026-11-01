@@ -228,6 +228,15 @@ if (window.requestAnimationFrame) {
       <div class="thread-tail-space" id="thread-tail-space" aria-hidden="true"></div>
     </div>
 
+    <!-- Rail de navigation du fil : une marque par message de l'utilisateur,
+         panneau d'aperçus au survol. HORS de .messages pour rester fixe pendant
+         le défilement ; position, hauteur et visibilité posées en JS
+         (syncNavRailLayout, nav-rail.js) sur la géométrie de .messages. -->
+    <div class="nav-rail" id="nav-rail" hidden aria-hidden="true">
+      <div class="nav-rail-marks" id="nav-rail-marks"></div>
+      <div class="nav-rail-panel" id="nav-rail-panel"></div>
+    </div>
+
     <div class="composer">
       <div class="composer-inner">
 
