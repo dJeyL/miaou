@@ -1285,6 +1285,9 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
   line-height: 1.45;
   color: var(--text-3);
   cursor: pointer;
+}
+
+.nav-rail-item-text {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -6111,7 +6114,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-11-01 23:52 UTC */
+/* miaou — built: 2026-11-02 19:11 UTC */
 
 /* ── utils.js ── */
 
@@ -11762,7 +11765,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1793577155}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1793646661}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -11782,7 +11785,7 @@ const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || ''
 const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "19a68c714d3ae706"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "b544faec6f7af0f3"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -31358,7 +31361,11 @@ function fillNavRailPanel() {
     item.className = 'nav-rail-item' + (on.has(i) ? ' lit' : '') +
       (i === _navRail.hoverIdx ? ' hover' : '');
     item.dataset.navIdx = String(i);
-    item.textContent = navRailBubbleText(_navRail.bubbles[i]);
+
+    const text = document.createElement('span');
+    text.className = 'nav-rail-item-text';
+    text.textContent = navRailBubbleText(_navRail.bubbles[i]);
+    item.appendChild(text);
     panel.appendChild(item);
   }
 }

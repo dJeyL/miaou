@@ -266,7 +266,12 @@ function fillNavRailPanel() {
     item.className = 'nav-rail-item' + (on.has(i) ? ' lit' : '') +
       (i === _navRail.hoverIdx ? ' hover' : '');
     item.dataset.navIdx = String(i);
-    item.textContent = navRailBubbleText(_navRail.bubbles[i]);
+    // Texte dans un enfant : la coupe à deux lignes ne doit pas porter le
+    // padding de l'entrée (cf. .nav-rail-item-text, chat.css).
+    const text = document.createElement('span');
+    text.className = 'nav-rail-item-text';
+    text.textContent = navRailBubbleText(_navRail.bubbles[i]);
+    item.appendChild(text);
     panel.appendChild(item);
   }
 }

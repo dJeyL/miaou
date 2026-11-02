@@ -205,6 +205,19 @@ Expected: `OK — 291 passé(s), 0 échoué(s)` (count grows over time — 0
   If you do run them and they fail with "Le proxy MCP ne répond pas", check
   which port the proxy is actually on (`lsof -nP -iTCP -sTCP:LISTEN | grep -i
   python`) before suspecting the app.
+- **A `scrollTop` written by the script right after opening a conversation is
+  taken back.** `renderThread` arms `stickToBottomWhileSettling` (ui.js), a
+  ResizeObserver that re-glues the thread to the bottom on every height change
+  for `THREAD_SETTLE_MS` after the last one — and only a USER gesture
+  (`noteUserScrollIntent`: wheel, touch, keys, scrollbar drag) ends it. A
+  `messages.scrollTop = 0` in `page.evaluate` therefore holds for a frame or
+  two, then the view is back at the bottom: a check that reads state at once
+  passes by luck, one that waits for a transition reads the bottom again. Scroll
+  with a real gesture instead:
+  `await page.mouse.move(500, 450); await page.mouse.wheel(0, -100000);`.
+  Paid on 2026-11-02 (`verify-nav-rail.mjs`): three reds accusing the rail's
+  lighting, the first of them reporting the last exchange lit "at the top of
+  the thread".
 - **Wait for `.boot-done` as a STATE, never with `waitForSelector`.** The boot
   overlay hides the app until it is ready, and the class marking the end of
   boot is put on that overlay *as it becomes invisible*. `waitForSelector`

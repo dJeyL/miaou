@@ -758,6 +758,13 @@ html[data-motion="reduced"] .scroll-bottom-btn.has-unseen:not([hidden]):not(:hov
   line-height: 1.45;
   color: var(--text-3);
   cursor: pointer;
+}
+/* Coupe à deux lignes sur un enfant SANS padding : overflow: hidden coupe au
+   bord du padding, la troisième ligne se peignait donc dans le padding bas de
+   l'entrée. Selon les métriques de la fonte (ascendante, demi-interlignage),
+   son haut y tombait ou non : invisible sur un poste, bout de ligne sur un
+   autre. */
+.nav-rail-item-text {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

@@ -35,25 +35,30 @@ page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text(
 page.on('pageerror', (e) => consoleErrors.push(String(e)));
 
 // ── Fixture ──────────────────────────────────────────────────────────────────
-async function openFixture(pg) {
+// longAt : index d'une question rendue assez longue pour dépasser deux lignes
+// d'aperçu (section J) ; absent, toutes les questions tiennent sur une ligne.
+async function openFixture(pg, longAt = -1) {
   await pg.goto('file://' + distPath);
   await pg.waitForSelector('#composer-text');
   await pg.waitForFunction(() => {
     const o = document.getElementById('boot-overlay');
     return !o || getComputedStyle(o).opacity === '0';
   }, null, { timeout: 15000 });
-  await pg.evaluate(async (n) => {
+  await pg.evaluate(async ({ n, longAt }) => {
     const para = 'Paragraphe de réponse assez long pour occuper de la hauteur dans le fil. '.repeat(6);
     const messages = [];
     const t0 = Date.now() - 3600e3;
     for (let i = 0; i < n; i++) {
-      messages.push({ role: 'user', content: `Question numéro ${i} :\n\n  avec   des blancs   à replier`, ts: t0 + i * 1000 });
+      const content = i === longAt
+        ? `Question numéro ${i} : ` + 'une question longue qui déborde des deux lignes de l\'aperçu. '.repeat(6)
+        : `Question numéro ${i} :\n\n  avec   des blancs   à replier`;
+      messages.push({ role: 'user', content, ts: t0 + i * 1000 });
       messages.push({ role: 'assistant', content: Array(5).fill(para).join('\n\n'), model: 'stub-model', ts: t0 + i * 1000 + 500 });
     }
     const id = 'conv-navrail-' + Math.random().toString(36).slice(2);
     saveConversation({ id, title: 'Rail', timestamp: Date.now(), messages, spaceId: activeSpaceId });
     await openConversation(id, true);
-  }, EXCHANGES);
+  }, { n: EXCHANGES, longAt });
   await pg.waitForFunction((n) => document.querySelectorAll('#thread > .msg.user').length === n, EXCHANGES);
   await pg.waitForFunction((n) => document.querySelectorAll('#nav-rail-marks .nav-rail-mark').length === n, EXCHANGES);
   await pg.waitForTimeout(400);
@@ -269,6 +274,59 @@ check('épaisseur = nombre entier de pixels d\'écran', Math.abs(px.thickDev - M
 check('chaque trait commence sur un pixel d\'écran entier (sans cumul)', px.worstTop < 0.06, `pire écart ${px.worstTop.toFixed(3)} px d'écran`);
 check('pas égaux entre marques à un arrondi près', Math.max(...px.pitches) - Math.min(...px.pitches) < 0.03, px.pitches.join(','));
 await zoomed.close();
+
+// ── J. Aperçu coupé à deux lignes, sans bout de troisième ───────────────────
+// La coupe a d'abord porté le padding de l'entrée : overflow: hidden coupant au
+// bord du padding, le haut de la troisième ligne se peignait dans le padding
+// bas — visible ou non selon les métriques de la fonte (relevé sous Windows,
+// invisible sur le Mac). On mesure les boîtes de ligne du texte (Range), pas
+// l'encre : aucune ligne ne doit chevaucher le bord de la boîte qui coupe, quelle
+// que soit la fonte servie.
+console.log('\nJ. aperçu long coupé net à deux lignes');
+const LONG = 3;
+const longPage = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+longPage.on('pageerror', (e) => consoleErrors.push(String(e)));
+await openFixture(longPage, LONG);
+const lp = await longPage.evaluate(() => {
+  const r = document.querySelectorAll('#nav-rail-marks .nav-rail-mark')[0].getBoundingClientRect();
+  return { x: r.left + r.width - 6, y: r.top + r.height / 2 };
+});
+await longPage.mouse.move(lp.x, lp.y);
+await longPage.waitForFunction(() => getComputedStyle(document.getElementById('nav-rail-panel')).opacity === '1');
+const clamp = await longPage.evaluate((i) => {
+  const item = document.querySelectorAll('#nav-rail-panel .nav-rail-item')[i];
+  const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+  const textNode = walker.nextNode();
+  // Boîte qui coupe : le plus proche ancêtre du texte (entrée comprise) dont
+  // l'overflow n'est pas visible ; on coupe au bord de son padding.
+  let clip = textNode.parentElement;
+  while (clip !== item && getComputedStyle(clip).overflowY === 'visible') clip = clip.parentElement;
+  const cr = clip.getBoundingClientRect();
+  const clipTop = cr.top + clip.clientTop;
+  const clipBottom = clipTop + clip.clientHeight;
+  const range = document.createRange();
+  range.selectNodeContents(textNode);
+  // Une boîte par fragment de ligne : regrouper par haut arrondi.
+  const lines = new Map();
+  for (const rr of range.getClientRects()) {
+    const k = Math.round(rr.top);
+    const prev = lines.get(k);
+    lines.set(k, prev ? { top: Math.min(prev.top, rr.top), bottom: Math.max(prev.bottom, rr.bottom) } : { top: rr.top, bottom: rr.bottom });
+  }
+  const ls = [...lines.values()].sort((a, b) => a.top - b.top);
+  return {
+    clipIsItem: clip === item,
+    lines: ls.length,
+    inside: ls.filter(l => l.top >= clipTop - 0.5 && l.bottom <= clipBottom + 0.5).length,
+    straddling: ls.filter(l => l.top < clipBottom - 0.5 && l.bottom > clipBottom + 0.5)
+      .map(l => `[${(l.top - clipTop).toFixed(1)}, ${(l.bottom - clipTop).toFixed(1)}] / bord ${(clipBottom - clipTop).toFixed(1)}`),
+  };
+}, LONG);
+check('prémisse : l\'aperçu long fait plus de deux lignes avant coupe', clamp.lines > 2, `${clamp.lines} lignes`);
+check('exactement deux lignes entières dans la boîte qui coupe', clamp.inside === 2, `${clamp.inside}`);
+check('aucune ligne à cheval sur le bord bas de la coupe', clamp.straddling.length === 0,
+  clamp.straddling.join(' ; ') + (clamp.clipIsItem ? ' (coupe portée par l\'entrée)' : ''));
+await longPage.close();
 
 // ── H. Console ───────────────────────────────────────────────────────────────
 console.log('\nH. console');
