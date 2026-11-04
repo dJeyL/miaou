@@ -16,6 +16,11 @@
 //      live (via callTool réel) ET après reload (persistance du champ `message`,
 //      ajouté à ACK_COPY_FIELDS).
 //
+//   D. Tout appel interne a SON ack : un handler qui n'en poussait aucun
+//      laissait l'enrichissement de fin d'appel réécrire l'ack PRÉCÉDENT du
+//      tour. Tour réel à deux appels (dont agent__abort sur un agent terminé),
+//      filet générique tool_called (rendu neutre), persistance au reload.
+//
 // Usage : node verify-ack-errors.mjs <dossier-captures> [--headed]
 import { launchIsolated } from './stub-backend.js';
 import fs from 'node:fs';
@@ -248,6 +253,19 @@ await page.evaluate(() => {
     ],
   };
   saveConversation(conv);
+  // Pour le bloc D (persistance de l'ack neutre) : posé ici pour profiter du
+  // MÊME reload, et dans une conversation à part — dans celle du bloc C il
+  // deviendrait le second ack du groupe, donc le seul nœud visible en compact.
+  saveConversation({
+    id: 'conv-verif-neutre', title: 'Vérif ack neutre', spaceId: 'default',
+    createdAt: Date.now(), updatedAt: Date.now(),
+    messages: [
+      { role: 'user', content: 'arrête l\'agent' },
+      { role: 'tool-ack', kind: 'tool_called', name: 'miaou__test__noack',
+        intent: 'Vérification de l\'état', args: {}, result: 'rien à signaler' },
+      { role: 'assistant', content: 'C\'était déjà fait.' },
+    ],
+  });
 });
 await page.reload();
 await page.waitForSelector('#composer-text', { timeout: 10000 });
@@ -277,6 +295,92 @@ check('après reload : toujours rouge', c3.isError === true);
 check('après reload : le message a survécu (champ dans ACK_COPY_FIELDS)',
   c3.found && c3.text.includes('introuvable'));
 await shot('c2-apres-reload.png');
+
+// ════════════════════════════════════════════════════════════════════════════
+console.log('\nD. Tout appel interne a SON ack (ack neutre tool_called)');
+// ════════════════════════════════════════════════════════════════════════════
+// Défaut d'origine : un handler qui rendait sa chaîne sans pousser d'ack
+// laissait onEnrichLastAck (main.js, sans borne) réécrire name/args/result de
+// l'ack PRÉCÉDENT du tour. Le scénario rejoue un tour réel à deux appels, avec
+// l'enrichissement que fait onEnrichLastAck après chaque outil interne.
+const d1 = await page.evaluate(() => {
+  const parentId = currentConvId;
+  saveConversation({
+    id: 'agt-verif-fini', title: '', spaceId: activeSpaceId, parentConvId: parentId,
+    agentStatus: 'done', agentIntent: 'Résumer le rapport',
+    createdAt: Date.now(), updatedAt: Date.now(), messages: [],
+  });
+  const ctx = { convId: parentId, spaceId: activeSpaceId };
+  clearPendingToolAcks();
+  const enrich = (name, args, result) => updateLastPendingToolAck(
+    ackEnrichmentFields({ name, args, result, ts: Date.now(), group: 'gverif' }));
+  const a1 = { content: 'un fait vérifié', miaou_intent: 'Mémorisation du fait' };
+  const r1 = callTool('miaou__memory__create', a1, ctx);
+  enrich('miaou__memory__create', a1, flattenToolResult(r1));
+  // Agent déjà terminé : avant correction, ce handler ne poussait AUCUN ack.
+  const a2 = { id: 'agt-verif-fini', miaou_intent: 'Arrêt de l\'agent' };
+  const r2 = callTool('miaou__agent__abort', a2, ctx);
+  enrich('miaou__agent__abort', a2, flattenToolResult(r2));
+  const acks = getPendingToolAcks();
+  return {
+    n: acks.length,
+    k0: acks[0] && acks[0].kind, n0: acks[0] && acks[0].name, i0: acks[0] && acks[0].intent,
+    k1: acks[1] && acks[1].kind, n1: acks[1] && acks[1].name, i1: acks[1] && acks[1].intent,
+    text2: flattenToolResult(r2),
+  };
+});
+check('prémisse : l\'agent est bien vu comme terminé', d1.text2.includes('déjà terminé'));
+check('deux appels → deux acks', d1.n === 2);
+check('le 1er ack garde son identité (memory_create, son nom, son intent)',
+  d1.k0 === 'memory_create' && d1.n0 === 'miaou__memory__create' && d1.i0 === 'Mémorisation du fait');
+check('abort d\'un agent terminé → ack agent_status (rien n\'a été interrompu)',
+  d1.k1 === 'agent_status' && d1.n1 === 'miaou__agent__abort' && d1.i1 === 'Arrêt de l\'agent');
+
+// Filet générique : un handler factice qui ne pousse rien reçoit un tool_called.
+// TOOLS est un `const` de portée script : lisible par son nom nu, pas sur window.
+const d2 = await page.evaluate(() => {
+  TOOLS.push({ name: 'test__noack', description: '', inputSchema: { type: 'object', properties: {} },
+    handler: () => 'rien à signaler' });
+  try {
+    clearPendingToolAcks();
+    callTool('miaou__test__noack', { miaou_intent: 'Vérification de l\'état' });
+    callTool('miaou__test__noack', {});
+    const acks = getPendingToolAcks();
+    document.getElementById('thread').innerHTML = '';
+    const out = [];
+    for (const a of acks) {
+      const w = startAssistantMessage('test-model');
+      placeToolAck(w, copyAckFields(a, { role: 'tool-ack' }), false);
+      const node = w.querySelector('.tool-ack');
+      out.push({
+        kind: a.kind, name: a.name, isErr: ackIsError(a),
+        red: node.classList.contains('ack-error'),
+        icon: !!node.querySelector('.ack-icon svg'),
+        text: node.querySelector('.ack-label').textContent,
+      });
+    }
+    return out;
+  } finally {
+    TOOLS.splice(TOOLS.findIndex(t => t.name === 'test__noack'), 1);
+  }
+});
+check('handler sans ack → 2 appels, 2 acks tool_called',
+  d2.length === 2 && d2.every(a => a.kind === 'tool_called' && a.name === 'miaou__test__noack'));
+// `d2.length === 2` en tête : sur une liste vide, `every` répond vrai (vacuité).
+check('ack neutre : ni ackIsError ni rouge', d2.length === 2 && d2.every(a => !a.isErr && !a.red));
+check('ack neutre : une icône', d2.length === 2 && d2.every(a => a.icon));
+check('avec intent : l\'intention est affichée', d2[0] && d2[0].text.includes('Vérification de l\'état'));
+check('sans intent : le nom d\'outil est affiché', d2[1] && d2[1].text.includes('miaou__test__noack'));
+
+// Persistance : conversation sauvegardée avant le reload du bloc C.
+await page.evaluate(() => selectConv('conv-verif-neutre'));
+await page.waitForFunction(() => !!document.querySelector('#thread .tool-ack'));
+const d3 = await page.evaluate(() => {
+  const a = document.querySelector('#thread .tool-ack');
+  return { red: a.classList.contains('ack-error'), text: a.querySelector('.ack-label').textContent };
+});
+check('après reload : ack neutre rendu, sans rouge, avec son intent',
+  !d3.red && d3.text.includes('Vérification de l\'état'));
 
 // ════════════════════════════════════════════════════════════════════════════
 check('aucune erreur console', consoleErrors.length === 0);

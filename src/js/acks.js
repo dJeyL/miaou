@@ -704,6 +704,26 @@ const ACK_KINDS = {
       }
     },
   },
+  // Ack NEUTRE d'un appel interne dont le handler n'a poussé aucun ack : posé
+  // par callTool (tools.js) pour que tout appel ait le sien. Ni succès métier
+  // décrit, ni échec : seulement « cet outil a été appelé ». Avec intent,
+  // l'intention en niveau 1 et le nom d'outil en niveau 2, comme tool_failed.
+  tool_called: {
+    destination: 'user',
+    undo: null,
+    icon: ICON_WRENCH,
+    label: m => 'Appel : ' + (m.name || 'outil'),
+    renderLabel: (m, el) => {
+      const detailText = m.name || 'outil';
+      if (m.intent) {
+        renderIntentTwoLevel(el, m.intent, detailText);
+      } else {
+        el.appendChild(document.createTextNode('Appel '));
+        appendAckSep(el);
+        el.appendChild(document.createTextNode(' ' + detailText));
+      }
+    },
+  },
   // ── Agents (lot X-1) ────────────────────────────────────────────────────
   // Quatre kinds, un par outil agent__*. L'ack est FIGÉ au moment de l'appel
   // (nature d'un ack) : celui du spawn dit « lancé », pas « en cours » — le

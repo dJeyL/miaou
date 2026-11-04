@@ -3106,6 +3106,10 @@ const TOOLS = [
       const conv = resolveOwnedAgent(args && args.id, toolCtx(ctx));
       if (!conv) return toolFail('agent__abort', AGENT_NOT_FOUND);
       if (agentStatus(conv.id) !== 'running') {
+        // Rien n'a été interrompu : ce qui s'est passé est une lecture d'état,
+        // et l'ack le dit (agent_abort annoncerait une interruption qui n'a
+        // pas eu lieu).
+        _pendingToolAcks.push({ kind: 'agent_status', convId: conv.id, title: conv.agentIntent || '' });
         return 'Agent ' + conv.id + ' : déjà terminé, rien à interrompre.';
       }
       // Statut posé AVANT l'abort : deliverAgentResult, appelé depuis le finally
@@ -3368,24 +3372,31 @@ function callTool(name, args, ctx) {
     const intent = args && typeof args.miaou_intent === 'string' ? args.miaou_intent : undefined;
     const cleanArgs = args ? Object.assign({}, args) : {};
     delete cleanArgs.miaou_intent;
-    // Repère la position AVANT l'appel : l'intent ne doit enrichir un ack que si
-    // CE handler en a poussé un nouveau (length > baseAcks). Un handler qui sort
-    // en erreur précoce (souvenir introuvable, id manquant…) ne pousse pas d'ack ;
-    // sans ce garde, l'intent se poserait sur l'ack d'un outil ANTÉRIEUR du même
-    // tour multi-outils (campagne 2026-07-09).
+    // Repère la position AVANT l'appel, pour savoir si CE handler a poussé un
+    // ack (length > baseAcks).
     const baseAcks = _pendingToolAcks.length;
     const result = callInternalTool(internalName, cleanArgs, ctx);
-    // Attache l'intent au dernier ack en attente. La plupart des handlers poussent
-    // leur ack de façon synchrone (avant le retour de callInternalTool) ; certains
-    // (ex. skills__read) ne le poussent qu'après résolution de leur Promise — dans
-    // ce cas on attend cette résolution avant d'enrichir, sinon l'ack n'existe pas
-    // encore dans _pendingToolAcks.
-    if (intent != null) {
-      if (result && typeof result.then === 'function') {
-        return result.then(r => { updateLastPendingToolAck({ intent }, baseAcks); return r; });
+    // Tout appel interne laisse UN ack à lui : s'il n'en a poussé aucun, on en
+    // pose un neutre. Sans lui, `onEnrichLastAck` (main.js, agents.js), qui
+    // enrichit le dernier ack en attente SANS borne, écrasait name/args/result
+    // de l'ack de l'outil PRÉCÉDENT du même tour : l'appel antérieur prenait
+    // l'identité du suivant, à l'écran comme dans le payload rejoué (cf.
+    // enrichedAckGroups). La règle « chaque handler pousse son ack » tenait site
+    // par site (toolFail) ; un seul retour oublié suffisait à la casser. Ensuite
+    // seulement, l'intent : posé sur l'ack de CE handler, neutre compris.
+    // La plupart des handlers poussent leur ack de façon synchrone ; certains
+    // (ex. skills__read) ne le poussent qu'après résolution de leur Promise —
+    // les deux gestes attendent alors cette résolution.
+    const settle = () => {
+      if (_pendingToolAcks.length <= baseAcks) {
+        _pendingToolAcks.push({ kind: 'tool_called', name: 'miaou__' + internalName });
       }
-      updateLastPendingToolAck({ intent }, baseAcks);
+      if (intent != null) updateLastPendingToolAck({ intent }, baseAcks);
+    };
+    if (result && typeof result.then === 'function') {
+      return result.then(r => { settle(); return r; });
     }
+    settle();
     return result;
   }
   // Préfixe `miaou`/absent mais nom non résolu en interne → outil interne INCONNU

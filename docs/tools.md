@@ -1196,6 +1196,17 @@ retenter à l'identique. Corollaire réglé au passage : `onEnrichLastAck`
 (sans `minLength`) enrichissait alors l'ack de l'outil **précédent** du même tour
 avec les `name`/`args`/`result` de l'outil échoué — même famille que la garde de réentrance.
 
+**Depuis le lot AW, la règle est structurelle.** Corriger site par site ne
+garantissait rien : `agent__abort` sur un agent déjà terminé rendait sa chaîne
+sans ack, et l'écrasement de l'ack précédent était revenu. `callTool` (tools.js,
+branche interne) compare la file à sa longueur d'avant l'appel. Si le handler
+n'a rien poussé, une fois sa Promise résolue s'il en rend une, `callTool` pose
+un ack neutre `{ kind: 'tool_called', name }`. Cet ack ne s'affiche ni comme un
+succès métier ni comme un échec : il porte l'intention s'il y en a une, et le
+nom de l'outil. C'est un filet, pas un rendu à viser : un handler doit toujours
+pousser l'ack qui décrit ce qu'il a fait. `agent__abort` sur un agent terminé
+pousse donc un `agent_status`, puisque rien n'a été interrompu.
+
 Deux nuances à connaître avant d'ajouter un site d'échec :
 
 - **Échec métier ≠ échec technique.** Les échecs métier (« Souvenir introuvable »)

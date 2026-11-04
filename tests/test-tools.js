@@ -291,6 +291,52 @@ describe('callTool : intent ne déborde pas sur l\'ack d\'un outil précédent (
   });
 });
 
+// Tout appel interne laisse un ack. Un handler qui rendait sa chaîne sans en
+// pousser laissait `onEnrichLastAck` (sans minLength) écraser le name/args/
+// result de l'ack PRÉCÉDENT du tour : l'appel antérieur prenait l'identité du
+// suivant, à l'écran comme dans le payload rejoué. La garde de callTool pose un
+// ack neutre `tool_called` à sa place, quel que soit le handler.
+describe('callTool : un handler interne sans ack reçoit un ack tool_called', function() {
+  function withFakeTool(name, handler, fn) {
+    TOOLS.push({ name: name, description: '', inputSchema: { type: 'object', properties: {} }, handler: handler });
+    try { fn(); } finally {
+      for (var i = TOOLS.length - 1; i >= 0; i--) if (TOOLS[i].name === name) TOOLS.splice(i, 1);
+    }
+  }
+  it('l\'ack précédent du tour n\'est pas réécrit par l\'enrichissement du suivant', function() {
+    localStorage.clear();
+    clearPendingToolAcks();
+    withFakeTool('test__noack', function() { return 'rien à signaler'; }, function() {
+      callTool('memory__create', { content: 'un fait', miaou_intent: 'intent-un' });
+      updateLastPendingToolAck({ name: 'miaou__memory__create', args: { content: 'un fait' } });
+      callTool('miaou__test__noack', { miaou_intent: 'intent-deux' });
+      // Ce que fait onEnrichLastAck (main.js) pour un outil interne.
+      updateLastPendingToolAck({ name: 'miaou__test__noack', args: { miaou_intent: 'intent-deux' }, result: 'rien à signaler' });
+    });
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(2);
+    expect(acks[0].kind).toBe('memory_create');
+    expect(acks[0].name).toBe('miaou__memory__create');
+    expect(acks[0].intent).toBe('intent-un');
+    expect(acks[1].kind).toBe('tool_called');
+    expect(acks[1].name).toBe('miaou__test__noack');
+    expect(acks[1].intent).toBe('intent-deux');
+    expect(acks[1].result).toBe('rien à signaler');
+    expect(ackIsError(acks[1])).toBe(false);
+  });
+  it('un handler qui pousse son ack n\'en reçoit pas un second', function() {
+    localStorage.clear();
+    clearPendingToolAcks();
+    callTool('memory__create', { content: 'un fait' });
+    var acks = getPendingToolAcks();
+    expect(acks.length).toBe(1);
+    expect(acks[0].kind).toBe('memory_create');
+  });
+  it('le genre tool_called est connu du registre d\'acks', function() {
+    expect(typeof ACK_KINDS.tool_called).toBe('object');
+  });
+});
+
 // updateLastPendingToolAck : garde minLength (support direct du correctif B5)
 describe('updateLastPendingToolAck : garde minLength', function() {
   it('sans minLength : enrichit le dernier ack', function() {
