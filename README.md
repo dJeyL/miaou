@@ -349,7 +349,8 @@ cf. [docs/build.md](docs/build.md).
   "attachment_max_images":   4,
   "max_turns":               100,
   "tool_repeat_max":         20,
-  "repo_url":                "https://github.com/dJeyL/miaou"
+  "repo_url":                "https://github.com/dJeyL/miaou",
+  "identity_addendum":       ""
 }
 ```
 
@@ -450,6 +451,12 @@ est faite au seul point de lecture.
   simple texte, sans lien (cas d'un fork interne qu'on ne veut pas exposer) ;
   chaîne **non vide** → lien vers cette URL. Figée au build : rien ne permet de
   la changer depuis l'UI.
+- `identity_addendum` : texte ajouté au prompt système juste après le bloc
+  d'identité de MIAOU, pour situer le modèle dans le contexte d'un déploiement
+  (organisation, usage attendu, conventions). Chaîne, ou tableau de lignes
+  jointes par un saut de ligne ; vide ou absente → pas de complément. Compté
+  avec l'identité dans l'inspecteur de contexte. Figé au build, et envoyé à
+  chaque tour : il pèse sur le contexte fixe de toute conversation.
 
 ## Tests
 

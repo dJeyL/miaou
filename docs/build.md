@@ -124,6 +124,12 @@ const BUILD_CONFIG = (function () { try { return __MIAOU_CONFIG__; } catch (e) {
   et surtout **pas** un `||`, qui écraserait la chaîne vide — laquelle veut dire
   « pas de lien du tout », pas « valeur manquante ». Lu uniquement par le footer
   des exports (`brandHtmlFor`, export.js), cf. `docs/exports.md`.
+- `BUILD_IDENTITY_ADDENDUM` (clef `identity_addendum`, normalisée par
+  `normalizeIdentityAddendum` : chaîne, ou tableau de lignes jointes par
+  `'\n'` ; toute autre forme vaut `''`) est lu par `identityPrompt` (tools.js),
+  seul point qui le compose avec `IDENTITY_BLURB`. Statique, donc dans le
+  préfixe caché (piège 16) ; cf. `docs/context-inspector.md` pour son
+  affichage.
 - `REQUIRE_API_KEY` (défaut `true`) gouverne l'état « configuré » : si `false`,
   le composer se déverrouille avec l'URL seule (clef optionnelle), cf.
   `syncConfigured` (ui.js).

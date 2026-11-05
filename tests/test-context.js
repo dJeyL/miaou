@@ -59,6 +59,35 @@ describe('buildContextManifest', function() {
     expect(sources.indexOf('space')).toBe(-1);
   });
 
+  it('complément d\'identité : même entrée, libellé et forme reportés', function() {
+    var sp = baseSysParts();
+    sp.identity = composeIdentity('BLURB', 'COMPLEMENT');
+    sp.identityForm = 'addendum';
+    var m = buildContextManifest(sp, baseDynParts(), [], '', null);
+    var matches = m.entries.filter(function(e) { return e.source === 'identity_blurb'; });
+    expect(matches.length).toBe(1);
+    expect(matches[0].chars).toBe('BLURB\n\nCOMPLEMENT'.length);
+    expect(matches[0].label).toBe('Identité MIAOU (+ complément)');
+    expect(m.identityForm).toBe('addendum');
+    sp.identity = 'BLURB';
+    sp.identityForm = '';
+    var plain = buildContextManifest(sp, baseDynParts(), [], '', null);
+    expect(plain.entries.filter(function(e) { return e.source === 'identity_blurb'; })[0].label).toBe('Identité MIAOU');
+  });
+
+  it('composeIdentity / normalizeIdentityAddendum', function() {
+    expect(composeIdentity('B', '')).toBe('B');
+    expect(composeIdentity('B', 'X')).toBe('B\n\nX');
+    expect(normalizeIdentityAddendum(undefined)).toBe('');
+    expect(normalizeIdentityAddendum(null)).toBe('');
+    expect(normalizeIdentityAddendum(42)).toBe('');
+    expect(normalizeIdentityAddendum('   ')).toBe('');
+    expect(normalizeIdentityAddendum('  texte \n')).toBe('texte');
+    expect(normalizeIdentityAddendum(['l1', 'l2'])).toBe('l1\nl2');
+    expect(normalizeIdentityAddendum(['l1', 3])).toBe('');
+    expect(BUILD_IDENTITY_ADDENDUM).toBe('');
+  });
+
   it('sp.identity non vide → entrée identity_blurb, comptée une seule fois (lot I, piège B)', function() {
     var sp = baseSysParts();
     sp.identity = 'IDENTITE MIAOU';
@@ -550,7 +579,9 @@ describe('systemMessageParts / buildSystemMessage (brief B, refactor)', function
   });
   it('la part identity est présente, inconditionnelle et EN TÊTE (lot I)', function() {
     var sp = systemMessageParts();
+    // Sources non buildées : pas de complément de build, la part EST le blurb.
     expect(sp.identity).toBe(IDENTITY_BLURB);
+    expect(sp.identityForm).toBe('');
     expect(sp.identity.length > 0).toBe(true);
     // En tête du join : le message système commence par le blurb.
     expect(buildSystemMessage().content.indexOf(IDENTITY_BLURB)).toBe(0);
@@ -841,6 +872,11 @@ describe('contextExplainFor (tooltips à contenu variable)', function() {
   it('une source sans variante rend la valeur de table, quel que soit l\'état', function() {
     expect(contextExplainFor('thread_last_user', 'manifest')).toBe(CTX_EXPLAIN.thread_last_user);
     expect(contextExplainFor('thread_last_user', '')).toBe(CTX_EXPLAIN.thread_last_user);
+  });
+  it('identity_blurb : tooltip du complément seulement dans l\'état addendum', function() {
+    expect(contextExplainFor('identity_blurb', '', '', '', '')).toBe(CTX_EXPLAIN.identity_blurb);
+    expect(contextExplainFor('identity_blurb', '', '', '', 'addendum')).toBe(CTX_EXPLAIN_IDENTITY_ADDENDUM);
+    expect(contextExplainFor('identity_blurb', '', '', '', 'addendum') === CTX_EXPLAIN.identity_blurb).toBe(false);
   });
 });
 

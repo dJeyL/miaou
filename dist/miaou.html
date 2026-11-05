@@ -6152,7 +6152,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-11-05 19:11 UTC */
+/* miaou — built: 2026-11-05 19:45 UTC */
 
 /* ── utils.js ── */
 
@@ -8841,7 +8841,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
 
   if (!toolsLast) pushToolDefs();
 
-  pushEntry('identity_blurb', 'Identité MIAOU', sp.identity);
+  pushEntry('identity_blurb', sp.identityForm === 'addendum' ? 'Identité MIAOU (+ complément)' : 'Identité MIAOU', sp.identity);
   pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
   pushEntry('mcp_instructions', 'Consignes des serveurs MCP', sp.mcpInstructions);
@@ -8917,6 +8917,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     libraryForm: sp.libraryForm || '',
     skillsContextForm: sp.skillsContextForm || '',
     userPromptForm: sp.userPromptForm || '',
+    identityForm: sp.identityForm || '',
     apiUsage: apiUsage || null,
   };
 }
@@ -12073,7 +12074,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1793905899}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1793907934}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -12093,7 +12094,7 @@ const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || ''
 const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "ee9aed26fe1bc3cd"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "ddc159d4c0ba0f00"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -12106,6 +12107,13 @@ const MAX_AGENT_TURNS     = (typeof BUILD_CONFIG.max_agent_turns     === 'number
 
 const JS_EVAL_MAX_INPUTS  = (typeof BUILD_CONFIG.js_eval_max_inputs  === 'number') ? BUILD_CONFIG.js_eval_max_inputs  : 10;
 
+function normalizeIdentityAddendum(raw) {
+  if (Array.isArray(raw)) {
+    raw = raw.every(l => typeof l === 'string') ? raw.join('\n') : '';
+  }
+  return (typeof raw === 'string') ? raw.trim() : '';
+}
+const BUILD_IDENTITY_ADDENDUM = normalizeIdentityAddendum(BUILD_CONFIG.identity_addendum);
 const DEFAULT_REPO_URL = 'https://github.com/dJeyL/miaou';
 const BUILD_REPO_URL   = (typeof BUILD_CONFIG.repo_url === 'string') ? BUILD_CONFIG.repo_url : DEFAULT_REPO_URL;
 
@@ -18626,6 +18634,13 @@ const IDENTITY_BLURB =
   "moment ; ce ne sont PAS des étapes préalables à franchir avant d'agir. Ne les " +
   "parcours pas de façon exhaustive ni par curiosité : lis seulement ce que la tâche " +
   "ou la question en cours réclame réellement, puis avance.";
+
+function composeIdentity(blurb, addendum) {
+  return addendum ? blurb + '\n\n' + addendum : blurb;
+}
+function identityPrompt() {
+  return composeIdentity(IDENTITY_BLURB, BUILD_IDENTITY_ADDENDUM);
+}
 
 const SKILL_DOCTRINE_BASE =
   "Pour utiliser une skill listée (qu'elle vienne de <miaou_skills_context> ou d'un " +
@@ -27463,7 +27478,12 @@ const CTX_EXPLAIN_SKILLS_CONTEXT_VARIANTS = {
 
 const CTX_EXPLAIN_USER_PROMPT_EXCLUDED = 'Les instructions système saisies dans les Paramètres ne sont pas envoyées : l\'Espace actif s\'en passe (réglage de ses propriétés).';
 
-function contextExplainFor(source, libraryForm, skillsContextForm, userPromptForm) {
+const CTX_EXPLAIN_IDENTITY_ADDENDUM = 'Le bloc d\'identité : il indique au modèle quelle application il pilote et ce qu\'elle sait faire, suivi d\'un complément propre à ce déploiement, fixé à la construction de l\'application.';
+
+function contextExplainFor(source, libraryForm, skillsContextForm, userPromptForm, identityForm) {
+  if (source === 'identity_blurb' && identityForm === 'addendum') {
+    return CTX_EXPLAIN_IDENTITY_ADDENDUM;
+  }
   if (source === 'user_prompt' && userPromptForm === 'excluded') {
     return CTX_EXPLAIN_USER_PROMPT_EXCLUDED;
   }
@@ -27786,12 +27806,13 @@ function renderContextInspector() {
     const libraryForm = m.libraryForm || '';
     const skillsContextForm = m.skillsContextForm || '';
     const userPromptForm = m.userPromptForm || '';
+    const identityForm = m.identityForm || '';
     const rows = m.entries.map(e => {
       const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
       const color = CTX_PALETTE[e.source] || '#888';
       const note = e.source === 'attachment_images' ? ' <span class="hint">(très approximatif)</span>' : '';
 
-      const why = contextExplainFor(e.source, libraryForm, skillsContextForm, userPromptForm);
+      const why = contextExplainFor(e.source, libraryForm, skillsContextForm, userPromptForm, identityForm);
       const tipAttr = why ? tipAttrs(why, { text: e.label }) : '';
       const labelCls = why ? ' class="ctx-label-explained"' : '';
       return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>` +
@@ -37906,6 +37927,8 @@ function systemMessageParts(ctx) {
     skillsContextForm: '',
 
     userPromptForm: '',
+
+    identityForm: '',
   };
 
   if (bareModeActive()) {
@@ -37914,7 +37937,8 @@ function systemMessageParts(ctx) {
     return out;
   }
 
-  out.identity = IDENTITY_BLURB;
+  out.identity = identityPrompt();
+  out.identityForm = BUILD_IDENTITY_ADDENDUM ? 'addendum' : '';
   out.root = ROOT_SYSTEM_PROMPT;
   out.intent = intentDoctrinePrompt();
 
@@ -37959,7 +37983,7 @@ function buildSystemMessage(sp) {
 }
 
 function rootSystemPromptDisplay() {
-  return [IDENTITY_BLURB, ROOT_SYSTEM_PROMPT, CODEBLOCK_DOCTRINE].join('\n\n---\n\n');
+  return [identityPrompt(), ROOT_SYSTEM_PROMPT, CODEBLOCK_DOCTRINE].join('\n\n---\n\n');
 }
 
 function computeContextManifestNow() {

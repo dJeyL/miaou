@@ -154,6 +154,16 @@ sa place dans l'ordre. C'est la seule entrée émise vide.
 « (autotrigger, MCP approuvées) » annonçait des skills MCP dans un bloc qui n'en
 portait aucune, ce qui était le cas de la plupart des installations.
 
+La part `identity` porte, après `IDENTITY_BLURB`, le complément de build
+`identity_addendum` s'il est configuré (`identityPrompt`, tools.js — même part,
+séparée par un paragraphe et non par le `---` du join, donc une seule entrée
+`identity_blurb`). `systemMessageParts().identityForm` (`'addendum'` ou `''`,
+calculé sur la constante de build, jamais reniflé) est reporté sur le
+manifeste : libellé « Identité MIAOU (+ complément) » et tooltip
+`CTX_EXPLAIN_IDENTITY_ADDENDUM` dans cet état. Le texte affiché sous « Prompt
+système racine » dans les Paramètres (`rootSystemPromptDisplay`) passe par le
+même `identityPrompt`.
+
 **Règle générale : libellé et tooltip décrivent ce que le bloc porte DANS CET
 ÉTAT, jamais ce qu'il peut porter.** Ajouter un contenu CONDITIONNEL à un bloc
 existant (une nouvelle famille listée, une section qui n'apparaît que si…)

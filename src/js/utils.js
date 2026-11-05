@@ -5006,7 +5006,9 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
   if (!toolsLast) pushToolDefs();
 
   // 2. Parts du message SYSTÈME, dans l'ordre exact du join de buildSystemMessage().
-  pushEntry('identity_blurb', 'Identité MIAOU', sp.identity);
+  // Le complément de build (`identityForm`) vit DANS cette part : même entrée,
+  // libellé qui l'annonce seulement s'il est là.
+  pushEntry('identity_blurb', sp.identityForm === 'addendum' ? 'Identité MIAOU (+ complément)' : 'Identité MIAOU', sp.identity);
   pushEntry('root_prompt', 'Prompt racine (outils)', sp.root);   // DOCS_DOCTRINE y est comptée depuis V-1 (plus de part `docs` séparée)
   pushEntry('intent_doctrine', 'Doctrine intent', sp.intent);
   pushEntry('mcp_instructions', 'Consignes des serveurs MCP', sp.mcpInstructions);
@@ -5133,6 +5135,7 @@ function buildContextManifest(sysParts, dynParts, threadMsgs, toolDefsJson, apiU
     libraryForm: sp.libraryForm || '',
     skillsContextForm: sp.skillsContextForm || '',
     userPromptForm: sp.userPromptForm || '',
+    identityForm: sp.identityForm || '',
     apiUsage: apiUsage || null,
   };
 }

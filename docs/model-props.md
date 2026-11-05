@@ -52,6 +52,18 @@ la réponse, comme pour `promptOrder` (`docs/context-inspector.md`).
 - **`/api/ps` d'Ollama** donne la fenêtre **réellement servie**, pour les
   seuls modèles chargés. Un modèle absent est froid, ce qui ne veut pas dire
   « sans fenêtre ».
+  Elle ne dit pas combien d'emplacements le serveur sert en parallèle
+  (`OLLAMA_NUM_PARALLEL`) : aucune des réponses natives ne l'expose.
+- **Modèle cloud servi par un Ollama** (relevé le 2026-11-05 sur Ollama
+  0.40.14, un serveur mêlant modèles locaux et `*:cloud` / `*-cloud`). Seul
+  `/api/tags` les distingue : l'entrée d'un modèle cloud porte `remote_host`
+  (`https://ollama.com`) et `remote_model` (le nom amont), absents d'un modèle
+  local, avec une `size` de quelques centaines d'octets et un
+  `details.format` vide. `/api/show` ne porte aucun champ `remote_*` (le
+  modèle cloud s'y reconnaît seulement à l'absence de `modelfile`,
+  `template`, `parameters`, indice trop fragile), et `/v1/models` rend
+  `owned_by: "library"` pour tous. Le nom (`:cloud`) n'est qu'une convention.
+  Non lu par MIAOU à ce jour (lot AX).
 
 `/v1/models` d'Ollama ne porte que les ids : il rend un record entièrement
 inconnu.

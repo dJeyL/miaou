@@ -699,6 +699,18 @@ const IDENTITY_BLURB =
   "parcours pas de façon exhaustive ni par curiosité : lis seulement ce que la tâche " +
   "ou la question en cours réclame réellement, puis avance.";
 
+// La part `identity` telle qu'envoyée : le blurb, suivi du complément de build
+// (`identity_addendum`, storage.js) s'il y en a un. Séparateur de paragraphe et
+// non le `---` du join : c'est un même bloc, mesuré comme tel par l'inspecteur.
+// Pure (le complément arrive en argument) ; `identityPrompt` est le seul point
+// qui lit la constante de build — en corps de fonction, cf. CLAUDE.md.
+function composeIdentity(blurb, addendum) {
+  return addendum ? blurb + '\n\n' + addendum : blurb;
+}
+function identityPrompt() {
+  return composeIdentity(IDENTITY_BLURB, BUILD_IDENTITY_ADDENDUM);
+}
+
 // Doctrine de déclenchement des skills (stage 2 — autotrigger). Injectée
 // conditionnellement (cf. skillDoctrinePrompt) quand des outils skill sont
 // présents, comme INTENT_DOCTRINE. PAS dans ROOT_SYSTEM_PROMPT (constante

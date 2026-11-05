@@ -94,6 +94,21 @@ const JS_EVAL_MAX_INPUTS  = (typeof BUILD_CONFIG.js_eval_max_inputs  === 'number
 // texte, cas d'un fork interne qu'on ne veut pas exposer) ; chaîne non vide →
 // lien vers cette URL. Lue en corps de fonction seulement (portée inter-fichier,
 // cf. CLAUDE.md).
+// Complément d'identité propre au déploiement : texte ajouté au message
+// système juste après IDENTITY_BLURB, DANS la même part (`identityPrompt`,
+// tools.js), donc compté avec lui par l'inspecteur de contexte. Sert à situer
+// le modèle dans un contexte qu'un build générique ignore (organisation,
+// usage attendu, conventions maison). Figé au build et statique : il entre
+// dans le préfixe caché comme le blurb (piège 16). Chaîne, ou tableau de
+// lignes jointes par '\n' — un long texte se maintient mal en une seule
+// chaîne JSON. Toute autre forme, ou un texte blanc, vaut « pas de complément ».
+function normalizeIdentityAddendum(raw) {
+  if (Array.isArray(raw)) {
+    raw = raw.every(l => typeof l === 'string') ? raw.join('\n') : '';
+  }
+  return (typeof raw === 'string') ? raw.trim() : '';
+}
+const BUILD_IDENTITY_ADDENDUM = normalizeIdentityAddendum(BUILD_CONFIG.identity_addendum);
 const DEFAULT_REPO_URL = 'https://github.com/dJeyL/miaou';
 const BUILD_REPO_URL   = (typeof BUILD_CONFIG.repo_url === 'string') ? BUILD_CONFIG.repo_url : DEFAULT_REPO_URL;
 // Température des envois de chat (streamCompletion uniquement — les appels

@@ -7668,13 +7668,21 @@ const CTX_EXPLAIN_SKILLS_CONTEXT_VARIANTS = {
 // s'en passe, la ligne pèse zéro. Phrase entière, même règle que plus haut.
 const CTX_EXPLAIN_USER_PROMPT_EXCLUDED = 'Les instructions système saisies dans les Paramètres ne sont pas envoyées : l\'Espace actif s\'en passe (réglage de ses propriétés).';
 
+// L'état « complété » du bloc d'identité (`identityForm`) : le build y ajoute
+// un texte propre au déploiement (`identity_addendum`). Phrase entière, même
+// règle que plus haut.
+const CTX_EXPLAIN_IDENTITY_ADDENDUM = 'Le bloc d\'identité : il indique au modèle quelle application il pilote et ce qu\'elle sait faire, suivi d\'un complément propre à ce déploiement, fixé à la construction de l\'application.';
+
 // Explication affichée pour une source, résolue contre l'état courant.
-// Pure : `libraryForm`, `skillsContextForm` et `userPromptForm` sont passés, pas lus — le seul
+// Pure : les formes (`libraryForm`, `skillsContextForm`, `userPromptForm`, `identityForm`) sont passées, pas lues — le seul
 // appelant (le rendu du drawer) fait la lecture impure. Toute source sans variante, et tout état sans
 // entrée dans la table des variantes, retombe sur la valeur de table : le
 // contrat du test d'alignement (une string non vide par source produite) vaut
 // donc dans tous les états.
-function contextExplainFor(source, libraryForm, skillsContextForm, userPromptForm) {
+function contextExplainFor(source, libraryForm, skillsContextForm, userPromptForm, identityForm) {
+  if (source === 'identity_blurb' && identityForm === 'addendum') {
+    return CTX_EXPLAIN_IDENTITY_ADDENDUM;
+  }
   if (source === 'user_prompt' && userPromptForm === 'excluded') {
     return CTX_EXPLAIN_USER_PROMPT_EXCLUDED;
   }
@@ -8182,6 +8190,7 @@ function renderContextInspector() {
     const libraryForm = m.libraryForm || '';
     const skillsContextForm = m.skillsContextForm || '';
     const userPromptForm = m.userPromptForm || '';
+    const identityForm = m.identityForm || '';
     const rows = m.entries.map(e => {
       const pct = m.totalTokens ? Math.round((e.tokens / m.totalTokens) * 100) : 0;
       const color = CTX_PALETTE[e.source] || '#888';
@@ -8192,7 +8201,7 @@ function renderContextInspector() {
       // apostrophes. L'échappement reste inconditionnel pour qu'un jour où
       // cette valeur deviendrait dynamique, le point d'injection ne soit pas
       // déjà ouvert.
-      const why = contextExplainFor(e.source, libraryForm, skillsContextForm, userPromptForm);
+      const why = contextExplainFor(e.source, libraryForm, skillsContextForm, userPromptForm, identityForm);
       const tipAttr = why ? tipAttrs(why, { text: e.label }) : '';
       const labelCls = why ? ' class="ctx-label-explained"' : '';
       return `<tr><td><span class="ctx-swatch" style="background:${color}"></span>` +

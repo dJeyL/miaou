@@ -1829,6 +1829,9 @@ function systemMessageParts(ctx) {
     // Idem pour `user` : 'excluded' quand l'Espace actif se passe d'un prompt
     // utilisateur non vide (la part est alors ''), '' sinon.
     userPromptForm: '',
+    // Idem pour `identity` : 'addendum' quand le build y ajoute un complément
+    // (`identity_addendum`), '' sinon.
+    identityForm: '',
   };
   // Mode bare (setBareMode) : la description BRUTE de l'Espace de la
   // génération, sans l'en-tête de buildSpaceBlock, tient lieu de prompt
@@ -1845,7 +1848,8 @@ function systemMessageParts(ctx) {
   // vrai). La part `docs` a disparu au lot V-1 : DOCS_DOCTRINE est désormais
   // statique et intégrée à ROOT_SYSTEM_PROMPT (piège 16 — elle ne dépend plus de
   // l'état de branchement MCP).
-  out.identity = IDENTITY_BLURB;
+  out.identity = identityPrompt();
+  out.identityForm = BUILD_IDENTITY_ADDENDUM ? 'addendum' : '';
   out.root = ROOT_SYSTEM_PROMPT;
   out.intent = intentDoctrinePrompt();
   // Blocs remontés du préfixe éphémère vers le système (campagne cache) :
@@ -1976,7 +1980,7 @@ function buildSystemMessage(sp) {
 // que le message réel : ce que voit l'utilisateur est byte-identique au préfixe
 // statique effectivement envoyé au modèle. Constante build-time, jamais mutée.
 function rootSystemPromptDisplay() {
-  return [IDENTITY_BLURB, ROOT_SYSTEM_PROMPT, CODEBLOCK_DOCTRINE].join('\n\n---\n\n');
+  return [identityPrompt(), ROOT_SYSTEM_PROMPT, CODEBLOCK_DOCTRINE].join('\n\n---\n\n');
 }
 
 // Simulation « prochain envoi » au repos (brief B) : mêmes fonctions pures
