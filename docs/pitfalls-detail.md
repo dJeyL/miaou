@@ -59,7 +59,8 @@ HTML, ou à la synchro multi-onglets.
    'stop'`** avant d'afficher quoi que ce soit. Borne : `MAX_TURNS` tours (pas
    une borne sur le nombre d'outils — tous les `tool_calls` d'un tour sont
    exécutés dans ce tour). **Borne de répétition par échange** : `callCounts`
-   (clé `nom + ':' + arguments bruts` → compte) refuse un appel rigoureusement
+   (clé `toolRepeatKey` : le nom et les arguments, clefs triées, sans les
+   champ de traçage `miaou_intent`, → compte) refuse un appel
    identique au-delà de `TOOL_REPEAT_MAX` (storage.js, 20) — deux appels du même
    outil avec des arguments distincts (ex. deux `memory__create`) sont comptés
    séparément. Le refus laisse une trace dans le fil : ack `tool_failed` rouge

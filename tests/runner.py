@@ -905,7 +905,7 @@ def run_build_unit_tests() -> tuple[int, int]:
     emitted = set()
     main_src_phases = (SRC_JS / 'main.js').read_text(encoding='utf-8')
     for name in ('main.js', 'agents.js'):
-        emitted |= set(re.findall(r"setGenPhase\([^,]+,\s*'([a-z]+)'\)",
+        emitted |= set(re.findall(r"setGenPhase\([^,]+,\s*'([a-z]+)'[,)]",
                                   (SRC_JS / name).read_text(encoding='utf-8')))
     # Une phase peut aussi naître d'une RÉÉCRITURE interne à setGenPhase
     # (`phase = 'pondering'`) : aucun appelant ne la nomme, donc le grep des

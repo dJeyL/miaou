@@ -231,6 +231,7 @@ function createGeneration(convId, thread, opts) {
     // génération en cours le ferait clignoter sans qu'aucun état n'ait bougé.
     // 0 au démarrage : la formulation historique ouvre toujours l'échange.
     phaseVariant: 0,
+    phaseGoal: null,
     startedAt: Date.now(),
     // ── Présentation (lot T-1b) ──────────────────────────────────────────
     // `wrap` : bulle assistant en cours DANS LE DOM, ou null si la génération
@@ -342,7 +343,166 @@ function setGenPhase(gen, phase) {
   // ici : ce point n'a pas à connaître le nombre de formulations, et en
   // ajouter une ne doit périmer aucun tirage en vol.
   gen.phaseVariant = Math.floor(Math.random() * 1e6);
-  if (genOwnsScreen(gen)) setComposerPhase(phase, gen.phaseVariant);
+  // Étape de la suite d'appels (lot AW), annoncée aux seules phases d'outils.
+  // Calculée ici sur le fil de la génération, pas sur l'écran : un
+  // rebranchement la relit dans `gen.phaseGoal`, comme la formulation.
+  gen.phaseGoal = genComposerGoal(gen);
+  if (genOwnsScreen(gen)) setComposerPhase(phase, gen.phaseVariant, gen.phaseGoal);
+}
+
+// ── Étapes des suites d'appels (lot AW) ─────────────────────────────────────
+// MIAOU nomme les étapes : à chaque tour d'outils d'une conversation racine,
+// une requête courte au modèle de la génération (generateStepLabels, api.js),
+// hors de son contexte, pendant que les outils du tour s'exécutent. Les
+// étiquettes sont rangées par groupe de tour dans `gen.stepLabels`, puis
+// posées sur les entrées d'ack du fil (`goal`) par applyStepLabels, seul point
+// d'écriture : c'est la DONNÉE persistée que lisent le fil, le reload et les
+// exports (ackGoalSegments). Réglage `toolSteps`, indépendant d'intentTracing :
+// l'étiqueteur lit les intentions quand elles existent, les arguments sinon.
+//
+// Coût : une requête par tour d'une bulle qui compte au moins deux appels,
+// quelques centaines de tokens, jamais dans le contexte de la génération. Sur
+// un serveur local à un seul emplacement, elle s'intercale entre deux tours et
+// peut évincer le cache KV de la conversation (piège 16) : c'est la raison
+// d'être de l'interrupteur.
+
+// Étape à annoncer dans le composer pour la phase en cours, ou null. En phase
+// d'outils, la bulle AVANT le tour qui s'exécute (ses acks arrivent pendant la
+// phase, ils seraient comptés deux fois) plus ses appels, avec l'étiquette
+// déjà reçue pour eux.
+function genComposerGoal(gen) {
+  const thread = Array.isArray(gen.thread) ? gen.thread : [];
+  if (gen.phase === 'tools') {
+    const before = thread.slice(0, gen.stepTourStart == null ? thread.length : gen.stepTourStart);
+    return composerToolGoal(before, gen.upcomingCalls, (gen.stepLabels || {})[gen.upcomingGroup]);
+  }
+  // La réflexion qui suit un tour d'outils (`pondering`) en fait partie : sans
+  // elle, le suffixe s'allumait et s'éteignait à chaque tour.
+  if (gen.phase === 'analyzing' || gen.phase === 'pondering') return composerToolGoal(thread, null);
+  return null;
+}
+
+// Frontière de tour : retient le tour qui commence et chaîne sa requête
+// d'étiquetage derrière la précédente. Chaînée, parce que nommer un tour
+// suppose de connaître l'étiquette du précédent (« = » ou nouvelle étape).
+// À appeler APRÈS le message de tour éventuel (il ferme la bulle) et AVANT
+// setGenPhase(gen, 'tools'), qui lit le tour retenu.
+function noteToolTourForSteps(gen, toolCalls, group) {
+  if (!gen || !group) return;
+  gen.upcomingCalls = Array.isArray(toolCalls) ? toolCalls : [];
+  gen.upcomingGroup = group;
+  gen.stepTourStart = gen.thread.length;
+  if (loadSettings().toolSteps === false || gen.stepsClosed) return;
+  // Figés MAINTENANT : les acks des tours précédents de la bulle (références,
+  // dont `goal` sera relu après l'await), et la demande qui situe le travail.
+  const acks = bubbleTailAcks(gen.thread);
+  const userMsg = gen.thread.slice().reverse().find(m => m.role === 'user' && !m._synthetic);
+  const request = userMsg ? userContentText(userMsg.content) : '';
+  const calls = gen.upcomingCalls;
+  gen.stepChain = (gen.stepChain || Promise.resolve()).then(async () => {
+    if (gen.stepsClosed) return;
+    applyStepLabels(gen);   // l'étiquette du tour précédent, relue après l'await (piège 24 b)
+    const plan = stepLabelPlan(acks, calls, group);
+    if (!plan) return;
+    let labels;
+    try { labels = await generateStepLabels(request, plan, gen.model); }
+    catch (e) { return; }   // étiquetage raté : le tour hérite de l'étape courante (ackGoalSegments)
+    if (gen.stepsClosed) return;
+    gen.stepLabels = Object.assign(gen.stepLabels || {}, labels);
+    applyStepLabels(gen);
+  });
+}
+
+// Pose les étiquettes reçues sur les entrées d'ack du fil de la génération, et
+// rafraîchit ce qui les affiche. Une entrée du tour en cours peut ne pas
+// encore porter son `group` (ack MCP peint avant sa réponse) : tout ack poussé
+// depuis la frontière du tour lui appartient. Idempotente.
+function applyStepLabels(gen) {
+  const labels = gen.stepLabels;
+  if (!labels || gen.stepsClosed) return;
+  const touched = [];
+  for (let i = gen.thread.length - 1; i >= 0; i--) {
+    const m = gen.thread[i];
+    if (!m || m.role === 'user') break;   // une bulle ne survit pas à un message utilisateur
+    if (!isAckRole(m.role)) continue;
+    const grp = m.group != null ? m.group : (i >= gen.stepTourStart ? gen.upcomingGroup : null);
+    const label = grp != null ? labels[grp] : null;
+    if (label && m.goal !== label) { m.goal = label; touched.push(m); }
+  }
+  if (touched.length) {
+    gen.stepLabelsDirty = true;
+    const seen = new Set();
+    for (const m of touched) {
+      const node = ackNodeOf.get(m);
+      const el = node && node.closest ? node.closest('.ack-group') : null;
+      if (el && !seen.has(el)) { seen.add(el); refreshAckGroupGoals(node); }
+    }
+  }
+  const goal = genComposerGoal(gen);
+  if (goal !== gen.phaseGoal) {
+    gen.phaseGoal = goal;
+    if (genOwnsScreen(gen)) setComposerPhase(gen.phase, gen.phaseVariant, goal);
+  }
+}
+
+// Rattrapage des conversations d'avant l'étiqueteur, à l'ouverture : chaque
+// bulle d'au moins deux appels sans étape reçoit une requête (tous ses tours
+// d'un coup), en arrière-plan et l'une après l'autre. Une bulle nommée l'est
+// pour de bon (l'étape est persistée sur ses acks, stepBackfillBubbles écarte
+// toute bulle qui en porte une) : c'est ce qui fait le « une fois pour
+// toutes », sans drapeau sur la conversation — un drapeau empêcherait aussi
+// de rattraper une bulle dont l'étiquetage en direct a échoué. Une conversation
+// n'est tentée qu'une fois par session (`_stepBackfillTried`) : une bulle que
+// l'étiqueteur ne sait pas nommer ne coûte pas une requête à chaque ouverture.
+//
+// Écriture : dans le RECORD (réchauffé puis relu après chaque await, pièges 24 b
+// et 29 ; même longueur exigée, l'écriture ne fait que poser des champs), et
+// dans le fil affiché s'il s'agit toujours de cette conversation. Jamais
+// pendant qu'elle génère : son fil de travail est en avance sur le stockage.
+const _stepBackfillTried = new Set();
+async function maybeBackfillStepLabels(id) {
+  if (!id || loadSettings().toolSteps === false || _stepBackfillTried.has(id) || isGenerating(id)) return;
+  const conv0 = loadConversation(id);
+  if (!conv0) return;
+  const bubbles = stepBackfillBubbles(id === currentConvId ? currentThread : conv0.messages);
+  if (!bubbles.length) return;
+  _stepBackfillTried.add(id);
+  const model = activeModel();
+  await runBackgroundTask('buts des appels…', async () => {
+    for (const b of bubbles) {
+      let labels;
+      try { labels = await generateStepLabels(b.request, b.plan, model); }
+      catch (e) { continue; }   // réseau, délai : la bulle reste sans étape
+      if (!Object.keys(labels).length || isGenerating(id)) continue;
+      await warmConversation(id);
+      const conv = loadConversation(id);
+      if (!conv || isGenerating(id) || conv.messages.length !== conversationMessageCount(id)) return;
+      if (applyStepLabelsToMessages(conv.messages, labels).length) saveConversation(conv);
+      if (id === currentConvId) {
+        const seen = new Set();
+        for (const m of applyStepLabelsToMessages(currentThread, labels)) {
+          const node = ackNodeOf.get(m);
+          const el = node && node.closest ? node.closest('.ack-group') : null;
+          if (el && !seen.has(el)) { seen.add(el); refreshAckGroupGoals(node); }
+        }
+      }
+    }
+  });
+}
+
+// Fin de génération : attend un étiquetage encore en vol, borné, puis ferme
+// l'étiqueteur (une étiquette plus tardive est ignorée, pour que le fil
+// affiché reste celui qui est persisté). Réécrit la conversation si une
+// étiquette est arrivée après sa dernière écriture — jamais si la génération
+// n'a rien écrit (échec avant la première persistance).
+const STEP_LABEL_SETTLE_MS = 3000;
+async function settleStepLabels(gen) {
+  if (!gen || !gen.stepChain) { if (gen) gen.stepsClosed = true; return; }
+  let timer = 0;
+  await Promise.race([gen.stepChain, new Promise(r => { timer = setTimeout(r, STEP_LABEL_SETTLE_MS); })]);
+  clearTimeout(timer);
+  gen.stepsClosed = true;
+  if (gen.stepLabelsDirty && gen.persistedOnce) persistGeneration(gen);
 }
 
 // Pousse une entrée d'ack dans le fil et la peint dans la bulle vive si elle
@@ -441,6 +601,8 @@ function markEarlyAckPending(entry, node, args) {
   refreshAckInspectAffordance(node, entry);
   // Même différé pour le lien de page : il dépend de ces mêmes `args`.
   refreshAckTail(node, entry);
+  // Et pour l'étape de la suite d'appels : `group`, `args` décident du tour.
+  refreshAckGroupGoals(node);
 }
 
 // Retire le drapeau d'attente et remet l'affichage d'accord avec la donnée.
@@ -461,6 +623,8 @@ function settleEarlyAckPending(entry, node) {
   refreshAckInspectAffordance(node, entry);
   // `webMeta` (favicon) n'arrive qu'avec la réponse.
   refreshAckTail(node, entry);
+  // `group` non plus : il décide à quel tour l'appel appartient (ackGoalSegments).
+  refreshAckGroupGoals(node);
   // Le drawer peut être ouvert SUR cette entrée : sans ce rafraîchissement il
   // resterait sur « réponse en attente » alors que la réponse est arrivée.
   refreshToolInspectorIfOpen(entry);
@@ -1122,6 +1286,10 @@ function persistGeneration(gen) {
   // sélecteur, seul écrivain autorisé à modifier une sélection existante.
   if (!Array.isArray(conv.mcpDisabled) && Array.isArray(gen.mcpDisabled)) conv.mcpDisabled = gen.mcpDisabled.slice();
   saveConversation(conv);
+  // Étiquettes d'étapes (settleStepLabels) : ce qui est posé avant cette
+  // écriture y est compris.
+  gen.persistedOnce = true;
+  gen.stepLabelsDirty = false;
   renderConvList();
 }
 
@@ -2027,7 +2195,7 @@ async function openConversation(id, reveal) {
   // composer, bouton stop et mode file des interjections suivent la conv
   // AFFICHÉE, pas « une génération tourne quelque part ». Sans cet appel, le
   // composer resterait en mode « stop » sur une conversation inerte.
-  setSending(!!gen, gen && gen.stopRequested, gen && gen.phase, gen && gen.phaseVariant);
+  setSending(!!gen, gen && gen.stopRequested, gen && gen.phase, gen && gen.phaseVariant, gen && gen.phaseGoal);
   // File d'interjections (X-1e) : le rail montre celle de la conversation qu'on
   // vient d'afficher — vide si elle n'en a pas. APRÈS setSending, qui remet le
   // composer dans le mode de CETTE conversation.
@@ -2043,6 +2211,9 @@ async function openConversation(id, reveal) {
   // fraîchement chargée dans la liste visible, même sidebar masquée (reveal),
   // centrée pour ne pas la coller au bord.
   if (reveal) revealActiveConv('center');
+  // Buts des appels d'outils d'avant l'étiqueteur (lot AW) : une fois pour
+  // toutes, en arrière-plan.
+  maybeBackfillStepLabels(id);
   syncModelUI();
   syncReasoningUI();
   syncMcpSelectorUI();   // libellé + visibilité du sélecteur MCP de la conversation qu'on affiche
@@ -2497,6 +2668,7 @@ function onSaveSettings() {
     showReasoningSelector: $('set-reasoningselector').checked,
     showMcpSelector: $('set-mcpselector').checked,
     intentTracing: $('set-intent-tracing').checked,
+    toolSteps: $('set-tool-steps').checked,
     earlyTitle: $('set-early-title').checked,
     didYouKnow: $('set-did-you-know').checked,
     // REMISE à true quand le titrage précoce est désactivé, pas seulement
@@ -4576,14 +4748,12 @@ async function dispatchSend(matches, continuation) {
         setGenPhase(gen, 'reasoning');
         if (genOwnsScreen(gen)) setReasoning(gen.wrap, full);
       },
-      onToolTour: (content) => {
+      onToolTour: (content, toolCalls, group) => {
         // Frontière de tour : le partiel accumulé est consommé (soit finalisé
         // en message, soit abandonné) — le remettre à zéro, sinon un
         // rebranchement ultérieur ré-afficherait le texte du tour précédent.
         gen.partialContent = '';
         gen.partialReasoning = '';
-        // Les outils du tour s'exécutent maintenant, et jusqu'à onToolAcks.
-        setGenPhase(gen, 'tools');
         if (content && content.trim()) {
           // Le tour tool_calls a produit du texte visible : on le finalise dans
           // sa propre bulle et on en ouvre une nouvelle pour la suite.
@@ -4600,6 +4770,11 @@ async function dispatchSend(matches, continuation) {
         } else if (genOwnsScreen(gen)) {
           resetAssistant(gen.wrap);
         }
+        // Les outils du tour s'exécutent maintenant, et jusqu'à onToolAcks.
+        // APRÈS le message de tour éventuel : il ferme la bulle, et l'étape
+        // annoncée (genComposerGoal) ne se calcule que sur la bulle qui s'ouvre.
+        noteToolTourForSteps(gen, toolCalls, group);
+        setGenPhase(gen, 'tools');
       },
       // Vidange ANTICIPÉE des acks MCP poussés de manière synchrone par
       // callRemoteTool AVANT son premier await. Appelé par api.js juste après le
@@ -4632,6 +4807,7 @@ async function dispatchSend(matches, continuation) {
           markEarlyAckPending(entry, node, args);
           earlyRendered.push({ ack, entry, node });
         }
+        applyStepLabels(gen);   // étiquette déjà reçue pour ce tour (lot AW)
         if (follow) scrollBottomCapped(gen.convId);
       },
       // Vidange des acks d'outils APRÈS l'exécution des outils d'un tour, donc
@@ -4695,6 +4871,7 @@ async function dispatchSend(matches, continuation) {
         const blocks = getPendingToolBlocks();
         clearPendingToolBlocks();
         if (owns && blocks.length) placeToolBlocks(gen.wrap, blocks);
+        applyStepLabels(gen);   // étiquette déjà reçue pour ce tour (lot AW)
         if (follow) scrollBottomCapped(gen.convId);
 
         // Recalcul MI-ÉCHANGE (pas seulement en fin de tour) : un tour d'outils
@@ -5024,12 +5201,15 @@ async function dispatchSend(matches, continuation) {
     if (failureMeansBackendDown(e)) setConnDot('err', serverId);
     else toastApiRequestRefused(e, serverName, serverId);   // 4xx : le serveur répond, mais refuse
   } finally {
+    // Étiquetage d'étapes encore en vol : borné, AVANT le désenregistrement
+    // (la génération écrit encore sa conversation).
+    await settleStepLabels(gen);
     // Désenregistrement AVANT setSending : ce dernier dérive `sending` du
     // registre (« la conv AFFICHÉE génère-t-elle ? »), il doit donc voir un
     // registre déjà à jour.
     unregisterGeneration(gen);
     const stillGen = generationFor(currentConvId);
-    setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase, stillGen && stillGen.phaseVariant);
+    setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase, stillGen && stillGen.phaseVariant, stillGen && stillGen.phaseGoal);
     syncReasoningUI();       // masque le sélecteur si reasoning_effort a été rejeté pendant le tour (cf. api.js), y compris quand le retry sans paramètre a réussi
     armIdleSummaryTimer();   // réarme quelle que soit l'issue du tour (réponse, halte, erreur)
     // Interjections restantes (lot Q, révisé X-1e) : drain A si fin nominale,

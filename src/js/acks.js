@@ -1468,8 +1468,31 @@ function resolveMotionReduced(setting, systemPrefersReduced) {
 // `height` n'anime pas vers/depuis `auto` : on fixe une valeur px de départ
 // des deux côtés, un seul rAF pour poser les cibles, cleanup sur
 // transitionend de chaque panneau (indépendants, jamais orphelins).
+// Filet sans transitionend (hauteurs égales, groupe retiré du DOM) : la hauteur
+// épinglée de la cellule, et le plancher posé sous l'espace de la bulle
+// envoyée par le clic du badge, doivent être levés quand même.
+const ACK_PANEL_SWAP_SETTLE_MS = 500;
 function animateGroupPanelSwap(outgoing, incoming, outgoingStart) {
   const incomingTarget = incoming.scrollHeight;
+  // Hauteur de la CELLULE épinglée et animée d'un bout à l'autre. Les deux
+  // panneaux se superposent dans la même cellule de grille, qui prend donc le
+  // plus haut des deux : l'un rétrécissant pendant que l'autre grandit, elle
+  // creusait au milieu de la bascule, et tout ce qui suit le groupe remontait
+  // puis redescendait (12 à 14px mesurés sous la bulle envoyée, au dépli comme
+  // au repli). Épinglée, elle va droit de la hauteur de départ à celle
+  // d'arrivée ; les panneaux se croisent à l'intérieur.
+  const panels = outgoing.parentNode;
+  panels.style.height = outgoingStart + 'px';
+  panels.style.overflow = 'hidden';
+  panels.classList.add('ack-panel-animating');
+  const releasePanels = () => {
+    panels.classList.remove('ack-panel-animating');
+    panels.style.height = '';
+    panels.style.overflow = '';
+  };
+  let pending = 2;
+  const settled = () => { if (--pending === 0) { clearTimeout(timer); releasePanels(); } };
+  const timer = setTimeout(() => { pending = 0; releasePanels(); }, ACK_PANEL_SWAP_SETTLE_MS);
   outgoing.hidden = false;   // ré-affiché le temps de l'anim (contenu intact)
   outgoing.style.height = outgoingStart + 'px';
   outgoing.style.overflow = 'hidden';
@@ -1487,6 +1510,7 @@ function animateGroupPanelSwap(outgoing, incoming, outgoingStart) {
     // toute façon plus être lisible, l'opacité masque le résidu avant ça.
     outgoing.style.opacity = '0';
     incoming.style.height = incomingTarget + 'px';
+    panels.style.height = incomingTarget + 'px';
   });
   const onOutEnd = function(ev) {
     if (ev.target !== outgoing || ev.propertyName !== 'height') return;
@@ -1496,6 +1520,7 @@ function animateGroupPanelSwap(outgoing, incoming, outgoingStart) {
     outgoing.style.overflow = '';
     outgoing.style.opacity = '';
     outgoing.hidden = true;   // reconforme à l'état voulu par renderAckGroup
+    settled();
   };
   const onInEnd = function(ev) {
     if (ev.target !== incoming || ev.propertyName !== 'height') return;
@@ -1503,6 +1528,7 @@ function animateGroupPanelSwap(outgoing, incoming, outgoingStart) {
     incoming.classList.remove('ack-panel-animating');
     incoming.style.height = '';
     incoming.style.overflow = '';
+    settled();
   };
   outgoing.addEventListener('transitionend', onOutEnd);
   incoming.addEventListener('transitionend', onInEnd);
@@ -1517,11 +1543,28 @@ function ensureAckGroup(wrap) {
   if (wrap._ackGroup) return wrap._ackGroup;
   const el = document.createElement('div');
   el.className = 'ack-group';
+  // Panneau compact : l'en-tête d'étape (lot AW) puis la fenêtre du ticker.
+  // L'en-tête vit DANS le panneau, pour monter et descendre avec lui à la
+  // bascule compact/liste — posé à côté, il apparaissait et disparaissait d'un
+  // coup pendant que les panneaux s'animaient (clignotement). Il reste en
+  // revanche HORS de la fenêtre `.ack-clip`, dont la hauteur est épinglée et
+  // animée à chaque arrivée d'ack (ackGroupAddAck) : dedans, il fausserait les
+  // deux mesures.
   const slot = document.createElement('div');
   slot.className = 'ack-slot';
+  const goal = document.createElement('div');
+  goal.className = 'ack-goal';
+  goal.hidden = true;
+  // Classe retirée en fin de fondu : posée en permanence, elle ne dirait plus
+  // rien de l'état, et une relance exige de toute façon de la retirer d'abord.
+  goal.addEventListener('animationend', () => goal.classList.remove('ack-goal-enter'));
+  const clip = document.createElement('div');
+  clip.className = 'ack-clip';
   const track = document.createElement('div');
   track.className = 'ticker-track';
-  slot.appendChild(track);
+  clip.appendChild(track);
+  slot.appendChild(goal);
+  slot.appendChild(clip);
   const list = document.createElement('div');
   list.className = 'ack-list';
   list.hidden = true;
@@ -1540,6 +1583,14 @@ function ensureAckGroup(wrap) {
     const outgoing = group.state.mode === 'list' ? group.list : group.slot;
     const animate = !motionReduced() && !outgoing.hidden;
     const outgoingStart = animate ? outgoing.scrollHeight : 0;
+    // Plancher sous l'espace de la bulle envoyée (holdThreadTailSpaceFloor,
+    // ui.js) posé AVANT de toucher au contenu : le repli le raccourcit dès le
+    // rendu qui suit, et la première lecture de mise en page (la mesure de
+    // l'entrant, animée ou non) rabotait déjà scrollTop — la bulle épinglée
+    // descendait d'un coup de toute la différence. Taillé sur le panneau
+    // sortant entier, le plus que le geste puisse retirer ; levé une fois la
+    // bascule finie, il ne retire que du vide sous le fond.
+    setTimeout(holdThreadTailSpaceFloor(outgoing.hidden ? 0 : outgoing.scrollHeight), ACK_PANEL_SWAP_SETTLE_MS);
     group.state = ackGroupReduce(group.state, { type: 'toggleMode' });
     renderAckGroup(group);
     if (!animate) return;
@@ -1555,7 +1606,7 @@ function ensureAckGroup(wrap) {
   const body = wrap.querySelector('.body');
   if (body) wrap.insertBefore(el, body);
   else wrap.appendChild(el);
-  const group = { state: ackGroupInitState(), el, slot, track, list, badge };
+  const group = { state: ackGroupInitState(), el, slot, clip, track, list, badge, goal, goalText: '', animateGoal: false };
   // Slot-expanded (brief §3) : la ligne intent gère déjà son propre toggle
   // DOM (renderIntentTwoLevel, self-contained) ; on écoute en bulle sur .ack-panels
   // pour resynchroniser l'état de GROUPE — donc l'héritage à l'ack suivant, ET la
@@ -1592,7 +1643,6 @@ function renderAckGroup(group) {
   group.el.dataset.count = String(count);
   group.el.dataset.mode = (group.state.mode === 'list' && count >= 2) ? 'list' : 'compact';
   group.badge.hidden = count < 2;
-  group.badge.textContent = (group.state.mode === 'list' ? '▴ ' : '') + count + ' étape' + (count > 1 ? 's' : '');
   group.badge.setAttribute('aria-expanded', String(group.state.mode === 'list'));
   const showList = count >= 2 && group.state.mode === 'list';
   group.list.hidden = !showList;
@@ -1601,8 +1651,9 @@ function renderAckGroup(group) {
     // Rebuild depuis l'état (source unique) : un ack a pu arriver pendant que
     // le groupe était en mode compact (donc jamais append à .ack-list), ou le
     // nœud visible a été déplacé dans le track par un précédent rendu compact.
-    // ORDRE D'AFFICHAGE, pas l'ordre d'état : `ackDisplayOrder` (utils.js, pure)
-    // remet l'ack d'action devant le `resource_stored` que `_storeBlock` a
+    // Fait par syncAckGroupGoals, qui range la liste par segment de but.
+    // ORDRE D'AFFICHAGE, pas l'ordre d'état : `ackDisplayOrder` (utils.js, pure,
+    // appliquée par ackGoalSegments) remet l'ack d'action devant le `resource_stored` que `_storeBlock` a
     // poussé avant lui sur les outils internes. `group.state.acks` reste en
     // ordre d'arrivée — c'est lui que lit `ackGroupVisibleAck` pour le slot
     // compact (l'action, dernière arrivée, doit y rester l'ack visible), et
@@ -1614,11 +1665,9 @@ function renderAckGroup(group) {
     // `parentNode !== group.list` doit donc sauter dès que l'ordre voulu diffère
     // de l'ordre du DOM, sinon un nœud déjà placé ne serait jamais reclassé.
     // On repositionne inconditionnellement, ce qui est idempotent.
-    for (const a of ackDisplayOrder(group.state.acks)) {
-      const n = ackNodeOf.get(a);
-      if (n) group.list.appendChild(n);
-    }
+    syncAckGroupGoals(group);
   } else {
+    syncAckGroupGoals(group);
     // Slot compact (ou transparent sous le seuil) : ne montre que le dernier ack.
     const visible = ackGroupVisibleAck(group.state);
     const visibleNode = visible && ackNodeOf.get(visible);
@@ -1629,9 +1678,83 @@ function renderAckGroup(group) {
     if (visibleNode) applySlotExpanded(visibleNode, group.state.slotExpanded);
     group.track.style.transform = '';
     group.track.classList.remove('animating');
-    group.slot.classList.remove('animating');
-    group.slot.style.height = '';
+    group.clip.classList.remove('animating');
+    group.clip.style.height = '';
   }
+}
+
+// Étapes d'un groupe (champ `goal` des acks, posé par l'étiqueteur d'étapes),
+// segmentées au rendu par ackGoalSegments (utils.js, pure). Écrit le badge, l'en-tête du mode compact et,
+// en mode liste, range les nœuds par segment : un segment à but devient un
+// `.ack-goal-seg` (intertitre + filet), un segment sans but reste à nu dans la
+// liste, pour qu'un appel isolé ne paraisse rattaché à aucun but.
+//
+// Ne touche JAMAIS au track du ticker : appelée aussi pendant une arrivée animée
+// (ackGroupAddAck) et quand un ack MCP déjà peint reçoit ses arguments
+// (refreshAckGroupGoals), deux moments où le track est en mouvement.
+function syncAckGroupGoals(group) {
+  const count = ackGroupCount(group.state);
+  const showList = count >= 2 && group.state.mode === 'list';
+  const segs = ackGoalSegments(group.state.acks);
+  const goals = segs.filter(s => s.goal).length;
+  group.badge.textContent = (group.state.mode === 'list' ? '▴ ' : '')
+    + (goals >= 2 ? goals + ' buts · ' : '')
+    + count + ' étape' + (count > 1 ? 's' : '');
+  // En-tête compact : le but du segment de l'ack VISIBLE (le dernier arrivé),
+  // donc celui de l'étape en cours en live. Calculé quel que soit le mode : il
+  // vit dans le panneau compact, masqué avec lui en liste, où les intertitres
+  // disent tous les buts. Ainsi la bascule ne change jamais son texte, et ne
+  // relance pas son fondu. `has-goal` met l'ack visible au même retrait que
+  // les acks d'un segment en liste : la ligne ne bouge pas d'un mode à l'autre.
+  const visible = ackGroupVisibleAck(group.state);
+  const seg = visible ? segs.find(s => s.acks.indexOf(visible) >= 0) : null;
+  const text = seg && seg.goal ? seg.goal : '';
+  group.el.classList.toggle('has-goal', !!text);
+  if (text !== group.goalText) {
+    group.goal.textContent = text;
+    group.goal.hidden = !text;
+    // Fondu à l'entrée dans un nouveau segment, en live seulement (le reload
+    // reconstruit, il n'arrive rien). Relancer l'animation exige de retirer la
+    // classe et de forcer un reflow avant de la reposer.
+    group.goal.classList.remove('ack-goal-enter');
+    if (text && group.animateGoal && !motionReduced()) {
+      void group.goal.offsetWidth;
+      group.goal.classList.add('ack-goal-enter');
+    }
+    group.goalText = text;
+  }
+  if (!showList) return;
+  const stale = Array.from(group.list.children).filter(c => c.classList.contains('ack-goal-seg'));
+  for (const s of segs) {
+    let host = group.list;
+    if (s.goal) {
+      host = document.createElement('div');
+      host.className = 'ack-goal-seg';
+      const title = document.createElement('div');
+      title.className = 'ack-goal-title';
+      title.textContent = s.goal;
+      host.appendChild(title);
+      group.list.appendChild(host);
+    }
+    for (const a of s.acks) {
+      const n = ackNodeOf.get(a);
+      if (n) host.appendChild(n);
+    }
+  }
+  // Les anciens segments sont vides à ce stade : leurs nœuds viennent d'être
+  // déplacés dans les nouveaux.
+  stale.forEach(c => c.remove());
+}
+
+// Resynchronise les étapes du groupe d'un nœud d'ack, après qu'une entrée a
+// changé hors d'un rendu : étiquette posée par applyStepLabels (main.js), ou
+// ack MCP complété après coup (son `group` n'arrive qu'à la réponse, et décide
+// de son tour — markEarlyAckPending, settleEarlyAckPending). `node` peut être
+// null (génération détachée) : le rendu à l'attache relira l'entrée à jour.
+function refreshAckGroupGoals(node) {
+  const el = node && node.closest ? node.closest('.ack-group') : null;
+  const group = el && el.parentNode && el.parentNode._ackGroup;
+  if (group) syncAckGroupGoals(group);
 }
 
 // Pré-ouvre/replie le détail d'un nœud .tool-ack déjà construit (héritage
@@ -1659,6 +1782,10 @@ function ackGroupAddAck(group, entry, node, animate) {
   group.state = ackGroupReduce(group.state, { type: 'arrive', ack: entry });
   const nowCompact = ackGroupIsCompact(group.state);
   applySlotExpanded(node, group.state.slotExpanded);
+  // En-tête de but tout de suite, y compris pendant l'arrivée animée (dont le
+  // renderAckGroup n'a lieu qu'à la fin) : il change avec l'ack qui entre.
+  group.animateGoal = !!animate;
+  syncAckGroupGoals(group);
 
   if (group.state.mode === 'list') {
     group.list.appendChild(node);   // append en bas, sans animation (brief §4)
@@ -1682,27 +1809,28 @@ function ackGroupAddAck(group, entry, node, animate) {
   // marges verticales (non collapsées dans le track flex) qu'offsetHeight
   // ignore — épingler offsetHeight nu faisait perdre 6px au départ puis les
   // reprenait au cleanup (height:'' → auto), wobble inverse du sautillement.
-  // Départ = hauteur auto courante du slot ; cible = boîte de marge de
-  // l'entrant ; translation = écart d'offsetTop (exact marges comprises,
-  // offsetParent = .ack-slot, position:relative).
+  // Départ = hauteur auto courante de la fenêtre du ticker ; cible = boîte de
+  // marge de l'entrant ; translation = écart d'offsetTop (exact marges
+  // comprises, offsetParent = .ack-clip, position:relative). La fenêtre, pas
+  // le panneau `.ack-slot` : celui-ci porte aussi l'en-tête de but.
   const outgoing = prevNode;
-  const hStart = group.slot.offsetHeight;
-  group.slot.style.height = hStart + 'px';
+  const hStart = group.clip.offsetHeight;
+  group.clip.style.height = hStart + 'px';
   group.track.appendChild(node);
   const dist = node.offsetTop - outgoing.offsetTop;
   const mcs = getComputedStyle(node);
   const hEnd = node.offsetHeight + (parseFloat(mcs.marginTop) || 0) + (parseFloat(mcs.marginBottom) || 0);
-  group.slot.classList.add('animating');
+  group.clip.classList.add('animating');
   group.track.classList.add('animating');
   group.track.style.transform = 'translateY(-' + dist + 'px)';
-  group.slot.style.height = hEnd + 'px';
+  group.clip.style.height = hEnd + 'px';
   const onEnd = function() {
     group.track.removeEventListener('transitionend', onEnd);
     if (outgoing.parentNode === group.track) outgoing.remove();
     group.track.classList.remove('animating');
     group.track.style.transform = '';
-    group.slot.classList.remove('animating');
-    group.slot.style.height = '';
+    group.clip.classList.remove('animating');
+    group.clip.style.height = '';
     renderAckGroup(group);   // resync badge/attrs, ne touche plus au track (déjà propre)
   };
   group.track.addEventListener('transitionend', onEnd, { once: true });
@@ -2096,6 +2224,22 @@ function renderToolInspector(m) {
     head.appendChild(bad);
   }
   body.appendChild(head);
+  // But de la suite d'appels (lot AW, « étape » dans le code), nommé par MIAOU
+  // et non par le modèle : l'infobulle le dit, pour qu'on ne le lise pas comme
+  // un argument. « Étape » est déjà le mot de l'interface pour UN appel (badge
+  // « n étapes ») : d'où « but » à l'écran.
+  const goal = ackGoalOf(m);
+  if (goal) {
+    const g = document.createElement('p');
+    g.className = 'inspect-goal';
+    const lbl = document.createElement('span');
+    lbl.className = 'inspect-goal-label';
+    lbl.textContent = 'But';
+    setTip(lbl, 'But nommé par MIAOU d\'après les appels, pas par le modèle');
+    g.appendChild(lbl);
+    g.appendChild(document.createTextNode(goal));
+    body.appendChild(g);
+  }
   if (m.intent) {
     const it = document.createElement('p');
     it.className = 'inspect-intent';

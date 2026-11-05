@@ -964,6 +964,72 @@ openConversation(m.convId)`), donc `convId` doit être renseigné par le
 handler (`conv__get`, tools.js) et préservé dans toutes les whitelists
 de champs (voir avertissement ci-dessus).
 
+### But d'une suite d'appels : l'étiqueteur d'étapes (lot AW)
+
+Une bulle qui enchaîne plusieurs appels est découpée en étapes nommées
+(« Recherche des offres », « Lecture des conditions ») : en-tête au-dessus de
+l'ack visible en compact, intertitre et retrait par étape en liste, badge
+« n buts · m étapes » dès deux étapes, suffixe du placeholder du composer
+pendant les phases d'outils. À l'écran le mot est « but », parce que « étape »
+y désigne déjà UN appel (badge « n étapes ») ; dans le code, c'est l'étape.
+
+**Ce n'est pas le modèle qui travaille qui les nomme.** Le lot a d'abord posé
+une propriété `miaou_goal` sur chaque schéma (comme `miaou_intent`), puis un
+outil d'étape dédié, puis un plan avec rappel : sur quatre modèles et environ
+250 runs, aucun ne tient un intitulé d'étape d'un appel à l'autre (ils
+écrivent un « pourquoi » par appel, ou reformulent la demande). Rien n'est donc
+demandé au modèle : ni propriété, ni doctrine, ni outil, et le contexte de la
+conversation est inchangé.
+
+**MIAOU nomme lui-même, tour par tour.** À chaque frontière de tour d'une
+conversation racine, `noteToolTourForSteps` (main.js) chaîne une requête
+`generateStepLabels` (api.js) : `silentCompletion`, prompt `STEP_LABEL_PROMPT`,
+modèle de la génération, sans outils, bornée par `STEP_LABEL_TIMEOUT_MS`. Elle
+part pendant que les outils du tour s'exécutent. Ce qui lui est soumis vient de
+`stepLabelPlan` (utils.js, pur) : la demande, les étapes déjà nommées de la
+bulle avec leurs derniers appels, puis le tour qui commence (et les tours
+précédents restés sans étiquette, typiquement un premier tour d'un seul appel,
+qui n'est jamais soumis seul). Chaque appel y est une ligne « outil — intention
+», ou les valeurs de ses arguments sans intention (`stepLabelCallLine`). Elle
+répond une ligne par tour, « = » ou un intitulé, lue par `parseStepLabels`.
+Pas de requête quand la bulle compte moins de deux appels : une étape d'un seul
+appel ne s'affiche pas.
+
+**Donnée.** L'étiquette est posée par `applyStepLabels` (main.js, seul point
+d'écriture en génération) sur le champ `goal` des entrées d'ack du tour
+(`ACK_COPY_FIELDS`), y compris un ack MCP peint avant de connaître son `group`
+(tout ack poussé depuis la frontière du tour en est). C'est cette donnée
+persistée que segmentent `ackGoalSegments` (règles dans son en-tête) et
+`composerToolGoal`, en live comme au reload. Fin de génération :
+`settleStepLabels` attend une requête en vol (`STEP_LABEL_SETTLE_MS`), réécrit
+la conversation si une étiquette est arrivée après sa dernière écriture, puis
+ferme l'étiqueteur ; une étiquette plus tardive est ignorée, pour que l'écran
+reste ce qui est persisté. Un étiquetage raté laisse le tour hériter de
+l'étape courante.
+
+**Rattrapage.** `maybeBackfillStepLabels`, appelé par `openConversation`,
+nomme les bulles d'au moins deux appels sans étape d'une conversation plus
+ancienne (`stepBackfillBubbles`), une requête par bulle, en arrière-plan, et
+écrit dans le record réchauffé puis relu (piège 29). Pas de drapeau sur la
+conversation : une bulle nommée l'est pour de bon, et une bulle dont
+l'étiquetage en direct a échoué est rattrapée à la prochaine ouverture. Une
+conversation n'est tentée qu'une fois par session.
+
+**Réglage `toolSteps`** (« Buts des appels d'outils », défaut actif),
+indépendant d'`intentTracing` : sans intentions, l'étiqueteur lit les
+arguments. Coût : une requête de quelques centaines de tokens par tour d'une
+bulle d'au moins deux appels, hors du contexte de la conversation (mesuré au
+lot : ~550 tokens d'entrée). Sur un serveur local à un seul emplacement, elle
+s'intercale entre deux tours de la génération et peut évincer son cache KV
+(piège 16) : c'est la raison d'être de l'interrupteur. Les agents ne sont pas
+étiquetés en direct (seuls `dispatchSend` et le réveil d'une conversation
+racine appellent l'étiqueteur) ; le rattrapage les nomme si on ouvre leur fil.
+
+Non-régression : `verify-ack-goals.mjs` (rendu compact et liste, génération
+stubée avec étiqueteur, payload sans aucune trace d'étape, reload, réglage
+coupé, rattrapage) et les tests QuickJS de `ackGoalSegments`, `stepLabelPlan`,
+`parseStepLabels`, `stepBackfillBubbles`.
+
 ### Téléchargement de la ressource désignée par un ack (lot V)
 
 Quatre kinds d'ack désignent un fichier récupérable : `resource_stored`,

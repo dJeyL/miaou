@@ -907,6 +907,21 @@ describe('composerBusyPlaceholder', function() {
   });
 });
 
+// Le but de la suite d'appels (lot AW) se suffixe aux SEULES étapes d'outils,
+// réflexion d'après-outils comprise : après, il décrirait un travail fini.
+describe('composerBusyPlaceholder : but de la suite d\'appels', function() {
+  it('étapes tools et analyzing → suffixé avant l\'indication de file', function() {
+    expect(composerBusyPlaceholder('tools', 0, 'Comparer')).toBe(COMPOSER_PHASE_LABELS.tools[0] + ' · Comparer' + COMPOSER_QUEUE_HINT);
+    expect(composerBusyPlaceholder('analyzing', 0, 'Comparer')).toContain(' · Comparer');
+    expect(composerBusyPlaceholder('pondering', 0, 'Comparer')).toContain(' · Comparer');
+  });
+  it('autres étapes, ou pas de but → inchangé', function() {
+    expect(composerBusyPlaceholder('answering', 0, 'Comparer')).toBe(composerBusyPlaceholder('answering', 0));
+    expect(composerBusyPlaceholder('reasoning', 0, 'Comparer')).toBe(composerBusyPlaceholder('reasoning', 0));
+    expect(composerBusyPlaceholder('tools', 0, null)).toBe(COMPOSER_PHASE_LABELS.tools[0] + COMPOSER_QUEUE_HINT);
+  });
+});
+
 describe('isServedProtocol (pwa)', function() {
   it('http et https : page servie', function() {
     expect(isServedProtocol('http:')).toBe(true);

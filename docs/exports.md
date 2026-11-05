@@ -64,6 +64,11 @@ téléchargement du fil (`decoratePre`, `downloadMsgMd`) dans `ui.js`.
   caractères, nom de ressource à 60, suffixe `...` simple (pas de mention
   « tronqué »). Acks **legacy** (sans `args`) restent **omis** de l'export, comme
   avant cette fonctionnalité — pas de fallback sur le label compact écran.
+  Buts de la suite d'appels (lot AW, cf. `docs/tools.md`) : quand la bulle en
+  porte, une ligne `> *But : …*` précède les appels de chaque but, et l'export
+  HTML pose un `.tool-ack-goal` (échappé) avant ses intentions — mêmes segments
+  que le fil (`ackGoalSegments`), donc ordre d'affichage. Sans but, rien ne
+  change.
   `downloadConvMd()` tamponne les acks enrichis qui précèdent un message
   assistant (même motif que `renderThread`) ; `downloadMsgMd()` (ui.js) retrouve
   les acks de son propre tour en remontant `currentThread` depuis `msgIndex(wrap)`.

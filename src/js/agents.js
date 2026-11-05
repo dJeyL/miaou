@@ -1032,7 +1032,7 @@ async function driveAgentConversation(gen, apiMessages, tools) {
     // visible : composer verrouillé ET libellé de travail en cours.
     if (gen.convId === currentConvId) {
       const stillGen = generationFor(currentConvId);
-      setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase, stillGen && stillGen.phaseVariant);
+      setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase, stillGen && stillGen.phaseVariant, stillGen && stillGen.phaseGoal);
     }
     // LE point d'entrée unique de la délivrance, sur TOUTE sortie sans
     // exception. Fire-and-forget : rien n'attend le réveil du parent.
@@ -1297,7 +1297,7 @@ async function driveDetachedConversation(gen, apiMessages) {
       // travaille. Une affectation nue redonnerait le fil muet au rebranchement.
       onDelta: (full) => setGenPartialContent(gen, full),
       onReasoning: (full) => setGenPartialReasoning(gen, full),
-      onToolTour: (content) => {
+      onToolTour: (content, toolCalls, group) => {
         gen.partialContent = '';
         gen.partialReasoning = '';
         if (content && content.trim()) {
@@ -1308,6 +1308,9 @@ async function driveDetachedConversation(gen, apiMessages) {
         } else if (genOwnsScreen(gen)) {
           resetAssistant(gen.wrap);   // retour au patienteur entre deux tours d'outils
         }
+        // Étapes de la suite d'appels (lot AW) : conversation racine réveillée,
+        // même étiqueteur que dispatchSend. APRÈS le message de tour éventuel.
+        noteToolTourForSteps(gen, toolCalls, group);
       },
       onEarlyAcks: ({ args } = {}) => {
         for (const ack of getPendingToolAcks()) {
@@ -1321,12 +1324,14 @@ async function driveDetachedConversation(gen, apiMessages) {
           earlyRendered.push({ ack, entry, node });
         }
         clearPendingToolAcks();
+        applyStepLabels(gen);
       },
       onToolAcks: () => {
         applyEarlyAckError(earlyRendered);
         for (const ack of getPendingToolAcks()) pushGenToolAck(gen, ack);
         clearPendingToolAcks();
         clearPendingToolBlocks();
+        applyStepLabels(gen);
       },
       onEnrichLastAck: (payload) => {
         const isMcp = payload && payload.isMcp;
@@ -1387,6 +1392,7 @@ async function driveDetachedConversation(gen, apiMessages) {
       model: gen.model, ts: Date.now() }, 'final');
     persistGeneration(gen);
   } finally {
+    await settleStepLabels(gen);   // étiquetage d'étapes en vol, borné (lot AW)
     unregisterGeneration(gen);
     // Cf. driveAgentConversation : bulle vive refermée sur une sortie non nominale.
     clearGenLiveBubble(gen);
@@ -1394,7 +1400,7 @@ async function driveDetachedConversation(gen, apiMessages) {
     // dessus pendant le tour), le composer doit refléter qu'elle ne génère plus.
     if (gen.convId === currentConvId) {
       const stillGen = generationFor(currentConvId);
-      setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase, stillGen && stillGen.phaseVariant);
+      setSending(!!stillGen, stillGen && stillGen.stopRequested, stillGen && stillGen.phase, stillGen && stillGen.phaseVariant, stillGen && stillGen.phaseGoal);
     }
     // Un résultat arrivé après la dernière frontière de tour relance un réveil,
     // même règle que dans dispatchSend : sans ça, il resterait en file pour

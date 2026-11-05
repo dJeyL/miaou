@@ -410,6 +410,8 @@ body[data-wide-tables="off"] .table-bleed { --table-bleed: 0px; }
 .tt-radio + .tt-radio:checked ~ .tt-view-intents { display: none; }
 .tt-radio + .tt-radio:checked ~ .tt-view-json { display: block; }
 .tool-ack-preview-list { display: flex; flex-direction: column; gap: 3px; }
+.tool-ack-goal { font-weight: 600; font-size: 0.92em; margin-top: 6px; }
+.tool-ack-goal:first-child { margin-top: 0; }
 .tool-ack-preview { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 4px 10px; border-left: 2px solid var(--accent-bd); }
 .tool-ack-preview .ack-icon { flex-shrink: 0; display: inline-flex; align-items: center; align-self: center; color: var(--accent); }
 .tool-ack-preview .ack-label { flex: 1; overflow-wrap: break-word; }

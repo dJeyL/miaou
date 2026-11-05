@@ -1278,9 +1278,17 @@ async function runConversation(messages, hooks) {
         return result.content;
       }
 
+      // Identifiant de groupe : partagé par tous les tool_calls d'un même tour
+      // pour que expandThread puisse reconstruire un seul assistant+N tools.
+      // Calculé AVANT onToolTour, qui le reçoit : l'étiqueteur d'étapes nomme
+      // le tour par cet identifiant, que les acks recevront à l'enrichissement.
+      const group = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
       // Passe le content du tour à l'UI : s'il est non vide, l'UI le finalise
       // dans sa propre bulle ; sinon elle efface le live et repose le patienteur.
-      if (h.onToolTour) h.onToolTour(result.content);
+      // Les tool_calls suivent, avec le groupe du tour : l'étiqueteur d'étapes
+      // les lit pendant leur exécution (noteToolTourForSteps, main.js).
+      if (h.onToolTour) h.onToolTour(result.content, result.toolCalls, group);
 
       // Le message assistant porteur des tool_calls est poussé APRÈS la boucle
       // d'exécution, pas avant — avec les SEULS appels qui ont effectivement
@@ -1306,9 +1314,6 @@ async function runConversation(messages, hooks) {
       const servedToolCalls = [];
       const servedToolMsgs = [];
 
-      // Identifiant de groupe : partagé par tous les tool_calls d'un même tour
-      // pour que expandThread puisse reconstruire un seul assistant+N tools.
-      const group = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
       const assistantText = result.content || null;
 
       for (const tc of result.toolCalls) {
@@ -1317,12 +1322,12 @@ async function runConversation(messages, hooks) {
         catch (e) { args = {}; }
 
         let out;
-        // Clé de répétition sur les arguments BRUTS du tool_call, pas sur
-        // id/since seuls : deux appels distincts du même outil (ex. deux
-        // memory__create, ou conv__get résumé puis with_contents) ont des
-        // arguments distincts et sont comptés séparément. Seule la répétition
-        // rigoureusement identique alimente le compteur.
-        const key = tc.function.name + ':' + (tc.function.arguments || '');
+        // Clé de répétition sur les ARGUMENTS du tool_call, pas sur id/since
+        // seuls : deux appels distincts du même outil (ex. deux memory__create,
+        // ou conv__get résumé puis with_contents) ont des arguments distincts et
+        // sont comptés séparément. Seule la répétition identique alimente le
+        // compteur — aux champs de traçage près (toolRepeatKey, utils.js).
+        const key = toolRepeatKey(tc.function.name, tc.function.arguments);
         if ((callCounts.get(key) || 0) >= TOOL_REPEAT_MAX) {
           // Le refus NOMME sa borne au lieu d'affirmer que le résultat est déjà
           // connu : le modèle sonde peut-être un état qui a réellement changé,
@@ -1652,6 +1657,45 @@ async function generateEarlyTitle(userText, model) {
   ], { temperature: 0.2, timeout: 60000, model: model, purpose: 'early-title' });
   return normalizeTitle(out);
 }
+
+// ── Étiqueteur d'étapes (lot AW) ────────────────────────────────────────────
+// Nomme les étapes d'une suite d'appels d'outils, tour par tour, HORS du
+// contexte de la génération : requête courte et indépendante, sans outils.
+// Cf. stepLabelPlan (utils.js) pour ce qui est soumis, et
+// noteToolTourForSteps (main.js) pour quand. Le prompt a été sondé sur six
+// modèles (lot AW). Deux écueils l'ont façonné : une étape définie comme « une
+// question intermédiaire » s'effondrait en un seul intitulé sur la moitié
+// d'entre eux (quinze appels sous la même étape) ; nommée par son objet, elle
+// éclatait en étapes d'un appel chez un modèle qui interroge les villes une par
+// une. D'où : le genre de travail décide, l'objet non, et l'intitulé ne nomme
+// pas un objet particulier quand la demande en compte plusieurs.
+const STEP_LABEL_PROMPT =
+  "Tu nommes les étapes du travail d'un assistant qui appelle des outils, pour les afficher à " +
+  "l'utilisateur pendant qu'il attend. On te donne sa demande, les étapes déjà nommées avec leurs " +
+  "derniers appels, puis un ou plusieurs nouveaux tours d'appels (un tour = des appels lancés " +
+  "ensemble).\nPour chaque nouveau tour, dans l'ordre, écris une ligne :\n- « = » si le tour fait le même " +
+  "genre de travail que la dernière étape, même sur un autre objet (une autre ville, une autre source, " +
+  "un autre produit) ;\n- sinon l'intitulé de la nouvelle étape.\nLe genre de travail change quand " +
+  "l'assistant passe de chercher à lire des pages, d'un aspect de la demande à un autre (la météo, puis " +
+  "les activités), ou de la collecte à la vérification. Une réponse compte en général deux à quatre " +
+  "étapes.\nIntitulé : 2 à 6 mots, en nom d'action (« Recherche des… », « Lecture des… »), dans la " +
+  "langue de la demande, sans point final. Il couvre tous les objets que l'étape peut toucher : pas de " +
+  "nom de ville, de site ou de produit particulier quand la demande en compte plusieurs. Il ne " +
+  "reformule pas la demande entière. S'il n'y a encore aucune étape, la première ligne est un intitulé.\n" +
+  "Réponds uniquement par ces lignes, sans numéro ni commentaire.";
+
+// Une requête par tour d'outils, pendant que ses outils s'exécutent : bornée
+// court (piège 10), un étiquetage en retard ne sert plus à rien. Rend
+// `{ group: étiquette }` (parseStepLabels), `{}` sur toute sortie illisible ;
+// l'échec réseau remonte à l'appelant, qui l'avale.
+async function generateStepLabels(request, plan, model) {
+  const out = await silentCompletion([
+    { role: 'system', content: STEP_LABEL_PROMPT },
+    { role: 'user', content: stepLabelUserMessage(request, plan) },
+  ], { temperature: 0.2, timeout: STEP_LABEL_TIMEOUT_MS, model: model, purpose: 'step-label' });
+  return parseStepLabels(out, plan);
+}
+const STEP_LABEL_TIMEOUT_MS = 20000;
 
 // ── Génération d'un résumé ──────────────────────────────────────────────────
 async function generateSummary(thread) {

@@ -2575,6 +2575,322 @@ describe('ackDisplayOrder', function() {
   });
 });
 
+// Lot AW : segments d'étape d'une bulle. `call(name, group, goal)` fabrique un
+// ack d'appel (args + name, donc ackIsExpandable) ; l'étape vit dans le champ
+// `goal` de l'ack, que l'étiqueteur pose sur TOUS les appels d'un tour nommé.
+// Un appel sans `goal` est un tour pas (encore) nommé : il hérite.
+describe('ackGoalSegments (lot AW)', function() {
+  function call(name, group, goal, extra) {
+    var a = { kind: 'mcp_call', name: name, group: group, args: { q: name } };
+    if (goal !== undefined) a.goal = goal;
+    return Object.assign(a, extra || null);
+  }
+  function shape(segs) {
+    return segs.map(function(s) { return [s.goal, s.acks.map(function(a) { return a.name || a.kind; }).join(',')]; });
+  }
+  it('vide → aucun segment', function() {
+    expect(ackGoalSegments([]).length).toBe(0);
+    expect(ackGoalSegments(null).length).toBe(0);
+  });
+  it('une étape sur trois tours nommés → un segment', function() {
+    var segs = ackGoalSegments([call('a', 'g1', 'A'), call('b', 'g2', 'A'), call('c', 'g3', 'A')]);
+    expect(shape(segs)).toEqual([['A', 'a,b,c']]);
+    expect(segs[0].calls).toBe(3);
+  });
+  it('deux étapes, trois appels puis deux', function() {
+    var segs = ackGoalSegments([call('a', 'g1', 'A'), call('b', 'g2', 'A'), call('c', 'g3', 'A'), call('d', 'g4', 'B'), call('e', 'g4', 'B')]);
+    expect(shape(segs)).toEqual([['A', 'a,b,c'], ['B', 'd,e']]);
+  });
+  it('appel isolé non nommé, puis une étape de deux appels', function() {
+    var segs = ackGoalSegments([call('a', 'g1'), call('b', 'g2', 'B'), call('c', 'g3', 'B')]);
+    expect(shape(segs)).toEqual([[null, 'a'], ['B', 'b,c']]);
+  });
+  it('étape portée par un seul appel, seule → non affichée', function() {
+    var segs = ackGoalSegments([call('a', 'g1', 'Seul')]);
+    expect(shape(segs)).toEqual([[null, 'a']]);
+  });
+  it('un tour non nommé après une étape de deux appels : rangé sous elle', function() {
+    var segs = ackGoalSegments([call('a', 'g1', 'A'), call('b', 'g2', 'A'), call('c', 'g3')]);
+    expect(shape(segs)).toEqual([['A', 'a,b,c']]);
+    expect(segs[0].calls).toBe(3);
+  });
+  it('un appel qui hérite ne confirme pas l\'étape : une étape d\'un appel + un héritier → rien', function() {
+    var segs = ackGoalSegments([call('a', 'g1', 'A'), call('b', 'g2')]);
+    expect(shape(segs)).toEqual([[null, 'a,b']]);
+  });
+  // Cas réel : un appel par tour, chaque tour son étape ; le tour en vol, pas
+  // encore nommé, faisait passer l'étape précédente à deux appels.
+  it('étapes d\'un appel et tour en vol non nommé → rien ne s\'affiche', function() {
+    var segs = ackGoalSegments([call('a', 'g1', 'A'), call('b', 'g2', 'B'), call('c', 'g3')]);
+    expect(shape(segs)).toEqual([[null, 'a,b,c']]);
+  });
+  it('dans un tour, les appels qui précèdent le premier appel nommé le prennent', function() {
+    var segs = ackGoalSegments([call('a', 'g1'), call('b', 'g1', 'A'), call('c', 'g1'), call('d', 'g2', 'A')]);
+    expect(shape(segs)).toEqual([['A', 'a,b,c,d']]);
+  });
+  it('étape d\'un appel à côté d\'une étape de deux → affichée (l\'en-tête ne s\'éteint pas)', function() {
+    var segs = ackGoalSegments([call('a', 'g1', 'A'), call('b', 'g2', 'A'), call('c', 'g3', 'B'), call('d', 'g4', 'C'), call('e', 'g5', 'C')]);
+    expect(shape(segs)).toEqual([['A', 'a,b'], ['B', 'c'], ['C', 'd,e']]);
+  });
+  it('étapes d\'un appel chacune, sans étape de deux → aucune affichée', function() {
+    var segs = ackGoalSegments([call('a', 'g1', 'A'), call('b', 'g2', 'B')]);
+    expect(shape(segs)).toEqual([[null, 'a,b']]);
+  });
+  it('blancs normalisés, étape vide ou non chaîne → appel non nommé (hérite)', function() {
+    var segs = ackGoalSegments([
+      call('a', 'g1', '  Lire   le contrat '), call('b', 'g2', 'Lire le contrat'),
+      call('c', 'g3', '   '), call('d', 'g4', 42),
+    ]);
+    expect(shape(segs)).toEqual([['Lire le contrat', 'a,b,c,d']]);
+  });
+  it('acks legacy sans group : chacun est son propre tour', function() {
+    var segs = ackGoalSegments([call('a', undefined), call('b', undefined, 'B'), call('c', undefined, 'B')]);
+    expect(shape(segs)).toEqual([[null, 'a'], ['B', 'b,c']]);
+  });
+  // Un sous-produit sans args suit l'appel qui le précède dans l'ordre
+  // d'affichage — ici après que ackDisplayOrder a remis l'action devant.
+  it('sous-produit sans args : rattaché à son appel, compte pour zéro appel', function() {
+    var segs = ackGoalSegments([
+      call('x', 'g1'),
+      { kind: 'resource_stored', id: 'res_1' },
+      call('docs__pack', 'g2', 'Archiver', { kind: 'docs_pack', id: 'res_1' }),
+      call('y', 'g3', 'Archiver'),
+    ]);
+    expect(shape(segs)).toEqual([[null, 'x'], ['Archiver', 'docs__pack,resource_stored,y']]);
+    expect(segs[1].calls).toBe(2);
+  });
+  it('sous-produit en tête, sans appel devant lui → suit le premier appel', function() {
+    var segs = ackGoalSegments([{ kind: 'resource_stored', id: 'res_9' }, call('a', 'g1', 'A'), call('b', 'g2', 'A')]);
+    expect(shape(segs)).toEqual([['A', 'resource_stored,a,b']]);
+  });
+  it('aucun appel (acks legacy non enrichis) → un segment sans étape', function() {
+    var segs = ackGoalSegments([{ kind: 'memory_saved' }, { kind: 'memory_saved' }]);
+    expect(segs.length).toBe(1);
+    expect(segs[0].goal).toBe(null);
+    expect(segs[0].calls).toBe(0);
+  });
+  it('les segments couvrent tous les acks, sans muter l\'entrée', function() {
+    var input = [call('a', 'g1', 'A'), call('b', 'g1'), call('c', 'g2', 'B')];
+    var segs = ackGoalSegments(input);
+    var total = segs.reduce(function(n, s) { return n + s.acks.length; }, 0);
+    expect(total).toBe(3);
+    expect(input[0].goal).toBe('A');
+    expect(input[1].goal).toBe(undefined);
+  });
+  it('un miaou_goal laissé dans les args (ancien protocole) est ignoré', function() {
+    var segs = ackGoalSegments([
+      { kind: 'mcp_call', name: 'a', group: 'g1', args: { miaou_goal: 'X' } },
+      { kind: 'mcp_call', name: 'b', group: 'g2', args: { miaou_goal: 'X' } },
+    ]);
+    expect(segs[0].goal).toBe(null);
+  });
+});
+
+// Étape annoncée par le composer : dernier segment de la bulle en cours, appels
+// à venir compris (avec l'étiquette déjà reçue pour eux), règles du fil.
+describe('composerToolGoal (lot AW)', function() {
+  function ack(name, group, goal) {
+    var a = { role: 'tool-ack', kind: 'mcp_call', name: name, group: group, args: { q: name } };
+    if (goal) a.goal = goal;
+    return a;
+  }
+  function tc(name, args) { return { function: { name: name, arguments: JSON.stringify(args || {}) } }; }
+  var U = { role: 'user', content: 'x' };
+  it('un seul appel à venir étiqueté → rien (moins de deux appels)', function() {
+    expect(composerToolGoal([U], [tc('a')], 'G')).toBe(null);
+  });
+  it('deux appels à venir étiquetés → l\'étape', function() {
+    expect(composerToolGoal([U], [tc('a'), tc('b')], 'G')).toBe('G');
+  });
+  it('appel à venir pas encore étiqueté après une étape de deux appels → hérite', function() {
+    expect(composerToolGoal([U, ack('a', 'g1', 'G'), ack('b', 'g2', 'G')], [tc('c')])).toBe('G');
+  });
+  it('appel à venir qui change d\'étape après une étape de deux appels → la nouvelle, dès son premier appel', function() {
+    var thread = [U, ack('a', 'g1', 'A'), ack('b', 'g2', 'A')];
+    expect(composerToolGoal(thread, [tc('c')], 'B')).toBe('B');
+  });
+  it('sans étape de deux appels dans la bulle, une étape d\'un appel reste muette', function() {
+    var thread = [U, ack('a', 'g1', 'A')];
+    expect(composerToolGoal(thread, [tc('c')], 'B')).toBe(null);
+  });
+  it('phase d\'analyse (pas d\'appels à venir) → étape du dernier segment', function() {
+    expect(composerToolGoal([ack('a', 'g1', 'A'), ack('b', 'g2', 'A')], null)).toBe('A');
+  });
+  it('seule la bulle en cours compte : un message ferme la précédente', function() {
+    var thread = [ack('a', 'g1', 'A'), ack('b', 'g2'), { role: 'assistant', content: 'tour' }];
+    expect(composerToolGoal(thread, [tc('c')])).toBe(null);
+  });
+  it('arguments illisibles → l\'appel compte quand même', function() {
+    var thread = [ack('a', 'g1', 'A'), ack('b', 'g2', 'A')];
+    expect(composerToolGoal(thread, [{ function: { name: 'c', arguments: '{oops' } }])).toBe('A');
+  });
+});
+
+// Étiqueteur d'étapes (lot AW) : ce qui lui est soumis, et la lecture de sa
+// réponse. `call(name, group, goal, intent)` fabrique un ack d'appel enrichi.
+describe('stepLabelPlan (lot AW)', function() {
+  function call(name, group, goal, intent) {
+    var a = { role: 'tool-ack', kind: 'mcp_call', name: 'srv__web__' + name, group: group, args: { query: name + ' q' } };
+    if (intent) a.args.miaou_intent = intent;
+    if (goal) a.goal = goal;
+    return a;
+  }
+  function tc(name, args) { return { function: { name: 'srv__web__' + name, arguments: JSON.stringify(args || {}) } }; }
+  it('bulle vide et un seul appel à venir → rien à demander', function() {
+    expect(stepLabelPlan([], [tc('search')], 'g1')).toBe(null);
+  });
+  it('pas d\'appel à venir → rien à demander', function() {
+    expect(stepLabelPlan([call('a', 'g0')], [], 'g1')).toBe(null);
+  });
+  it('premier tour d\'un appel, puis un second tour → les deux soumis, aucune étape', function() {
+    var p = stepLabelPlan([call('search', 'g1', null, 'Recherche A')], [tc('fetch_url', { url: 'u' })], 'g2');
+    expect(p.steps.length).toBe(0);
+    expect(p.tours.map(function(t) { return t.group; })).toEqual(['g1', 'g2']);
+    expect(p.tours[0].lines).toEqual(['web__search — Recherche A']);
+    expect(p.tours[1].lines).toEqual(['web__fetch_url — u']);
+  });
+  it('tours déjà nommés → étapes fusionnées par étiquette, seul le tour qui commence est soumis', function() {
+    var p = stepLabelPlan([call('a', 'g1', 'A'), call('b', 'g1', 'A'), call('c', 'g2', 'A'), call('d', 'g3', 'B')], [tc('e')], 'g4');
+    expect(p.steps.map(function(s) { return s.label; })).toEqual(['A', 'B']);
+    expect(p.steps[0].lines.length).toBe(3);
+    expect(p.tours.map(function(t) { return t.group; })).toEqual(['g4']);
+  });
+  it('un tour sans étiquette entre deux tours nommés n\'est pas resoumis', function() {
+    var p = stepLabelPlan([call('a', 'g1', 'A'), call('b', 'g2'), call('c', 'g3', 'A')], [tc('d')], 'g4');
+    expect(p.tours.map(function(t) { return t.group; })).toEqual(['g4']);
+    expect(p.steps[0].lines.length).toBe(3);
+  });
+  it('tours sans étiquette APRÈS la dernière étape → resoumis avant le tour qui commence', function() {
+    var p = stepLabelPlan([call('a', 'g1', 'A'), call('b', 'g2')], [tc('c')], 'g3');
+    expect(p.tours.map(function(t) { return t.group; })).toEqual(['g2', 'g3']);
+  });
+  it('une étape ne montre que ses derniers appels', function() {
+    var acks = [];
+    for (var i = 0; i < 9; i++) acks.push(call('s' + i, 'g' + i, 'A'));
+    var p = stepLabelPlan(acks, [tc('x')], 'gx');
+    expect(p.steps[0].lines.length).toBe(STEP_LABEL_STEP_CALLS);
+    expect(p.steps[0].lines[STEP_LABEL_STEP_CALLS - 1]).toBe('web__s8 — s8 q');
+  });
+  it('les acks du tour qui commence, déjà poussés, ne sont pas comptés deux fois', function() {
+    var p = stepLabelPlan([call('a', 'g1', 'A'), call('b', 'g1', 'A')], [tc('c')], 'g1');
+    expect(p).toBe(null);
+  });
+  it('sous-produit sans args ignoré, ligne sans intention → valeurs des arguments', function() {
+    var p = stepLabelPlan([{ role: 'tool-ack', kind: 'resource_stored', id: 'r' }, call('a', 'g1')], [tc('b', { n: 3, flag: true })], 'g2');
+    expect(p.tours[0].lines).toEqual(['web__a — a q']);
+    expect(p.tours[1].lines).toEqual(['web__b — 3']);
+  });
+  it('message utilisateur : demande tronquée, étapes et tours numérotés', function() {
+    var p = stepLabelPlan([call('a', 'g1', 'A', 'Recherche A')], [tc('b')], 'g2');
+    var m = stepLabelUserMessage('Compare  Lyon\net Nantes', p);
+    expect(m).toContain('Demande : Compare Lyon et Nantes');
+    expect(m).toContain('1. A\n   - web__a — Recherche A');
+    expect(m).toContain('Nouveaux tours :\nTour 1 :\n   - web__b');
+  });
+});
+
+describe('parseStepLabels (lot AW)', function() {
+  function plan(stepLabels, groups) {
+    return { steps: stepLabels.map(function(l) { return { label: l, lines: [] }; }),
+      tours: groups.map(function(g) { return { group: g, lines: [] }; }) };
+  }
+  it('« = » poursuit la dernière étape nommée', function() {
+    expect(parseStepLabels('=', plan(['A'], ['g2']))).toEqual({ g2: 'A' });
+  });
+  it('intitulé puis « = » dans la même réponse → le second hérite du premier', function() {
+    expect(parseStepLabels('Recherche des offres\n=', plan([], ['g1', 'g2']))).toEqual({ g1: 'Recherche des offres', g2: 'Recherche des offres' });
+  });
+  it('« = » sans étape précédente → ignoré', function() {
+    expect(parseStepLabels('=', plan([], ['g1']))).toEqual({});
+  });
+  it('puces, numéros, guillemets, gras et point final retirés', function() {
+    expect(parseStepLabels('1. « **Lecture des pages.** »', plan([], ['g1']))).toEqual({ g1: 'Lecture des pages' });
+    expect(parseStepLabels('Tour 1 : Lecture des pages', plan([], ['g1']))).toEqual({ g1: 'Lecture des pages' });
+  });
+  it('raisonnement dans le contenu → seul ce qui suit </think>', function() {
+    expect(parseStepLabels('<think>hmm\nTour 1 ?</think>\nVérification des prix', plan([], ['g1']))).toEqual({ g1: 'Vérification des prix' });
+  });
+  it('phrase trop longue ou ligne manquante → tour laissé sans étiquette', function() {
+    var out = parseStepLabels('Je pense que ce tour poursuit la recherche commencée plus haut sur le marché', plan(['A'], ['g2', 'g3']));
+    expect(out).toEqual({});
+  });
+  it('sortie vide ou nulle → aucune étiquette', function() {
+    expect(parseStepLabels('', plan(['A'], ['g2']))).toEqual({});
+    expect(parseStepLabels(null, plan(['A'], ['g2']))).toEqual({});
+  });
+});
+
+describe('stepBackfillBubbles / applyStepLabelsToMessages (lot AW, rattrapage)', function() {
+  function ack(n, group, goal) {
+    var a = { role: 'tool-ack', kind: 'mcp_call', name: 'srv__notes__list', group: group, args: { page: n } };
+    if (goal) a.goal = goal;
+    return a;
+  }
+  it('retient une bulle de deux appels sans étape, avec la demande qui la précède', function() {
+    var out = stepBackfillBubbles([
+      { role: 'user', content: 'Recense' }, ack(1, 'gA'), ack(2, 'gB'), { role: 'assistant', content: 'ok' },
+    ]);
+    expect(out.length).toBe(1);
+    expect(out[0].request).toBe('Recense');
+    expect(out[0].plan.steps.length).toBe(0);
+    expect(out[0].plan.tours.map(function(t) { return t.group; })).toEqual(['gA', 'gB']);
+  });
+  it('écarte une bulle d\'un seul appel, une bulle déjà nommée même en partie, et les acks sans group', function() {
+    var out = stepBackfillBubbles([
+      { role: 'user', content: 'a' }, ack(1, 'g1'), { role: 'assistant', content: 'x' },
+      { role: 'user', content: 'b' }, ack(2, 'g2', 'Déjà'), ack(3, 'g3'), { role: 'assistant', content: 'y' },
+      { role: 'user', content: 'c' }, ack(4), ack(5), { role: 'assistant', content: 'z' },
+    ]);
+    expect(out.length).toBe(0);
+  });
+  it('demande en parts (image jointe) : seul le texte', function() {
+    var out = stepBackfillBubbles([
+      { role: 'user', content: [{ type: 'text', text: 'Décris' }, { type: 'image_url', image_url: { url: 'x' } }] },
+      ack(1, 'g1'), ack(2, 'g1'),
+    ]);
+    expect(out[0].request).toBe('Décris');
+  });
+  it('un message utilisateur synthétique ne remplace pas la demande', function() {
+    var out = stepBackfillBubbles([
+      { role: 'user', content: 'Vraie' }, { role: 'user', content: 'image', _synthetic: true }, ack(1, 'g1'), ack(2, 'g1'),
+    ]);
+    expect(out[0].request).toBe('Vraie');
+  });
+  it('applyStepLabelsToMessages pose l\'étape par groupe, rend les acks modifiés, idempotente', function() {
+    var msgs = [{ role: 'user', content: 'x' }, ack(1, 'gA'), ack(2, 'gB'), ack(3, 'gC')];
+    var t = applyStepLabelsToMessages(msgs, { gA: 'A', gB: 'A' });
+    expect(t.length).toBe(2);
+    expect(msgs.map(function(m) { return m.goal || null; })).toEqual([null, 'A', 'A', null]);
+    expect(applyStepLabelsToMessages(msgs, { gA: 'A', gB: 'A' }).length).toBe(0);
+  });
+});
+
+describe('exports : buts de la suite d\'appels (lot AW)', function() {
+  function call(n, group, goal) {
+    var a = { role: 'tool-ack', kind: 'mcp_call', name: 'srv__t' + n, intent: 'Appel ' + n, group: group, args: { q: n }, result: 'ok' };
+    if (goal) a.goal = goal;
+    return a;
+  }
+  it('Markdown : une ligne de but avant les appels de chaque but, numérotation continue', function() {
+    var md = formatToolAcksMd([call(1, 'g1', 'Recherche'), call(2, 'g2', 'Recherche'), call(3, 'g3', 'Lecture'), call(4, 'g4', 'Lecture')]);
+    var ls = md.split('\n').map(function(l) { return l.replace(/ +$/, ''); });
+    var b1 = ls.indexOf('> *But : Recherche*'), b2 = ls.indexOf('> *But : Lecture*');
+    var n1 = ls.findIndex(function(l) { return l.indexOf('> 1. ') === 0; });
+    var n3 = ls.findIndex(function(l) { return l.indexOf('> 3. ') === 0; });
+    expect(b1).toBe(1);
+    expect(n1).toBe(2);
+    expect(b2 > n1 && n3 === b2 + 1).toBe(true);
+  });
+  it('Markdown sans but : inchangé', function() {
+    expect(formatToolAcksMd([call(1, 'g1'), call(2, 'g2')]).indexOf('But :')).toBe(-1);
+  });
+  it('HTML : intertitre échappé avant les intentions du but', function() {
+    var html = formatToolAcksHtml([call(1, 'g1', '<b>X</b>'), call(2, 'g2', '<b>X</b>')]);
+    expect(html).toContain('<div class="tool-ack-goal">&lt;b&gt;X&lt;/b&gt;</div>');
+    expect(html.indexOf('<b>X')).toBe(-1);
+  });
+});
+
 describe('ackDownloadTarget (lot V)', function() {
   it('resource_stored → cible par id de ressource', function() {
     var t = ackDownloadTarget({ kind: 'resource_stored', id: 'res_1', resourceName: 'a.csv', mime: 'text/csv' });

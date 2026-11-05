@@ -245,6 +245,7 @@ const DEFAULT_SETTINGS = {
   sidebarWidth: 264,       // largeur de la sidebar (px), redimensionnable 264 → 528
   colWidth: 0,             // largeur de la colonne centrale : index dans COL_WIDTH_STEPS (ui.js), 0 = la plus étroite
   intentTracing: true,      // demander au modèle de décrire ses appels d'outils en langage naturel
+  toolSteps: true,          // lot AW — MIAOU nomme les étapes d'une suite d'appels (requête courte par tour, hors contexte)
   describeFiles: true, // description auto des fichiers de bibliothèque d'espace à l'ingestion (lot Cbis)
   // Manifeste COMPLET de la bibliothèque d'espace (une ligne par fichier, avec
   // description). Défaut false : la note courte annonce le nombre de fichiers

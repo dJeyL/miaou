@@ -1600,6 +1600,17 @@ modèle.
   recherche, outils distants…) pour une même réponse, elles s'affichent en
   mode compact — un badge « N étapes » à cliquer pour tout déplier en liste, et
   se replier à nouveau.
+- **But des appels** : quand une réponse enchaîne plusieurs appels, MIAOU nomme
+  ce qu'ils font ensemble (« Recherche des offres », puis « Lecture des
+  conditions »). Le but en cours s'affiche au-dessus de la trace visible et dans
+  la zone de saisie pendant que le modèle travaille ; en liste, chaque but
+  devient un intertitre, et le badge compte les buts (« 2 buts · 7 étapes »).
+  Ces intitulés sont rédigés par MIAOU d'après les appels, au moyen d'une courte
+  requête au modèle par série d'appels, et non par le modèle qui travaille : ils
+  n'entrent pas dans la conversation. Les conversations plus anciennes sont
+  complétées en arrière-plan à leur ouverture. Une réponse dont aucun but ne
+  couvre au moins deux appels n'en affiche pas. Réglages › « Buts des appels
+  d'outils » désactive la fonction.
 - **Récupérer un fichier produit par un outil** : chaque trace d'outil qui porte
   sur un fichier — « Ressource enregistrée », « Ressource présentée », « Pièce
   jointe rappelée » — a une icône de téléchargement à son extrémité. Ça vaut

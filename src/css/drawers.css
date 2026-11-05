@@ -1453,6 +1453,15 @@ textarea.skill-content {
   padding: 0 5px;
 }
 .inspect-intent { margin: 0; color: var(--text-2); font-size: 12px; line-height: 1.45; }
+.inspect-goal { margin: 0; display: flex; gap: 6px; align-items: baseline; color: var(--text-2); font-size: 12px; line-height: 1.45; }
+.inspect-goal-label {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
 
 .inspect-section { display: flex; flex-direction: column; gap: 6px; }
 .inspect-section-title {

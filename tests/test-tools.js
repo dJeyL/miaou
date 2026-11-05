@@ -337,6 +337,57 @@ describe('callTool : un handler interne sans ack reçoit un ack tool_called', fu
   });
 });
 
+// Champ de traçage (miaou_intent) : ajouté par MIAOU aux schémas, il ne doit
+// pas distinguer deux appels par ailleurs identiques dans la borne de
+// répétition.
+describe('stripTraceArgs', function() {
+  it('retire miaou_intent, garde le reste, ne mute pas l\'entrée', function() {
+    var args = { q: 'x', miaou_intent: 'i' };
+    var out = stripTraceArgs(args);
+    expect(out).toEqual({ q: 'x' });
+    expect(args.miaou_intent).toBe('i');
+  });
+  it('args absents ou non objet → objet vide', function() {
+    expect(stripTraceArgs(null)).toEqual({});
+    expect(stripTraceArgs(undefined)).toEqual({});
+  });
+});
+
+describe('toolRepeatKey', function() {
+  it('ignore miaou_intent', function() {
+    var a = toolRepeatKey('t', JSON.stringify({ q: 'x', miaou_intent: 'premier' }));
+    var b = toolRepeatKey('t', JSON.stringify({ q: 'x', miaou_intent: 'second' }));
+    expect(a).toBe(b);
+  });
+  it('insensible à l\'ordre des clefs, y compris imbriquées', function() {
+    expect(toolRepeatKey('t', '{"a":1,"b":{"x":1,"y":2}}')).toBe(toolRepeatKey('t', '{"b":{"y":2,"x":1},"a":1}'));
+  });
+  it('arguments distincts ou outils distincts → clefs distinctes', function() {
+    expect(toolRepeatKey('t', '{"q":"x"}') === toolRepeatKey('t', '{"q":"y"}')).toBe(false);
+    expect(toolRepeatKey('t', '{"q":"x"}') === toolRepeatKey('u', '{"q":"x"}')).toBe(false);
+  });
+  it('arguments illisibles → chaîne brute, deux malformés distincts restent distincts', function() {
+    expect(toolRepeatKey('t', '{oops')).toBe('t:{oops');
+    expect(toolRepeatKey('t', '{oops') === toolRepeatKey('t', '{nope')).toBe(false);
+  });
+  it('arguments vides → même clef que {}', function() {
+    expect(toolRepeatKey('t', '')).toBe(toolRepeatKey('t', '{}'));
+  });
+});
+
+// Les étapes sont nommées par MIAOU (étiqueteur, lot AW), jamais demandées au
+// modèle qui travaille : rien n'en paraît dans les schémas ni la doctrine.
+describe('toolDefinitions : aucun champ d\'étape demandé au modèle', function() {
+  it('seul miaou_intent est ajouté, et la doctrine ne parle pas d\'étape', function() {
+    localStorage.clear();
+    saveSettings({ intentTracing: true, toolSteps: true });
+    var d = toolDefinitions().find(function(x) { return x.function.name === 'miaou__conv__list'; });
+    var extra = Object.keys(d.function.parameters.properties).filter(function(k) { return k.indexOf('miaou_') === 0; });
+    expect(extra).toEqual(['miaou_intent']);
+    expect(INTENT_DOCTRINE.indexOf('miaou_goal')).toBe(-1);
+  });
+});
+
 // updateLastPendingToolAck : garde minLength (support direct du correctif B5)
 describe('updateLastPendingToolAck : garde minLength', function() {
   it('sans minLength : enrichit le dernier ack', function() {

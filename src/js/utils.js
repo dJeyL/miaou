@@ -41,6 +41,8 @@ const ACK_COPY_FIELDS = [
   'id', 'content', 'prevContent',        // souvenirs (create/update/delete)
   'title', 'count', 'convId',            // lectures d'historique
   'server', 'name', 'intent',            // MCP / traçage d'intention
+  'goal',                                 // lot AW — étape de la suite d'appels, nommée par MIAOU (étiqueteur, jamais le modèle) ; posée
+                                          // sur l'ENTRÉE du fil après coup (applyStepLabels, main.js), listée ici pour qu'une copie la garde
   'resourceName', 'mime', 'size',        // ressources IDB
   'appendedLen',                          // lot Y — caractères AJOUTÉS, distincts de `size` (total après ajout) ;
                                           // porté par resource_appended ET par l'ack js_eval d'un run avec output_handle
@@ -202,6 +204,369 @@ function ackDisplayOrder(acks) {
   }
   return out;
 }
+
+// Retire des arguments d'un tool_call le champ de traçage que MIAOU ajoute aux
+// schémas (`miaou_intent`) : ni un handler interne ni un serveur MCP ne doivent
+// le recevoir. Rend une COPIE ; les arguments d'origine restent intacts, c'est
+// eux qui sont persistés et rejoués. Pure.
+function stripTraceArgs(args) {
+  const out = args && typeof args === 'object' ? Object.assign({}, args) : {};
+  delete out.miaou_intent;
+  return out;
+}
+
+// Clef de répétition d'un tool_call (`TOOL_REPEAT_MAX`, api.js) : le nom et les
+// arguments SANS le champ de traçage, clefs triées. Sur la chaîne brute, un
+// appel identique qui ne différait que par sa phrase d'intention échappait à la
+// borne.
+function toolRepeatKey(name, rawArgs) {
+  const raw = rawArgs || '';
+  let parsed;
+  try { parsed = JSON.parse(raw || '{}'); } catch (e) { return name + ':' + raw; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return name + ':' + raw;
+  const sorted = function(v) {
+    if (Array.isArray(v)) return v.map(sorted);
+    if (!v || typeof v !== 'object') return v;
+    const o = {};
+    for (const k of Object.keys(v).sort()) o[k] = sorted(v[k]);
+    return o;
+  };
+  return name + ':' + JSON.stringify(sorted(stripTraceArgs(parsed)));
+}
+
+// Découpe les acks d'UNE bulle assistant en segments d'étape (lot AW). Pure,
+// testable en QuickJS ; source unique du live, du reload et des deux exports,
+// qui groupent tous par bulle. Rend `[{ goal, acks, calls }]` : segments
+// contigus qui couvrent tous les acks, dans l'ORDRE D'AFFICHAGE
+// (`ackDisplayOrder` est appliqué ici, pour que chaque consommateur peigne les
+// acks d'un segment dans le même ordre).
+//
+// L'étape est le champ `goal` de l'ack, posé par MIAOU (étiqueteur d'étapes,
+// `stepLabelRequest`), jamais par le modèle qui travaille : les sondes du lot
+// ont montré qu'aucun modèle ne tient un intitulé d'étape d'un argument à
+// l'autre. L'étiqueteur nomme un tour entier, donc tous les appels d'un tour
+// portent le même `goal` ; les règles ci-dessous tolèrent quand même un tour
+// partiellement étiqueté (étiquette arrivée entre deux appels).
+//
+// UN APPEL = un ack `ackIsExpandable` (args + name), le même critère que le
+// payload. Un ack sans `args` est un sous-produit (`resource_stored`) : il suit
+// l'appel qui le précède dans l'ordre d'affichage, ou le premier appel s'il
+// n'en a aucun devant lui.
+//
+// RÈGLES, dans cet ordre :
+//   1. dans un tour (`group`), les appels qui précèdent la PREMIÈRE étape
+//      posée du tour la prennent ; après elle, chaque appel garde la dernière
+//      vue ;
+//   2. un tour sans étape (étiquetage absent, en cours ou échoué) hérite de
+//      l'étape courante de la bulle ;
+//   3. un segment qui couvre moins de deux appels n'affiche son étape que si
+//      la bulle compte AUSSI une étape d'au moins deux appels : seul dans sa
+//      bulle, il doublerait l'intention (son `goal` vaut alors null) ; à côté
+//      d'une vraie étape, il en est une de plus — et l'en-tête ne s'éteint pas
+//      au premier appel de chaque nouvelle étape, avant que le suivant ne la
+//      confirme (constaté sur un modèle qui fait un appel par tour). Les
+//      segments sans étape voisins sont fusionnés.
+//   Le seuil de deux appels ne compte que les appels qui PORTENT l'étape :
+//   un appel qui en hérite (tour dont l'étiquette n'est pas encore arrivée,
+//   ou n'arrivera pas) est rangé sous elle sans la confirmer. Sinon l'appel
+//   en vol faisait passer l'étape précédente à deux appels, tout s'affichait,
+//   puis s'éteignait à l'arrivée de sa propre étiquette (constaté en réel).
+// Pas de remise à zéro à coder : une bulle se termine à chaque message
+// utilisateur, interjection comprise.
+function ackGoalOf(m) {
+  const g = m ? m.goal : null;
+  if (typeof g !== 'string') return null;
+  const t = g.replace(/\s+/g, ' ').trim();
+  return t || null;
+}
+function ackGoalSegments(acks) {
+  const list = ackDisplayOrder(acks);
+  // Appels, et rattachement de chaque ack à l'index de son appel.
+  const calls = [];
+  const owner = [];
+  for (let i = 0; i < list.length; i++) {
+    if (ackIsExpandable(list[i])) calls.push(i);
+    owner.push(calls.length - 1);
+  }
+  if (!calls.length) return list.length ? [{ goal: null, acks: list, calls: 0 }] : [];
+  for (let i = 0; i < owner.length; i++) if (owner[i] < 0) owner[i] = 0;
+  // But effectif de chaque appel (règles 1 et 2).
+  const eff = new Array(calls.length).fill(null);
+  let current = null;
+  let k = 0;
+  while (k < calls.length) {
+    const grp = list[calls[k]].group;
+    let end = k + 1;
+    if (grp != null) while (end < calls.length && list[calls[end]].group === grp) end++;
+    let first = null;
+    for (let c = k; c < end && first == null; c++) first = ackGoalOf(list[calls[c]]);
+    if (first != null) current = first;
+    for (let c = k; c < end; c++) {
+      const g = ackGoalOf(list[calls[c]]);
+      if (g != null) current = g;
+      eff[c] = current;
+    }
+    k = end;
+  }
+  // Segments bruts par but effectif, puis seuil de deux appels (règle 3).
+  const raw = [];
+  for (let i = 0; i < list.length; i++) {
+    const goal = eff[owner[i]];
+    const last = raw[raw.length - 1];
+    const isCall = calls[owner[i]] === i ? 1 : 0;
+    const own = isCall && ackGoalOf(list[i]) != null ? 1 : 0;
+    if (last && last.goal === goal) {
+      last.acks.push(list[i]);
+      last.calls += isCall;
+      last.own += own;
+    } else {
+      raw.push({ goal, acks: [list[i]], calls: isCall, own });
+    }
+  }
+  const out = [];
+  const anyStep = raw.some(s => s.goal != null && s.own >= 2);
+  for (const s of raw) {
+    const goal = (s.own >= 2 || anyStep) ? s.goal : null;
+    const last = out[out.length - 1];
+    if (last && last.goal === null && goal === null) {
+      last.acks = last.acks.concat(s.acks);
+      last.calls += s.calls;
+    } else {
+      out.push({ goal, acks: s.acks, calls: s.calls });
+    }
+  }
+  return out;
+}
+
+// Acks de la bulle en cours d'un fil : la suite d'acks qui le termine (une
+// bulle se ferme à tout message qui n'est pas un ack). Pure.
+function bubbleTailAcks(thread) {
+  const list = Array.isArray(thread) ? thread : [];
+  let start = list.length;
+  while (start > 0 && list[start - 1] && isAckRole(list[start - 1].role)) start--;
+  return list.slice(start);
+}
+
+// Acks fictifs d'un tour qui va s'exécuter, depuis ses tool_calls (arguments en
+// chaîne brute) : ce que le fil contiendra une fois le tour servi. Pure.
+function upcomingCallAcks(upcoming, group, goal) {
+  const out = [];
+  for (const tc of (Array.isArray(upcoming) ? upcoming : [])) {
+    const fn = tc && tc.function;
+    if (!fn || !fn.name) continue;
+    let args = {};
+    try { args = JSON.parse(fn.arguments || '{}') || {}; } catch (e) { args = {}; }
+    const a = { role: 'tool-ack', name: fn.name, args, group: group == null ? '\x00upcoming' : group };
+    if (goal) a.goal = goal;
+    out.push(a);
+  }
+  return out;
+}
+
+// Étape à annoncer dans le composer pendant une phase d'outils : celle du
+// dernier segment de la bulle en cours, appels à venir compris. `upcoming` :
+// les tool_calls du tour qui s'exécute, absents à la phase d'analyse ;
+// `upcomingGoal` : l'étape que l'étiqueteur leur a déjà donnée, s'il a
+// répondu. Mêmes règles que le fil (ackGoalSegments), donc une étape portée
+// par un seul appel ne s'annonce pas plus ici que là. Pure.
+function composerToolGoal(thread, upcoming, upcomingGoal) {
+  const acks = bubbleTailAcks(thread).concat(upcomingCallAcks(upcoming, null, upcomingGoal));
+  const segs = ackGoalSegments(acks);
+  return segs.length ? segs[segs.length - 1].goal : null;
+}
+
+// ── Étiqueteur d'étapes (lot AW) ────────────────────────────────────────────
+// MIAOU nomme lui-même les étapes d'une suite d'appels : à chaque tour
+// d'outils, une requête courte au modèle de la génération, HORS de son
+// contexte (rien n'est ajouté au message système ni aux schémas), dit si le
+// tour poursuit l'étape en cours ou en ouvre une, et laquelle. Ces purs
+// préparent la requête et lisent la réponse ; l'orchestration est dans main.js
+// (`noteToolTourForSteps`), l'appel réseau dans api.js (`generateStepLabels`).
+
+// Ligne d'appel lue par l'étiqueteur : le nom de l'outil sans son préfixe de
+// serveur (« conv__list », « web__search » : le namespace dit la famille) et ce que
+// l'appel fait — l'intention si le modèle l'a donnée, sinon les valeurs
+// scalaires des arguments, tronquées. Pure.
+function stepLabelCallLine(m) {
+  const parts = String((m && m.name) || '').split('__');
+  const name = parts.length > 1 ? parts.slice(1).join('__') : parts[0];
+  const args = m && m.args && typeof m.args === 'object' ? m.args : {};
+  const intent = typeof args.miaou_intent === 'string' && args.miaou_intent.trim()
+    ? args.miaou_intent : (typeof m.intent === 'string' ? m.intent : '');
+  let desc = intent.replace(/\s+/g, ' ').trim();
+  if (!desc) {
+    desc = Object.keys(args).filter(k => k !== 'miaou_intent')
+      .map(k => args[k]).filter(v => typeof v === 'string' || typeof v === 'number')
+      .map(v => String(v).replace(/\s+/g, ' ').trim()).join(' ; ');
+  }
+  if (desc.length > STEP_LABEL_LINE_MAX) desc = desc.slice(0, STEP_LABEL_LINE_MAX - 1) + '…';
+  return name + (desc ? ' — ' + desc : '');
+}
+const STEP_LABEL_LINE_MAX = 120;
+// Appels montrés par étape déjà nommée : les derniers suffisent à dire où en
+// est l'étape, et bornent la requête quelle que soit la longueur de la bulle.
+const STEP_LABEL_STEP_CALLS = 4;
+
+// Ce qu'il faut demander à l'étiqueteur pour la bulle en cours, ou null s'il
+// n'y a rien à demander. `acks` : les acks de la bulle (bubbleTailAcks) ;
+// `upcoming` / `upcomingGroup` : le tour qui commence. Rend
+// `{ steps: [{ label, lines }], tours: [{ group, lines }] }` :
+//   - `steps`, les étapes déjà nommées, dans l'ordre, avec leurs derniers
+//     appels (tours voisins de même étiquette fusionnés) ;
+//   - `tours`, les tours à nommer : ceux qui suivent la dernière étape nommée
+//     sans étiquette (un premier tour d'un seul appel n'est pas soumis seul :
+//     une étape d'un appel ne s'affiche pas), puis le tour qui commence. Un
+//     tour sans étiquette PRÉCÉDÉ d'un tour nommé n'est pas resoumis : il
+//     hérite (règle 2 d'ackGoalSegments).
+// null quand la bulle, tour qui commence compris, compte moins de deux appels :
+// aucune étape ne s'afficherait. Pure.
+function stepLabelPlan(acks, upcoming, upcomingGroup) {
+  // Les acks du tour qui commence peuvent déjà être dans la bulle (requête
+  // chaînée derrière une précédente, partie après leur arrivée) : ils sont
+  // comptés une fois, par ses tool_calls.
+  const calls = ackDisplayOrder(Array.isArray(acks) ? acks : [])
+    .filter(a => ackIsExpandable(a) && (upcomingGroup == null || a.group !== upcomingGroup));
+  const next = upcomingCallAcks(upcoming, upcomingGroup);
+  if (!next.length || calls.length + next.length < 2) return null;
+  const tours = [];
+  for (const c of calls) {
+    const last = tours[tours.length - 1];
+    if (last && c.group != null && last.group === c.group) last.calls.push(c);
+    else tours.push({ group: c.group, calls: [c] });
+  }
+  for (const t of tours) {
+    t.label = null;
+    for (const c of t.calls) { const g = ackGoalOf(c); if (g) { t.label = g; break; } }
+  }
+  let lastLabeled = -1;
+  for (let i = 0; i < tours.length; i++) if (tours[i].label) lastLabeled = i;
+  const steps = [];
+  for (let i = 0; i <= lastLabeled; i++) {
+    const t = tours[i];
+    const label = t.label || (steps.length ? steps[steps.length - 1].label : null);
+    if (!label) continue;
+    const prev = steps[steps.length - 1];
+    if (prev && prev.label === label) prev.calls = prev.calls.concat(t.calls);
+    else steps.push({ label, calls: t.calls.slice() });
+  }
+  const pending = tours.slice(lastLabeled + 1).map(t => ({ group: t.group, lines: t.calls.map(stepLabelCallLine) }));
+  pending.push({ group: upcomingGroup, lines: next.map(stepLabelCallLine) });
+  return {
+    steps: steps.map(st => ({ label: st.label, lines: st.calls.slice(-STEP_LABEL_STEP_CALLS).map(stepLabelCallLine) })),
+    tours: pending,
+  };
+}
+
+// Texte d'un contenu utilisateur, chaîne ou parts (image jointe au tour
+// d'attache, où seul le texte compte). Pure.
+function userContentText(content) {
+  return Array.isArray(content)
+    ? content.filter(p => p && p.type === 'text').map(p => p.text).join(' ')
+    : String(content == null ? '' : content);
+}
+
+// Rattrapage des conversations antérieures à l'étiqueteur : les bulles du fil
+// à nommer d'un coup, chacune avec la demande qui la précède. Une bulle est
+// retenue si elle compte au moins deux appels, qu'AUCUN ne porte d'étape (une
+// bulle déjà nommée, même en partie, n'est pas reprise) et que ses appels
+// portent un `group` (les acks d'avant les groupes de tour ne se nomment pas :
+// l'étiquette s'adresse par groupe). Rend `[{ request, plan }]`, `plan` au
+// format de stepLabelPlan sans étape déjà nommée : tous les tours de la bulle
+// sont soumis dans une seule requête. Pure.
+function stepBackfillBubbles(thread) {
+  const list = Array.isArray(thread) ? thread : [];
+  const out = [];
+  let request = '';
+  let i = 0;
+  while (i < list.length) {
+    const m = list[i];
+    if (!m || !isAckRole(m.role)) {
+      if (m && m.role === 'user' && !m._synthetic) request = userContentText(m.content);
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < list.length && list[j] && isAckRole(list[j].role)) j++;
+    const calls = ackDisplayOrder(list.slice(i, j)).filter(ackIsExpandable);
+    i = j;
+    if (calls.length < 2 || calls.some(c => ackGoalOf(c))) continue;
+    const tours = [];
+    for (const c of calls) {
+      if (c.group == null) continue;
+      const last = tours[tours.length - 1];
+      if (last && last.group === c.group) last.lines.push(stepLabelCallLine(c));
+      else tours.push({ group: c.group, lines: [stepLabelCallLine(c)] });
+    }
+    if (tours.length) out.push({ request, plan: { steps: [], tours } });
+  }
+  return out;
+}
+
+// Pose des étiquettes `{ group: étiquette }` sur les acks d'une liste de
+// messages (fil ou record persisté), en place. Rend les acks modifiés. Pure
+// au sens du runner : aucune I/O.
+function applyStepLabelsToMessages(messages, labels) {
+  const touched = [];
+  for (const m of (Array.isArray(messages) ? messages : [])) {
+    if (!m || !isAckRole(m.role) || m.group == null) continue;
+    const label = labels[m.group];
+    if (label && m.goal !== label) { m.goal = label; touched.push(m); }
+  }
+  return touched;
+}
+
+// Message utilisateur de la requête d'étiquetage. `request` : le dernier
+// message de l'utilisateur (tronqué), qui situe le travail. Pure.
+function stepLabelUserMessage(request, plan) {
+  const req = String(request || '').replace(/\s+/g, ' ').trim();
+  const out = ['Demande : ' + (req.length > 400 ? req.slice(0, 399) + '…' : req), ''];
+  if (plan.steps.length) {
+    out.push('Étapes déjà nommées :');
+    plan.steps.forEach((st, i) => {
+      out.push((i + 1) + '. ' + st.label);
+      for (const l of st.lines) out.push('   - ' + l);
+    });
+  } else {
+    out.push('Étapes déjà nommées : aucune.');
+  }
+  out.push('', 'Nouveaux tours :');
+  plan.tours.forEach((t, i) => {
+    out.push('Tour ' + (i + 1) + ' :');
+    for (const l of t.lines) out.push('   - ' + l);
+  });
+  return out.join('\n');
+}
+
+// Lit la réponse de l'étiqueteur : une ligne par tour soumis, « = » (poursuit
+// l'étape précédente) ou un intitulé. Rend `{ group: étiquette }` pour les
+// tours résolus ; une ligne illisible, manquante ou trop longue laisse son
+// tour sans étiquette (il héritera au rendu). « = » se résout sur l'étape
+// précédente, nommée avant ou dans cette même réponse ; sans elle, il est
+// ignoré. Raisonnement laissé dans `content` (`</think>`) retiré comme au
+// titrage. Pure.
+function parseStepLabels(out, plan) {
+  let t = String(out || '');
+  const thinkEnd = t.toLowerCase().lastIndexOf('</think>');
+  if (thinkEnd !== -1) t = t.slice(thinkEnd + '</think>'.length);
+  const lines = t.split('\n')
+    .map(l => l.replace(/^\s*(?:[-*•]\s*|\d+[.)]\s*|tour\s*\d+\s*:\s*)/i, '')
+      .replace(/[*_`]+/g, '').replace(/^["'«»\s]+|["'«».\s]+$/g, '').trim())
+    .filter(Boolean);
+  let prev = plan.steps.length ? plan.steps[plan.steps.length - 1].label : null;
+  const res = {};
+  plan.tours.forEach((tour, i) => {
+    const l = lines[i];
+    let label = null;
+    if (l === '=' || /^(suite|idem)$/i.test(l || '')) label = prev;
+    else if (l && l.length <= STEP_LABEL_MAX_CHARS && l.split(/\s+/).length <= STEP_LABEL_MAX_WORDS) label = l;
+    if (label && tour.group != null) { res[tour.group] = label; prev = label; }
+  });
+  return res;
+}
+// Au-delà, la ligne est une phrase ou un commentaire, pas un intitulé : le
+// prompt demande 2 à 6 mots, la marge absorbe une préposition de trop.
+const STEP_LABEL_MAX_WORDS = 9;
+const STEP_LABEL_MAX_CHARS = 70;
 
 function ackDownloadTarget(m) {
   if (!m) return null;
@@ -3370,6 +3735,7 @@ function _formatToolCallMd(m) {
 // Un seul appel → "Outil appelé :" ; plusieurs → "n outils appelés :" en liste
 // numérotée — compteur en toutes lettres, JAMAIS entre parenthèses (même formule
 // que le summary de l'export HTML, cf. formatToolAcksHtml).
+const EXPORT_GOAL_MAX = 120;
 function formatToolAcksMd(acks) {
   if (!acks || !acks.length) return '';
   const lines = [];
@@ -3379,11 +3745,20 @@ function formatToolAcksMd(acks) {
     for (let i = 1; i < inner.length; i++) lines.push('>    ' + inner[i]);
   } else {
     lines.push('> **' + acks.length + ' outils appelés :**');
-    acks.forEach((m, idx) => {
-      const inner = _formatToolCallMd(m);
-      lines.push('> ' + (idx + 1) + '. ' + inner[0]);
-      for (let i = 1; i < inner.length; i++) lines.push('>    ' + inner[i]);
-    });
+    // Buts de la suite d'appels (lot AW) : une ligne en italique avant les
+    // appels de chaque but, mêmes segments que le fil (ackGoalSegments, qui
+    // impose l'ordre d'affichage). Sans but, l'ordre reçu, comme avant.
+    const segs = ackGoalSegments(acks);
+    const groups = segs.some(sg => sg.goal) ? segs : [{ goal: null, acks }];
+    let idx = 0;
+    for (const sg of groups) {
+      if (sg.goal) lines.push('> *But : ' + _truncMd(sg.goal, EXPORT_GOAL_MAX).replace(/[*_]/g, '') + '*');
+      for (const m of sg.acks) {
+        const inner = _formatToolCallMd(m);
+        lines.push('> ' + (++idx) + '. ' + inner[0]);
+        for (let i = 1; i < inner.length; i++) lines.push('>    ' + inner[i]);
+      }
+    }
   }
   // Saut de ligne forcé (2 espaces de fin) sur chaque ligne sauf la dernière :
   // sans ça, des lignes "> " consécutives sans paragraphe vide entre elles
@@ -3487,7 +3862,14 @@ function formatToolAcksHtml(acks) {
   if (!acks || !acks.length) return '';
   const n = acks.length;
   const summary = n === 1 ? '1 outil appelé' : n + ' outils appelés';
-  const previews = acks.map(_formatToolCallPreviewHtml).join('');
+  // Buts (lot AW) : un intertitre avant les intentions de chaque but, mêmes
+  // segments que le fil. Le but vient de l'étiqueteur, donc d'un modèle :
+  // escHtml, comme tout ce que concatène cette fonction (piège 21).
+  const segs = ackGoalSegments(acks);
+  const previews = segs.some(sg => sg.goal)
+    ? segs.map(sg => (sg.goal ? '<div class="tool-ack-goal">' + escHtml(sg.goal) + '</div>' : '')
+        + sg.acks.map(_formatToolCallPreviewHtml).join('')).join('')
+    : acks.map(_formatToolCallPreviewHtml).join('');
   let inner;
   if (n === 1) {
     inner = '<li>' + _formatToolCallHtml(acks[0]) + '</li>';

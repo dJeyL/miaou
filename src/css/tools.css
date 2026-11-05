@@ -123,14 +123,44 @@
    largeur (jitter horizontal, retour Julien). Une seule colonne = pas de
    redistribution de largeur possible. */
 .ack-panels { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 auto; min-width: 0; }
-.ack-slot { grid-area: 1 / 1; overflow: hidden; position: relative; }
+.ack-slot { grid-area: 1 / 1; min-width: 0; }
+.ack-clip { overflow: hidden; position: relative; }
 .ack-list { grid-area: 1 / 1; min-width: 0; }
+/* But de la suite d'appels (miaou_goal) : en-tête du panneau compact, au-dessus
+   de la fenêtre du ticker, et intertitres du mode liste. Même texte, même
+   style, mêmes marges : en-tête et premier intertitre tombent au même endroit
+   d'un mode à l'autre. Ce qu'un intertitre couvre se dit par le RETRAIT de ses
+   acks, pas par un filet : chaque .tool-ack porte déjà le sien (accent), et un
+   appel hors segment reste aligné sur l'intertitre. */
+.ack-goal, .ack-goal-title {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-2);
+  /* Pas de marge basse : en liste elle fusionne avec la marge haute de l'ack
+     qui suit, en compact non (l'ack vit dans la fenêtre du ticker, conteneur
+     flex en overflow hidden) — 1px de plus en compact, la ligne de l'ack
+     descendait d'autant à la bascule. */
+  margin: 2px 0 0 2px;
+}
+/* Écart entre segments seulement : une marge sur le premier le décalerait de
+   l'en-tête compact qu'il remplace à la bascule. */
+.ack-list > :not(:first-child).ack-goal-seg { margin-top: 6px; }
+/* Retrait identique en liste et en compact (ack visible d'un segment à but,
+   `has-goal`, posé par syncAckGroupGoals). Sélecteurs à trois classes :
+   `.ack-list .tool-ack`, plus loin dans ce fichier, pose la marge de toute
+   ligne de la liste et l'emporterait à deux. */
+.ack-list .ack-goal-seg .tool-ack,
+.ack-group.has-goal .ack-slot .tool-ack { margin-left: 14px; }
+.ack-goal-enter { animation: ack-goal-in 0.32s ease; }
+@keyframes ack-goal-in { from { opacity: 0; } to { opacity: 1; } }
 .ticker-track { display: flex; flex-direction: column; }
 .ticker-track.animating { transition: transform 0.32s ease; }
 /* Hauteur du slot transitionnée en parallèle du translateY d'arrivée (épinglée
    en px par ackGroupAddAck) : le slot ne mesure jamais deux acks empilés, donc
    plus d'aller-retour de hauteur qui fait sautiller l'autoscroll. */
-.ack-slot.animating { transition: height 0.32s ease; }
+.ack-clip.animating { transition: height 0.32s ease; }
 /* Reduced-motion : neutralisé par le kill-switch global data-motion="reduced"
    (base.css), plus de gate dédié ici. */
 .ack-list .tool-ack { margin: 3px 0 3px 2px; }

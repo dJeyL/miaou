@@ -176,6 +176,9 @@ Figtree/Fira Code).
   souvenirs actifs sont réinjectés dans le contexte à chaque envoi.
 - Chaque appel d'outil produit une ligne d'ack visible dans le thread :
   annulable pour les écritures mémoire, informative pour les lectures.
+- **But des appels** : une suite d'appels est titrée par étapes (« Recherche
+  des offres », « Lecture des conditions »), nommées par MIAOU hors du contexte
+  de la conversation — cf. [docs/tools.md](docs/tools.md).
 - Inspecteur d'appel : une loupe sur chaque ack ouvre le détail complet et non
   tronqué de l'appel — paramètres, résultat, méta, et la ressource produite
   (aperçu selon son type, téléchargement) — cf. [docs/tools.md](docs/tools.md).

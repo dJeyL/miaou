@@ -2524,6 +2524,24 @@ function setUserClampOpen(bubble, open) {
 const USER_CLAMP_SETTLE_MS = 500;
 const _userClampAnims = new WeakMap();
 
+// Repli animé sous l'espace de la bulle envoyée : la vue y est au fond, pile.
+// À chaque frame le contenu raccourcit AVANT que l'observateur de l'espace ne
+// le regonfle, et le navigateur rabote scrollTop dans l'intervalle — la bulle
+// épinglée glissait vers le bas (mesuré : 38px sur le repli d'une bulle user,
+// 14px d'un coup à la bascule liste → compact d'un groupe d'acks). Un plancher
+// posé pour la durée du geste, de quoi absorber tout le repli (`shrink`, en
+// px), garde le défilement possible ; levé à l'arrivée par la fonction rendue,
+// il ne retire que du vide sous le fond. À poser AVANT toute mutation du
+// contenu : la première lecture de mise en page qui suit rabote déjà. Sans espace posé, ou
+// sans repli, rien à tenir. Un seul plancher à la fois : deux gestes
+// simultanés se partageraient le même style, le premier levé lèverait tout.
+function holdThreadTailSpaceFloor(shrink) {
+  const spacer = (shrink > 0 && threadTailSpaceShown()) ? $('thread-tail-space') : null;
+  if (!spacer) return () => {};
+  spacer.style.minHeight = (spacer.offsetHeight + shrink) + 'px';
+  return () => { spacer.style.minHeight = ''; };
+}
+
 function animateUserClamp(body, open) {
   // Geste inversé en cours d'animation : on détache l'ancien nettoyage SANS
   // lever l'épinglage — l'appelant vient de le poser à la hauteur affichée.
@@ -2535,21 +2553,14 @@ function animateUserClamp(body, open) {
   body.style.maxHeight = from + 'px';
   if (Math.abs(to - from) < 1) { body.style.maxHeight = ''; return; }
   void body.offsetHeight;   // valide l'épinglage avant de viser la cible
-  // Repli sous l'espace de la bulle envoyée : la vue y est au fond, pile. À
-  // chaque frame le contenu raccourcit AVANT que l'observateur de l'espace ne
-  // le regonfle, et le navigateur rabote scrollTop dans l'intervalle — la
-  // bulle épinglée glissait vers le bas (mesuré : 38px). Un plancher posé pour
-  // la durée du geste, de quoi absorber tout le repli, garde le défilement
-  // possible ; levé à l'arrivée, il ne retire que du vide sous le fond.
-  const spacer = (!open && threadTailSpaceShown()) ? $('thread-tail-space') : null;
-  if (spacer) spacer.style.minHeight = (spacer.offsetHeight + from - to) + 'px';
+  const releaseFloor = open ? () => {} : holdThreadTailSpaceFloor(from - to);
   body.style.maxHeight = to + 'px';
   let timer = 0;
   const detach = () => {
     clearTimeout(timer);
     body.removeEventListener('transitionend', onEnd);
     _userClampAnims.delete(body);
-    if (spacer) spacer.style.minHeight = '';
+    releaseFloor();
   };
   const done = () => { detach(); body.style.maxHeight = ''; };
   const onEnd = (e) => { if (e.target === body && e.propertyName === 'max-height') done(); };
@@ -4696,9 +4707,11 @@ function syncConfigured() {
 // (`gen.phaseVariant`), portée par l'appelant pour la même raison — la
 // rebrancher est ce qui empêche un retour sur la conversation de changer le
 // texte sous les yeux de l'utilisateur. Absent → la formulation historique.
-function setSending(on, stopping, phase, variant) {
+// `goal` (optionnel) : le but de la suite d'appels (`gen.phaseGoal`), même
+// statut ; seules les étapes d'outils l'affichent (composerBusyPlaceholder).
+function setSending(on, stopping, phase, variant, goal) {
   sending = on;
-  setComposerStreaming(on, phase, variant);
+  setComposerStreaming(on, phase, variant, goal);
   const send = $('send-btn');
   // Pendant l'envoi le bouton devient « stop » (cliquable) ; sinon il dépend du
   // seul état configuré. Une confirmation en attente NE bloque pas l'envoi : la
@@ -4848,10 +4861,15 @@ const COMPOSER_IDLE_PLACEHOLDER = 'Message…';
 // appelant n'a à connaître le nombre de formulations d'une phase, et en ajouter
 // une ne périme aucun tirage en cours. Absent ou non fini → 0, la formulation
 // historique.
-function composerBusyPlaceholder(phase, variant) {
+//
+// `goal` : le but de la suite d'appels en cours, suffixé aux seules étapes
+// d'outils (`tools`, `analyzing`, et la réflexion qui suit un tour,
+// `pondering`) — ailleurs il décrirait un travail fini.
+function composerBusyPlaceholder(phase, variant, goal) {
   const list = COMPOSER_PHASE_LABELS[phase] || COMPOSER_PHASE_LABELS.waiting;
   const n = Number.isFinite(variant) ? Math.abs(Math.trunc(variant)) % list.length : 0;
-  return list[n] + COMPOSER_QUEUE_HINT;
+  const withGoal = goal && (phase === 'tools' || phase === 'analyzing' || phase === 'pondering') ? ' · ' + goal : '';
+  return list[n] + withGoal + COMPOSER_QUEUE_HINT;
 }
 
 // Bascule l'apparence du bouton du composer entre « envoyer » et « stop ».
@@ -4859,7 +4877,7 @@ function composerBusyPlaceholder(phase, variant) {
 // ui.js ne lit jamais le registre de générations (pas de dépendance inverse
 // vers main.js) — c'est l'appelant qui porte la phase, comme il porte déjà
 // `stopping`. Absente → attente, le comportement d'avant les phases.
-function setComposerStreaming(on, phase, variant) {
+function setComposerStreaming(on, phase, variant, goal) {
   const send = $('send-btn');
   if (!send) return;
   send.classList.toggle('streaming', on);
@@ -4867,7 +4885,7 @@ function setComposerStreaming(on, phase, variant) {
   // Mode file (lot Q) : le placeholder annonce la mise en file pendant la
   // génération — l'affordance principale du mécanisme, avec le rail de puces.
   const ta = $('composer-text');
-  if (ta) ta.placeholder = on ? composerBusyPlaceholder(phase, variant) : COMPOSER_IDLE_PLACEHOLDER;
+  if (ta) ta.placeholder = on ? composerBusyPlaceholder(phase, variant, goal) : COMPOSER_IDLE_PLACEHOLDER;
 }
 
 // Rafraîchit le SEUL placeholder, sans retoucher au bouton ni au reste de
@@ -4875,10 +4893,10 @@ function setComposerStreaming(on, phase, variant) {
 // là où setSending n'est appelé qu'à ses bornes. Garde `sending` : une phase
 // qui arriverait d'une génération sans écran (elle ne devrait pas — le point
 // d'appel est gardé par genOwnsScreen) n'écrirait pas sur un composer inerte.
-function setComposerPhase(phase, variant) {
+function setComposerPhase(phase, variant, goal) {
   if (!sending) return;
   const ta = $('composer-text');
-  if (ta) ta.placeholder = composerBusyPlaceholder(phase, variant);
+  if (ta) ta.placeholder = composerBusyPlaceholder(phase, variant, goal);
 }
 
 // Stop cliqué pendant un tour d'outils (gen.abort momentanément null, cf.
@@ -6888,6 +6906,7 @@ function settingsFormDirty() {
     || $('set-reasoningselector').checked !== !!s.showReasoningSelector
     || $('set-mcpselector').checked !== (s.showMcpSelector !== false)
     || $('set-intent-tracing').checked !== !!s.intentTracing
+    || $('set-tool-steps').checked !== (s.toolSteps !== false)
     || $('set-early-title').checked !== !!s.earlyTitle
     || $('set-did-you-know').checked !== !!s.didYouKnow
     || $('set-retitle-after-reply').checked !== effectiveRetitleAfterReply(s)
@@ -7025,6 +7044,7 @@ function openSettings() {
   setFontsUI(s.fonts || 'graphite');
   setMotionUI(s.motion || 'system');
   $('set-intent-tracing').checked = !!s.intentTracing;
+  $('set-tool-steps').checked = s.toolSteps !== false;
   $('set-early-title').checked = !!s.earlyTitle;
   $('set-did-you-know').checked = !!s.didYouKnow;
   $('set-retitle-after-reply').checked = effectiveRetitleAfterReply(s);
