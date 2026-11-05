@@ -1027,8 +1027,9 @@ racine appellent l'étiqueteur) ; le rattrapage les nomme si on ouvre leur fil.
 
 Non-régression : `verify-ack-goals.mjs` (rendu compact et liste, génération
 stubée avec étiqueteur, payload sans aucune trace d'étape, reload, réglage
-coupé, rattrapage) et les tests QuickJS de `ackGoalSegments`, `stepLabelPlan`,
-`parseStepLabels`, `stepBackfillBubbles`.
+coupé, rattrapage — y compris d'une bulle à deux étapes restée en compact, dont
+l'ack visible ne porte pas l'étiquette) et les tests QuickJS de
+`ackGoalSegments`, `stepLabelPlan`, `parseStepLabels`, `stepBackfillBubbles`.
 
 ### Téléchargement de la ressource désignée par un ack (lot V)
 

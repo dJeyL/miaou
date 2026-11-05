@@ -28,6 +28,11 @@
 //      appels sans étape est nommée (une requête, tous ses tours), la bulle
 //      d'un seul appel ne l'est pas ; l'étape est persistée, et une
 //      réouverture après reload ne redemande rien.
+//   I. Même rattrapage sur une bulle à DEUX étapes dont l'ack visible en
+//      compact est un sous-produit MCP sans `group` (arrivé après son action) :
+//      l'étiquette n'est posée que sur des acks dont le nœud est hors du
+//      document (le compact ne garde que le nœud visible), et l'en-tête doit
+//      pourtant apparaître sans passer par la liste.
 //
 // Usage : node verify-ack-goals.mjs [--headed]
 import { launchIsolated } from './stub-backend.js';
@@ -72,7 +77,8 @@ await page.addInitScript(() => {
     if (!body.stream && /^Tu nommes les étapes/.test(sys0)) {
       window.__chat.labelBodies.push(body);
       const user = (body.messages[1] || {}).content || '';
-      const answer = /Tour 2 :/.test(user) ? 'Recensement des anciennes notes\n='
+      const answer = /Demande : Compare mes agendas/.test(user) ? 'Lecture des agendas\nComparaison des créneaux'
+        : /Tour 2 :/.test(user) ? 'Recensement des anciennes notes\n='
         : /Étapes déjà nommées : aucune/.test(user) ? 'Inventaire des conversations' : 'Lecture des conversations';
       return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: answer }, finish_reason: 'stop' }] }),
         { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -505,6 +511,43 @@ const h2 = await page.evaluate(() => ({
 }));
 check('après reload : l\'en-tête vient du stockage, aucune nouvelle requête',
   h2.header === 'Recensement des anciennes notes' && h2.labels === 0, h2);
+
+// ════════════════════════════════════════════════════════════════════════════
+console.log('\nI. Rattrapage, deux étapes, ack visible sans group (compact)');
+// ════════════════════════════════════════════════════════════════════════════
+const twoId = await page.evaluate(() => {
+  window.__chat.labelBodies = [];
+  const ack = (n, group) => ({ role: 'tool-ack', kind: 'mcp_call', server: 'srv', name: 'srv__agenda__read',
+    intent: 'Lecture ' + n, group, args: { day: n, miaou_intent: 'Lecture ' + n }, result: 'ok', ts: 1 });
+  const id = 'conv_old_two_steps';
+  saveConversation({ id, title: 'Agendas', timestamp: Date.now() - 86400000, spaceId: activeSpaceId, messages: [
+    { role: 'user', content: 'Compare mes agendas', ts: 1 },
+    ack(1, 'gD'), ack(2, 'gD'), ack(3, 'gE'), ack(4, 'gE'),
+    // Sous-produit d'un appel distant : poussé APRÈS l'action, sans `group`
+    // (seul l'ack d'action est enrichi) — c'est lui l'ack visible en compact.
+    { role: 'tool-ack', kind: 'resource_stored', id: 'res_cmp', resourceName: 'creneaux.txt', mime: 'text/plain', ts: 1 },
+    { role: 'assistant', content: 'Voici la comparaison.', model: 'stub-model', ts: 2 },
+  ] });
+  return id;
+});
+await page.evaluate((id) => openConversation(id, true), twoId);
+await page.waitForFunction(() => window.__chat.labelBodies.length > 0, null, { timeout: 5000 }).catch(() => {});
+await page.waitForFunction((id) => (loadConversation(id).messages || []).some(m => m.goal), twoId, { timeout: 5000 }).catch(() => {});
+await page.waitForTimeout(300);
+const i1 = await page.evaluate((id) => {
+  const w = Array.from(document.querySelectorAll('#thread .msg.assistant')).find(x => x.querySelector('.ack-group'));
+  return {
+    labels: window.__chat.labelBodies.length,
+    stored: loadConversation(id).messages.filter(m => m.role === 'tool-ack').map(m => m.goal || null),
+    state: w ? window.__state(w) : null,
+  };
+}, twoId);
+check('prémisse : une requête, étapes persistées sur les quatre appels, pas sur le sous-produit',
+  i1.labels === 1 && JSON.stringify(i1.stored) === JSON.stringify(['Lecture des agendas', 'Lecture des agendas',
+    'Comparaison des créneaux', 'Comparaison des créneaux', null]), i1);
+check('compact, sans bascule : en-tête de l\'étape de l\'ack visible',
+  i1.state && i1.state.mode === 'compact' && i1.state.header === 'Comparaison des créneaux', i1.state);
+check('compact : badge « 2 buts · 5 étapes »', i1.state && i1.state.badge === '2 buts · 5 étapes', i1.state && i1.state.badge);
 
 // ════════════════════════════════════════════════════════════════════════════
 check('aucune erreur console', consoleErrors.length === 0);

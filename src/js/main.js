@@ -431,12 +431,7 @@ function applyStepLabels(gen) {
   }
   if (touched.length) {
     gen.stepLabelsDirty = true;
-    const seen = new Set();
-    for (const m of touched) {
-      const node = ackNodeOf.get(m);
-      const el = node && node.closest ? node.closest('.ack-group') : null;
-      if (el && !seen.has(el)) { seen.add(el); refreshAckGroupGoals(node); }
-    }
+    refreshAckGroupGoalsOf(touched);
   }
   const goal = genComposerGoal(gen);
   if (goal !== gen.phaseGoal) {
@@ -478,14 +473,7 @@ async function maybeBackfillStepLabels(id) {
       const conv = loadConversation(id);
       if (!conv || isGenerating(id) || conv.messages.length !== conversationMessageCount(id)) return;
       if (applyStepLabelsToMessages(conv.messages, labels).length) saveConversation(conv);
-      if (id === currentConvId) {
-        const seen = new Set();
-        for (const m of applyStepLabelsToMessages(currentThread, labels)) {
-          const node = ackNodeOf.get(m);
-          const el = node && node.closest ? node.closest('.ack-group') : null;
-          if (el && !seen.has(el)) { seen.add(el); refreshAckGroupGoals(node); }
-        }
-      }
+      if (id === currentConvId) refreshAckGroupGoalsOf(applyStepLabelsToMessages(currentThread, labels));
     }
   });
 }

@@ -1417,6 +1417,12 @@ function buildToolAck(m) {
 // surtout retiendrait le nœud en mémoire tant que la conversation vit (fuite).
 // La WeakMap garde le lien hors de l'objet persisté et laisse le nœud être GC.
 const ackNodeOf = new WeakMap();
+// Pont nœud d'ack → groupe qui le range. Le groupe ne se retrouve PAS par le
+// DOM : en mode compact, seul le nœud de l'ack visible est dans le document
+// (renderAckGroup retire les autres du track), donc `closest('.ack-group')`
+// rend null pour tous les autres. Une étiquette d'étape posée sur des acks
+// détachés laissait alors l'en-tête vide jusqu'à la bascule en liste.
+const ackGroupOfNode = new WeakMap();
 // État d'un groupe d'acks contigu dans UNE bulle assistant : { acks, mode,
 // slotExpanded }. `acks` = descripteurs d'entrée (mêmes objets que placeToolAck
 // reçoit), ordre d'arrivée. `mode` = 'compact'|'list'. `slotExpanded` = détail
@@ -1752,9 +1758,19 @@ function syncAckGroupGoals(group) {
 // de son tour — markEarlyAckPending, settleEarlyAckPending). `node` peut être
 // null (génération détachée) : le rendu à l'attache relira l'entrée à jour.
 function refreshAckGroupGoals(node) {
-  const el = node && node.closest ? node.closest('.ack-group') : null;
-  const group = el && el.parentNode && el.parentNode._ackGroup;
+  const group = node ? ackGroupOfNode.get(node) : null;
   if (group) syncAckGroupGoals(group);
+}
+
+// Même resynchronisation pour un lot d'entrées (étiquettes posées par
+// applyStepLabels ou le rattrapage, main.js), une fois par groupe touché.
+function refreshAckGroupGoalsOf(entries) {
+  const seen = new Set();
+  for (const m of entries) {
+    const node = ackNodeOf.get(m);
+    const group = node ? ackGroupOfNode.get(node) : null;
+    if (group && !seen.has(group)) { seen.add(group); syncAckGroupGoals(group); }
+  }
 }
 
 // Pré-ouvre/replie le détail d'un nœud .tool-ack déjà construit (héritage
@@ -1777,6 +1793,7 @@ function applySlotExpanded(node, expanded) {
 // streaming), false au reload (renderThread) — reconstruction, pas arrivée.
 function ackGroupAddAck(group, entry, node, animate) {
   ackNodeOf.set(entry, node);   // pont état pur → nœud DOM, hors objet persisté
+  ackGroupOfNode.set(node, group);
   const prevVisible = ackGroupVisibleAck(group.state);
   const wasCompact = ackGroupIsCompact(group.state);
   group.state = ackGroupReduce(group.state, { type: 'arrive', ack: entry });

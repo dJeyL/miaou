@@ -6152,7 +6152,7 @@ if (window.requestAnimationFrame) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-/* miaou — built: 2026-11-05 00:40 UTC */
+/* miaou — built: 2026-11-05 19:11 UTC */
 
 /* ── utils.js ── */
 
@@ -12073,7 +12073,7 @@ const SPACES_KEY        = 'miaou-spaces';
 const ACTIVE_SPACE_KEY  = 'miaou-active-space';
 const DEFAULT_SPACE_ID  = 'default';
 
-const BUILD_CONFIG = (function () { try { return {"build_ts": 1793839213}; } catch (e) { return {}; } })();
+const BUILD_CONFIG = (function () { try { return {"build_ts": 1793905899}; } catch (e) { return {}; } })();
 
 const REQUIRE_API_KEY = BUILD_CONFIG.require_api_key !== false;
 const MAX_SUMMARIES   = (typeof BUILD_CONFIG.max_summaries === 'number') ? BUILD_CONFIG.max_summaries : 3;
@@ -12093,7 +12093,7 @@ const BUILD_API_URL   = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].url) || ''
 const BUILD_API_MODEL = (BUILD_API_SERVERS[0] && BUILD_API_SERVERS[0].model) || BUILD_CONFIG.api_model || '';
 const BUILD_TS        = BUILD_CONFIG.build_ts  || 0;
 
-const BUILD_ID = (function () { try { return "6638a8243e350e0f"; } catch (e) { return ''; } })();
+const BUILD_ID = (function () { try { return "ee9aed26fe1bc3cd"; } catch (e) { return ''; } })();
 
 const BUILD_EARLY_TITLE = BUILD_CONFIG.early_title !== false;
 
@@ -32828,6 +32828,8 @@ function buildToolAck(m) {
 
 const ackNodeOf = new WeakMap();
 
+const ackGroupOfNode = new WeakMap();
+
 function ackGroupInitState() {
   return { acks: [], mode: 'compact', slotExpanded: false };
 }
@@ -33057,9 +33059,17 @@ function syncAckGroupGoals(group) {
 }
 
 function refreshAckGroupGoals(node) {
-  const el = node && node.closest ? node.closest('.ack-group') : null;
-  const group = el && el.parentNode && el.parentNode._ackGroup;
+  const group = node ? ackGroupOfNode.get(node) : null;
   if (group) syncAckGroupGoals(group);
+}
+
+function refreshAckGroupGoalsOf(entries) {
+  const seen = new Set();
+  for (const m of entries) {
+    const node = ackNodeOf.get(m);
+    const group = node ? ackGroupOfNode.get(node) : null;
+    if (group && !seen.has(group)) { seen.add(group); syncAckGroupGoals(group); }
+  }
 }
 
 function applySlotExpanded(node, expanded) {
@@ -33077,6 +33087,7 @@ function applySlotExpanded(node, expanded) {
 
 function ackGroupAddAck(group, entry, node, animate) {
   ackNodeOf.set(entry, node);
+  ackGroupOfNode.set(node, group);
   const prevVisible = ackGroupVisibleAck(group.state);
   const wasCompact = ackGroupIsCompact(group.state);
   group.state = ackGroupReduce(group.state, { type: 'arrive', ack: entry });
@@ -37255,12 +37266,7 @@ function applyStepLabels(gen) {
   }
   if (touched.length) {
     gen.stepLabelsDirty = true;
-    const seen = new Set();
-    for (const m of touched) {
-      const node = ackNodeOf.get(m);
-      const el = node && node.closest ? node.closest('.ack-group') : null;
-      if (el && !seen.has(el)) { seen.add(el); refreshAckGroupGoals(node); }
-    }
+    refreshAckGroupGoalsOf(touched);
   }
   const goal = genComposerGoal(gen);
   if (goal !== gen.phaseGoal) {
@@ -37288,14 +37294,7 @@ async function maybeBackfillStepLabels(id) {
       const conv = loadConversation(id);
       if (!conv || isGenerating(id) || conv.messages.length !== conversationMessageCount(id)) return;
       if (applyStepLabelsToMessages(conv.messages, labels).length) saveConversation(conv);
-      if (id === currentConvId) {
-        const seen = new Set();
-        for (const m of applyStepLabelsToMessages(currentThread, labels)) {
-          const node = ackNodeOf.get(m);
-          const el = node && node.closest ? node.closest('.ack-group') : null;
-          if (el && !seen.has(el)) { seen.add(el); refreshAckGroupGoals(node); }
-        }
-      }
+      if (id === currentConvId) refreshAckGroupGoalsOf(applyStepLabelsToMessages(currentThread, labels));
     }
   });
 }
