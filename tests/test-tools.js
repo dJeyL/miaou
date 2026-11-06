@@ -2831,6 +2831,19 @@ describe('Révision MCP 2026-07-28 — lecture d\'une réponse en erreur (deux �
     expect(e.applicative).toBe(undefined);
     expect(e.status).toBe(405);
   });
+  it('401 au format OAuth du SDK MCP (error en chaîne) : nommé, détail repris, non applicatif', function() {
+    var e = mcpHttpFailure(401, { error: 'invalid_token', error_description: 'Authentication required' }, false);
+    expect(e.message).toBe('Authentification refusée (HTTP 401) : Authentication required');
+    expect(e.applicative).toBe(undefined);
+    expect(e.rpcCode).toBe(undefined);
+    expect(e.status).toBe(401);
+    expect(mcpProbeVerdict(null, e)).toBe('fail');
+  });
+  it('401/403 sans description : code OAuth, puis libellé seul', function() {
+    expect(mcpHttpFailure(401, { error: 'invalid_token' }, false).message).toBe('Authentification refusée (HTTP 401) : invalid_token');
+    expect(mcpHttpFailure(401, null, false).message).toBe('Authentification refusée (HTTP 401)');
+    expect(mcpHttpFailure(403, { error: 'insufficient_scope', error_description: 'Required scopes: mcp' }, false).message).toBe('Accès refusé (HTTP 403) : Required scopes: mcp');
+  });
   it('corps JSON sans error : traité comme sans corps', function() {
     expect(mcpHttpFailure(500, { jsonrpc: '2.0', result: {} }, false).message).toBe('HTTP 500');
   });

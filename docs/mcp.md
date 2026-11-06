@@ -929,7 +929,12 @@ une fonction qui a besoin de `TOOLS` n'est pas du MCP distant.
       `mcpJsonRpcError` (purs) : `message`, `data` (contrats du point 12 et du
       point 15 intacts), `applicative`, plus `rpcCode` et `status` que lit la
       sonde. Session morte d'abord, cf. point 9. REF_UNKNOWN, lui, arrive en 200
-      dans les deux ères.
+      dans les deux ères. **Seul un `error` objet est du JSON-RPC** : le 401 de
+      la couche bearer du SDK porte un corps OAuth (RFC 6750, `error` en chaîne,
+      `error_description`), qui affichait « Erreur JSON-RPC. » et passait
+      `applicative` à tort. Il donne désormais « Authentification refusée
+      (HTTP 401) : description du serveur » (`mcpHttpFailureMessage`, idem 403), non
+      applicatif : un jeton refusé en cours de conversation bascule la pastille.
     - **Changement d'ère en cours de vie** : rien d'automatique. Une
       requête moderne vers un serveur redescendu en 1.x reçoit 400 « Missing
       session ID », affiché comme erreur ; la reconnexion (glyphe, retour de

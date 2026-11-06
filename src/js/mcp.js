@@ -266,6 +266,14 @@ function mcpJsonRpcError(rpcError, status, hadSession) {
 //
 // La session morte garde la priorité, quel que soit le corps (cf.
 // `isMcpStaleSessionResponse`).
+//
+// Seul un `error` OBJET est une erreur JSON-RPC. Le refus d'authentification
+// du SDK MCP (couche bearer, avant tout dispatch) répond au format OAuth
+// (RFC 6750) : `{ error: "invalid_token", error_description: "…" }`, où
+// `error` est une CHAÎNE. Pris pour du JSON-RPC, ce corps donnait une carte
+// « Erreur JSON-RPC. » et un `applicative` à tort : le serveur n'a rien
+// dispatché, et un jeton refusé le rend inutilisable, donc l'appel qui échoue
+// ainsi doit bien basculer la pastille (cf. `noteMcpCallFailure`).
 function mcpHttpFailure(status, msg, hadSession) {
   if (isMcpStaleSessionResponse(status, hadSession)) {
     const stale = new Error('HTTP ' + status);
@@ -273,10 +281,25 @@ function mcpHttpFailure(status, msg, hadSession) {
     stale.staleSession = true;
     return stale;
   }
-  if (msg && msg.error) return mcpJsonRpcError(msg.error, status, hadSession);
-  const err = new Error('HTTP ' + status);
+  if (msg && msg.error && typeof msg.error === 'object') return mcpJsonRpcError(msg.error, status, hadSession);
+  const err = new Error(mcpHttpFailureMessage(status, msg));
   err.status = status;
   return err;
+}
+
+// Message d'une réponse non 2xx hors JSON-RPC. Un 401/403 se nomme : « HTTP
+// 401 » nu ne dit pas qu'il s'agit du jeton. Le détail OAuth éventuel
+// (`error_description`, sinon le code `error`) suit, tel que le serveur l'écrit.
+// Lu aussi par le modèle (tool result) : pas d'insécable ici.
+function mcpHttpFailureMessage(status, msg) {
+  const head = status === 401 ? 'Authentification refusée (HTTP 401)'
+    : status === 403 ? 'Accès refusé (HTTP 403)'
+    : 'HTTP ' + status;
+  const m = msg || {};
+  const detail = (typeof m.error_description === 'string' && m.error_description.trim())
+    || (typeof m.error === 'string' && m.error.trim())
+    || '';
+  return detail ? head + ' : ' + detail : head;
 }
 
 // Consignes de portée serveur : `instructions` de l'InitializeResult en legacy,
